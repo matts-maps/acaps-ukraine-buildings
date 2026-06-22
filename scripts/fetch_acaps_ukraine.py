@@ -1,12 +1,12 @@
 import requests
 import pandas as pd
 import os
-from datetime import datetime
 
 AUTH_URL = "https://api.acaps.org/api/v1/token-auth/"
 DATA_URL = "https://api.acaps.org/api/v1/ukraine/damages/"
 
-START_DATE = "2025-01-01"
+START_DATE = "2026-05-01"
+END_DATE = "2026-06-30"
 
 def get_token():
     creds = {
@@ -17,13 +17,13 @@ def get_token():
     r.raise_for_status()
     return r.json()["token"]
 
-def fetch_data_since(token, date_from):
+def fetch_data_range(token, date_from, date_to):
     headers = {"Authorization": f"Token {token}"}
-    url = f"{DATA_URL}?date__gte={date_from}"
+    url = f"{DATA_URL}?date__gte={date_from}&date__lte={date_to}"
     rows = []
     last_url = None
 
-    print(f"Fetching ACAPS data since {date_from}")
+    print(f"Fetching ACAPS data from {date_from} to {date_to}")
 
     while url and url != last_url:
         print(f"Requesting: {url}")
@@ -36,11 +36,10 @@ def fetch_data_since(token, date_from):
         rows.extend(data.get("results", []))
         url = data.get("next")
 
-        # ACAPS sometimes returns "" instead of null
         if not url:
             break
 
-    print(f"Fetched {len(rows)} total records since {date_from}")
+    print(f"Fetched {len(rows)} records in range")
     return pd.DataFrame(rows)
 
 def summarise(df):
@@ -67,34 +66,11 @@ def main():
     token = get_token()
     os.makedirs("data", exist_ok=True)
 
-    csv_path = "data/acaps_ukraine_buildings.csv"
+    print("Refreshing May–June 2026 dataset")
+    df = fetch_data_range(token, START_DATE, END_DATE)
 
-    if os.path.exists(csv_path):
-        # Incremental update
-        existing = pd.read_csv(csv_path)
-        existing["date"] = pd.to_datetime(existing["date"], errors="coerce")
-        last_date = existing["date"].max().strftime("%Y-%m-%d")
+    df.to_csv("data/acaps_ukraine_buildings.csv", index=False)
 
-        print(f"Existing dataset found. Last stored date = {last_date}")
-
-        new_df = fetch_data_since(token, last_date)
-
-        if len(new_df) > 0:
-            print(f"Appending {len(new_df)} new records")
-            df = pd.concat([existing, new_df], ignore_index=True)
-        else:
-            print("No new data available")
-            df = existing
-
-    else:
-        # First run: full fetch from 2025-01-01
-        print("No existing dataset found. Fetching full dataset from 2025-01-01")
-        df = fetch_data_since(token, START_DATE)
-
-    # Save raw
-    df.to_csv(csv_path, index=False)
-
-    # Summaries
     weekly_oblast, weekly_matrix = summarise(df)
     weekly_oblast.to_csv("data/acaps_oblast_weekly.csv", index=False)
     weekly_matrix.to_csv("data/acaps_oblast_weekly_matrix.csv")

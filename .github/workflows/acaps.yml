@@ -2,7 +2,7 @@ name: ACAPS Ukraine Buildings
 
 on:
   schedule:
-    - cron: "0 3 * * *"   # daily at 03:00 UTC
+    - cron: "0 3 * * 1"   # Mondays at 03:00 UTC
   workflow_dispatch:
 
 jobs:
@@ -29,8 +29,12 @@ jobs:
 
       - name: Commit updated CSVs
         run: |
+          if git diff --quiet data/; then
+            echo "No changes — skipping commit"
+            exit 0
+          fi
           git config user.name "github-actions"
           git config user.email "github-actions@github.com"
           git add data/*.csv
-          git commit -m "Update ACAPS Ukraine building data + summaries" || echo "No changes"
+          git commit -m "Update ACAPS May–June 2026 data"
           git push
