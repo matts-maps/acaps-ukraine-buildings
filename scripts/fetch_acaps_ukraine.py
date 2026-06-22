@@ -1,3 +1,7 @@
+print("Starting ACAPS fetch script...")
+
+print("About to request token...")
+
 import requests
 import pandas as pd
 import os
