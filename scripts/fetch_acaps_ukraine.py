@@ -1,9 +1,12 @@
 import requests
 import pandas as pd
 import os
+from datetime import datetime
 
 AUTH_URL = "https://api.acaps.org/api/v1/token-auth/"
 DATA_URL = "https://api.acaps.org/api/v1/ukraine/damages/"
+
+START_DATE = "2025-01-01"
 
 def get_token():
     creds = {
@@ -14,9 +17,9 @@ def get_token():
     r.raise_for_status()
     return r.json()["token"]
 
-def fetch_all_data(token):
+def fetch_data_since(token, date_from):
     headers = {"Authorization": f"Token {token}"}
-    url = DATA_URL
+    url = f"{DATA_URL}?date__gte={date_from}"
     rows = []
 
     while url:
@@ -30,7 +33,6 @@ def fetch_all_data(token):
 
 def summarise(df):
     df["date"] = pd.to_datetime(df["date"], errors="coerce")
-
     df["iso_year"] = df["date"].dt.isocalendar().year
     df["iso_week"] = df["date"].dt.isocalendar().week
 
@@ -51,14 +53,36 @@ def summarise(df):
 
 def main():
     token = get_token()
-    df = fetch_all_data(token)
-
     os.makedirs("data", exist_ok=True)
 
-    df.to_csv("data/acaps_ukraine_buildings.csv", index=False)
+    csv_path = "data/acaps_ukraine_buildings.csv"
 
+    if os.path.exists(csv_path):
+        # Incremental update
+        existing = pd.read_csv(csv_path)
+        existing["date"] = pd.to_datetime(existing["date"], errors="coerce")
+        last_date = existing["date"].max().strftime("%Y-%m-%d")
+
+        print(f"Existing data found. Last date = {last_date}")
+        new_df = fetch_data_since(token, last_date)
+
+        if len(new_df) > 0:
+            print(f"Fetched {len(new_df)} new records")
+            df = pd.concat([existing, new_df], ignore_index=True)
+        else:
+            print("No new data available")
+            df = existing
+
+    else:
+        # First run: full fetch from 2025-01-01
+        print("No existing data found. Fetching full dataset from 2025-01-01")
+        df = fetch_data_since(token, START_DATE)
+
+    # Save raw
+    df.to_csv(csv_path, index=False)
+
+    # Summaries
     weekly_oblast, weekly_matrix = summarise(df)
-
     weekly_oblast.to_csv("data/acaps_oblast_weekly.csv", index=False)
     weekly_matrix.to_csv("data/acaps_oblast_weekly_matrix.csv")
 
