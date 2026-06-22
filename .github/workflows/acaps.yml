@@ -16,6 +16,9 @@ jobs:
       - name: Debug file structure
         run: ls -R .
 
+      - name: Test DNS resolution
+        run: nslookup api.acaps.org || true
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
