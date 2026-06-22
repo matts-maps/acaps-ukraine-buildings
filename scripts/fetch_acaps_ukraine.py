@@ -21,14 +21,26 @@ def fetch_data_since(token, date_from):
     headers = {"Authorization": f"Token {token}"}
     url = f"{DATA_URL}?date__gte={date_from}"
     rows = []
+    last_url = None
 
-    while url:
+    print(f"Fetching ACAPS data since {date_from}")
+
+    while url and url != last_url:
+        print(f"Requesting: {url}")
+        last_url = url
+
         r = requests.get(url, headers=headers)
         r.raise_for_status()
         data = r.json()
-        rows.extend(data["results"])
+
+        rows.extend(data.get("results", []))
         url = data.get("next")
 
+        # ACAPS sometimes returns "" instead of null
+        if not url:
+            break
+
+    print(f"Fetched {len(rows)} total records since {date_from}")
     return pd.DataFrame(rows)
 
 def summarise(df):
@@ -63,11 +75,12 @@ def main():
         existing["date"] = pd.to_datetime(existing["date"], errors="coerce")
         last_date = existing["date"].max().strftime("%Y-%m-%d")
 
-        print(f"Existing data found. Last date = {last_date}")
+        print(f"Existing dataset found. Last stored date = {last_date}")
+
         new_df = fetch_data_since(token, last_date)
 
         if len(new_df) > 0:
-            print(f"Fetched {len(new_df)} new records")
+            print(f"Appending {len(new_df)} new records")
             df = pd.concat([existing, new_df], ignore_index=True)
         else:
             print("No new data available")
@@ -75,7 +88,7 @@ def main():
 
     else:
         # First run: full fetch from 2025-01-01
-        print("No existing data found. Fetching full dataset from 2025-01-01")
+        print("No existing dataset found. Fetching full dataset from 2025-01-01")
         df = fetch_data_since(token, START_DATE)
 
     # Save raw
