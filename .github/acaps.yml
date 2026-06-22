@@ -1,0 +1,36 @@
+name: ACAPS Ukraine Buildings
+
+on:
+  schedule:
+    - cron: "0 3 * * *"   # daily at 03:00 UTC
+  workflow_dispatch:
+
+jobs:
+  fetch-acaps:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install pandas requests
+
+      - name: Run ACAPS fetch + summarise
+        env:
+          ACAPS_USERNAME: ${{ secrets.ACAPS_USERNAME }}
+          ACAPS_PASSWORD: ${{ secrets.ACAPS_PASSWORD }}
+        run: python scripts/fetch_acaps_ukraine.py
+
+      - name: Commit updated CSVs
+        run: |
+          git config user.name "github-actions"
+          git config user.email "github-actions@github.com"
+          git add data/*.csv
+          git commit -m "Update ACAPS Ukraine building data + summaries" || echo "No changes"
+          git push
