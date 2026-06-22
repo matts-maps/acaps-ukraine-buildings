@@ -1,6 +1,3 @@
-print("Starting ACAPS fetch script...")
-print("About to request token...")
-
 import requests
 import pandas as pd
 import os
@@ -11,12 +8,17 @@ DATA_URL = "https://api.acaps.org/api/v1/ukraine/damages/"
 START_DATE = "2026-05-01"
 END_DATE = "2026-06-30"
 
+print("Starting ACAPS fetch script...")
+print("About to request token...")
+
 def get_token():
     creds = {
         "username": os.environ["ACAPS_USERNAME"],
         "password": os.environ["ACAPS_PASSWORD"]
     }
-    r = requests.post(AUTH_URL, json=creds)
+    print("Requesting ACAPS token...")
+    r = requests.post(AUTH_URL, json=creds, timeout=10)
+    print("Token request completed")
     r.raise_for_status()
     return r.json()["token"]
 
@@ -32,7 +34,7 @@ def fetch_data_range(token, date_from, date_to):
         print(f"Requesting: {url}")
         last_url = url
 
-        r = requests.get(url, headers=headers)
+        r = requests.get(url, headers=headers, timeout=10)
         r.raise_for_status()
         data = r.json()
 
@@ -46,7 +48,16 @@ def fetch_data_range(token, date_from, date_to):
     return pd.DataFrame(rows)
 
 def summarise(df):
-    df["date"] = pd.to_datetime(df["date"], errors="coerce")
+    # ACAPS uses this field for event dates
+    date_col = "date_of_event"
+
+    if date_col not in df.columns:
+        raise ValueError(f"'date_of_event' not found. Columns returned: {df.columns.tolist()}")
+
+    print(f"Using date column: {date_col}")
+
+    df["date"] = pd.to_datetime(df[date_col], errors="coerce")
+
     df["iso_year"] = df["date"].dt.isocalendar().year
     df["iso_week"] = df["date"].dt.isocalendar().week
 
