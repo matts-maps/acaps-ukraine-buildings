@@ -5,7 +5,7 @@ import os
 AUTH_URL = "https://api.acaps.org/api/v1/token-auth/"
 DATA_URL = "https://api.acaps.org/api/v1/ukraine/damages/"
 
-START_DATE = "2026-05-01"
+START_DATE = "2026-06-01"
 END_DATE = "2026-06-30"
 
 print("Starting ACAPS fetch script...")
