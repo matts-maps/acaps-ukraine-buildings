@@ -10,10 +10,6 @@ title: Home
 <title>E-PACC Ukraine – Dynamic Building Damage Dashboard</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
-
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: Arial, sans-serif; background: #f4f6f8; color: #333; }
@@ -89,8 +85,8 @@ title: Home
   }
   #controls button:hover { background: #255080; }
 
-  /* Card Modules */
-  .dashboard-card {
+  /* Chart layout structure */
+  #chart-card {
     display: none;
     background: #fff;
     border-radius: 10px;
@@ -98,32 +94,11 @@ title: Home
     margin-top: 20px;
     box-shadow: 0 1px 4px rgba(0,0,0,0.08);
   }
-  .dashboard-card h2 { font-size: 16px; color: #1a3a5c; margin-bottom: 4px; }
-  .dashboard-card .subtitle { font-size: 12px; color: #888; margin-bottom: 20px; }
+  #chart-card h2 { font-size: 16px; color: #1a3a5c; margin-bottom: 4px; }
+  #chart-card .subtitle { font-size: 12px; color: #888; margin-bottom: 20px; }
   #chart-wrapper { position: relative; height: 400px; }
-  
-  /* Map Canvas Styling */
-  #map-wrapper { 
-    height: 500px; 
-    border-radius: 8px; 
-    border: 1px solid #cbd5e1;
-    z-index: 1;
-  }
 
-  /* Map Info Legend Box */
-  .info-legend {
-    padding: 10px 14px;
-    font: 12px/14px Arial, Helvetica, sans-serif;
-    background: white;
-    background: rgba(255,255,255,0.9);
-    box-shadow: 0 0 15px rgba(0,0,0,0.2);
-    border-radius: 5px;
-    line-height: 18px;
-    color: #555;
-  }
-  .info-legend i { width: 18px; height: 18px; float: left; margin-right: 8px; opacity: 0.8; }
-
-  /* Metrics panels */
+  /* Metrics cards panels */
   #stats {
     display: none;
     gap: 16px;
@@ -144,6 +119,7 @@ title: Home
   .stat-box.comparison-year .value { color: #e07b39; }
   .stat-box .sub { font-size: 11px; color: #888; margin-top: 4px; line-height: 1.3; }
 
+  /* Dynamic Percentage indicators */
   .change { font-size: 14px; margin-top: 4px; font-weight: 700; }
   .change.up { color: #c0392b; }
   .change.down { color: #27ae60; }
@@ -156,8 +132,8 @@ title: Home
 
 <header>
   <div>
-    <h1>E-PACC Ukraine — Dynamic Building Damage Framework Analytics</h1>
-    <span>Automated System Dashboard with Regional Tracking Maps</span>
+    <h1>E-PACC Ukraine — Custom Dynamic Historical Building Damage Analytics</h1>
+    <span>Automated Pipeline Monitoring Dashboard</span>
   </div>
 </header>
 
@@ -165,7 +141,7 @@ title: Home
 
   <div id="drop-zone">
     <div class="icon">🔄</div>
-    <p>Ingesting datasets and compiling spatial metrics...</p>
+    <p>Ingesting datasets and calculating variable matrix maps...</p>
   </div>
   <div id="error-msg"></div>
 
@@ -182,12 +158,12 @@ title: Home
 
       <div class="control-group">
         <label for="base-year-select">Baseline Year:</label>
-        <select id="base-year-select" onchange="updateDashboard()"></select>
+        <select id="base-year-select" onchange="updateChartAndStats()"></select>
       </div>
 
       <div class="control-group">
         <label for="comp-year-select">Comparison Year:</label>
-        <select id="comp-year-select" onchange="updateDashboard()"></select>
+        <select id="comp-year-select" onchange="updateChartAndStats()"></select>
       </div>
     </div>
 
@@ -196,11 +172,11 @@ title: Home
         <label for="period-select">Highlight Target Period:</label>
         <select id="period-select" style="min-width: 280px;"></select>
       </div>
-      <button onclick="updateDashboard()">Refresh Framework Visuals</button>
+      <button onclick="updateChartAndStats()">Refresh Visualisations</button>
     </div>
   </div>
 
-  <div id="chart-card" class="dashboard-card">
+  <div id="chart-card">
     <h2 id="chart-title">Damaged Buildings Time Series</h2>
     <div class="subtitle" id="chart-subtitle"></div>
     <div id="chart-wrapper">
@@ -222,14 +198,8 @@ title: Home
     <div class="stat-box" id="stat-change" style="border-left-color:#555">
       <div class="label">Historical Period Delta</div>
       <div class="value change neutral" id="v-change">—</div>
-      <div class="sub" id="sub-change">Comparing frames grouped by index position</div>
+      <div class="sub" id="sub-change">Comparing targeted frames matching exactly by normalized calendar index position</div>
     </div>
-  </div>
-
-  <div id="map-card" class="dashboard-card">
-    <h2>Regional Structural Damage Heatmap — Aggregate Geographic View</h2>
-    <div class="subtitle">Real-time geographical distribution layout of structural incidents across Ukraine's Oblasts for your selected Comparison Year.</div>
-    <div id="map-wrapper"></div>
   </div>
 
 </div>
@@ -237,10 +207,7 @@ title: Home
 <script>
 let rawCSVData = [];
 let chartInstance = null;
-let mapInstance = null;
-let geojsonLayer = null;
 let uniqueYearsList = [];
-let oblastDamageTotals = {}; // Stores dynamically grouped regional tracking metrics
 
 // Automated async PapaParse fetch loop matching Jekyll tracking pattern
 window.addEventListener('DOMContentLoaded', () => {
@@ -252,13 +219,13 @@ window.addEventListener('DOMContentLoaded', () => {
     skipEmptyLines: true,
     complete: function(results) {
       if (!results.data || results.data.length === 0) {
-        showError('Empty database parsed.');
+        showError('Empty target database context parsed.');
         return;
       }
       rawCSVData = results.data;
       initializeDashboardOptions();
     },
-    error: () => showError('Unable to route repository CSV file source arrays.')
+    error: () => showError('Unable to route repository CSV payload array map.')
   });
 });
 
@@ -269,6 +236,7 @@ function showError(msg) {
   document.getElementById('drop-zone').style.display = 'none';
 }
 
+// Scans dataset dynamically to automatically identify years
 function initializeDashboardOptions() {
   const detectedYears = new Set();
   
@@ -283,10 +251,11 @@ function initializeDashboardOptions() {
   uniqueYearsList = Array.from(detectedYears).sort((a, b) => a - b);
   
   if (uniqueYearsList.length < 1) {
-    showError("Could not extract timeline metrics from source rows.");
+    showError("Could not extract any historical timeline metadata rows.");
     return;
   }
 
+  // Populate dynamic comparison dropdown selectors
   const baseSel = document.getElementById('base-year-select');
   const compSel = document.getElementById('comp-year-select');
   
@@ -298,6 +267,7 @@ function initializeDashboardOptions() {
     compSel.appendChild(new Option(yr, yr));
   });
 
+  // Smart defaults: Set baseline to second to last year, comparison to latest year
   if (uniqueYearsList.length >= 2) {
     baseSel.value = uniqueYearsList[uniqueYearsList.length - 2];
     compSel.value = uniqueYearsList[uniqueYearsList.length - 1];
@@ -307,12 +277,12 @@ function initializeDashboardOptions() {
   }
 
   buildPeriodDropdowns();
-  initLeafletCanvas();
   
   document.getElementById('drop-zone').style.display = 'none';
   document.getElementById('controls').style.display = 'flex';
 }
 
+// Dynamically segments a 365-day calendar into user-chosen intervals
 function getPeriodLabels(daysInStep) {
   const labels = [];
   const totalPeriods = Math.ceil(365 / daysInStep);
@@ -322,6 +292,7 @@ function getPeriodLabels(daysInStep) {
     let endDay = startDay + daysInStep - 1;
     if (endDay > 365) endDay = 365;
 
+    // Use a fixed leap-neutral frame (2025) to derive standard calendar labels
     const dStart = new Date(2025, 0, startDay);
     const dEnd = new Date(2025, 0, endDay);
     
@@ -347,13 +318,8 @@ function buildPeriodDropdowns() {
     pSelect.appendChild(new Option(`Period ${index + 1}: (${label})`, index));
   });
   
-  pSelect.value = 0;
-  updateDashboard();
-}
-
-function updateDashboard() {
+  pSelect.value = 0; // Default to highlight the first period
   updateChartAndStats();
-  updateSpatialMapLayer();
 }
 
 function updateChartAndStats() {
@@ -366,9 +332,7 @@ function updateChartAndStats() {
   const baseCounts = new Array(periodLabels.length).fill(0);
   const compCounts = new Array(periodLabels.length).fill(0);
 
-  // Clear regional counter dictionary for this execution
-  oblastDamageTotals = {};
-
+  // Group damage metrics into calculated timeline matrices
   rawCSVData.forEach(row => {
     const dateStr = (row.date_of_event || '').trim();
     if (!dateStr) return;
@@ -383,20 +347,10 @@ function updateChartAndStats() {
     if (pIdx < 0) pIdx = 0;
 
     if (year === baseYear) baseCounts[pIdx]++;
-    
-    // Process comparison tracking metrics + aggregate space coordinates
-    if (year === compYear) {
-      compCounts[pIdx]++;
-      
-      // Map and extract clean Oblast labels
-      let oblast = row.oblast || row.region || 'Unknown';
-      oblast = oblast.trim().replace(/ Oblast$/i, '');
-      if(oblast) {
-        oblastDamageTotals[oblast] = (oblastDamageTotals[oblast] || 0) + 1;
-      }
-    }
+    if (year === compYear) compCounts[pIdx]++;
   });
 
+  // Render ChartJS Layer Line matrix
   const highlightPlugin = {
     id: 'dynamicHighlightBand',
     beforeDraw(chart) {
@@ -406,7 +360,7 @@ function updateChartAndStats() {
       const x0 = xScale.getPixelForValue(highlightIdx) - xScale.width / (periodLabels.length * 2);
       const x1 = xScale.getPixelForValue(highlightIdx) + xScale.width / (periodLabels.length * 2);
       ctx.save();
-      ctx.fillStyle = 'rgba(230, 126, 34, 0.15)';
+      ctx.fillStyle = 'rgba(230, 126, 34, 0.15)'; // Elegant orange accent transparent highlight
       ctx.fillRect(x0, chartArea.top, x1 - x0, chartArea.bottom - chartArea.top);
       ctx.restore();
     }
@@ -456,6 +410,7 @@ function updateChartAndStats() {
           ticks: {
             maxRotation: 45,
             callback: function(val, idx) {
+              // Shows every second label on the x-axis to keep text legible
               return idx % 2 === 0 ? periodLabels[idx].split(' – ')[0] : '';
             }
           },
@@ -467,6 +422,7 @@ function updateChartAndStats() {
     plugins: [highlightPlugin]
   });
 
+  // Calculate dynamic dashboard stat summary blocks
   document.getElementById('chart-card').style.display = 'block';
   document.getElementById('chart-title').textContent = `Damaged Buildings Profile Breakdown — ${baseYear} vs ${compYear}`;
   document.getElementById('chart-subtitle').textContent = `Highlighted Interval Window: ${periodLabels[highlightIdx]}`;
@@ -495,95 +451,6 @@ function updateChartAndStats() {
   }
 
   document.getElementById('stats').style.display = 'flex';
-}
-
-/* LEAFLET GEOGRAPHIC DATA MAPPING LOGIC ENGINE */
-let geojsonDataCache = null;
-
-function initLeafletCanvas() {
-  document.getElementById('map-card').style.display = 'block';
-  
-  if (mapInstance) return;
-
-  // Center the view canvas over coordinates matching Ukraine's geographical center
-  mapInstance = L.map('map-wrapper').setView([48.3794, 31.1656], 6);
-
-  // Render a clean background layout styling layer
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-    subdomains: 'abcd',
-    maxZoom: 20
-  }).addTo(mapInstance);
-
-  // Async download open-source boundaries for Ukraine administrative areas
-  fetch('https://raw.githubusercontent.com/wgroeneveld/ukraine-geojson/master/ukraine.geojson')
-    .then(res => res.json())
-    .then(data => {
-      geojsonDataCache = data;
-      updateSpatialMapLayer();
-    })
-    .catch(err => console.error("Could not fetch boundaries:", err));
-}
-
-// Generate color hues matching severity thresholds
-function getChoroplethColor(d) {
-  return d > 1000 ? '#7f0000' :
-         d > 500  ? '#b30000' :
-         d > 200  ? '#d7301f' :
-         d > 50   ? '#ef6548' :
-         d > 10   ? '#fc8d59' :
-         d > 0    ? '#fdd49e' :
-                    '#f7f7f7'; // Gray out safe or unaffected regions
-}
-
-function updateSpatialMapLayer() {
-  if (!mapInstance || !geojsonDataCache) return;
-
-  if (geojsonLayer) {
-    mapInstance.removeLayer(geojsonLayer);
-  }
-
-  // Cross-reference GeoJSON vector keys with parsed data row metrics
-  geojsonLayer = L.geoJson(geojsonDataCache, {
-    style: function(feature) {
-      // Normalize spelling keys to align vector arrays with API maps
-      let name = feature.properties.name || '';
-      name = name.replace(/’/g, "'"); 
-      const damageCount = oblastDamageTotals[name] || 0;
-      
-      return {
-        fillColor: getChoroplethColor(damageCount),
-        weight: 1.5,
-        opacity: 1,
-        color: '#64748b',
-        fillOpacity: 0.8
-      };
-    },
-    onEachFeature: function(feature, layer) {
-      let name = feature.properties.name || 'Unknown Region';
-      name = name.replace(/’/g, "'");
-      const total = oblastDamageTotals[name] || 0;
-      
-      layer.bindPopup(`
-        <div style="font-family: Arial, sans-serif; font-size: 13px;">
-          <strong style="color: #1a3a5c; font-size:14px;">${name} Oblast</strong><br/>
-          <hr style="margin: 4px 0; border: 0; border-top: 1px solid #eee;"/>
-          Total Structural Damages: <strong style="color:#d35400;">${total.toLocaleString()}</strong>
-        </div>
-      `);
-      
-      layer.on({
-        mouseover: function(e) {
-          const l = e.target;
-          l.setStyle({ weight: 3, color: '#1e293b', fillOpacity: 0.9 });
-          l.bringToFront();
-        },
-        mouseout: function(e) {
-          geojsonLayer.resetStyle(e.target);
-        }
-      });
-    }
-  }).addTo(mapInstance);
 }
 </script>
 </body>
