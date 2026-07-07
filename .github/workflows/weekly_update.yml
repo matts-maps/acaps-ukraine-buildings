@@ -30,9 +30,15 @@ jobs:
       run: python update_data.py
 
     - name: Commit and push changes
-      run: |
-        git config --global user.name "github-actions[bot]"
-        git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
-        git add ukraine_damages.csv
-        # Only commit if changes were actually made
-        git diff-index --quiet HEAD || (git commit -m "Automated weekly ACAPS data update" && git push)
+        run: |
+            git config --global user.name "github-actions[bot]"
+            git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            
+            # Check if the file exists before trying to add it
+            if [ -f ukraine_damages.csv ]; then
+            git add ukraine_damages.csv
+            # Only commit if there are actual changes to save
+            git diff-index --quiet HEAD || (git commit -m "Automated weekly ACAPS data update" && git push)
+            else
+            echo "ukraine_damages.csv was not created. Skipping git commit."
+            fi
