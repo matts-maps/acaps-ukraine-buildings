@@ -1,0 +1,38 @@
+name: Weekly ACAPS Data Update
+
+on:
+  schedule:
+    # Runs at 00:00 every Monday (UTC)
+    - cron: '0 0 * * 1'
+  workflow_dispatch: # Allows you to manually trigger the run whenever you want
+
+jobs:
+  update-csv:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write # Allows the bot to push changes back to the repo
+
+    steps:
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    - name: Set up Python
+      uses: actions/setup-python@v5
+      with:
+        python-version: '3.10'
+
+    - name: Install dependencies
+      run: |
+        python -m pip install --upgrade pip
+        pip install pandas requests
+
+    - name: Run update script
+      run: python update_data.py
+
+    - name: Commit and push changes
+      run: |
+        git config --global user.name "github-actions[bot]"
+        git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+        git add ukraine_damages.csv
+        # Only commit if changes were actually made
+        git diff-index --quiet HEAD || (git commit -m "Automated weekly ACAPS data update" && git push)
