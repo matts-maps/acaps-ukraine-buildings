@@ -31,16 +31,18 @@ title: Home
 
   .container { max-width: 1000px; margin: 32px auto; padding: 0 20px; }
 
-  /* Loading State */
-  #drop-zone {
-    border: 2px dashed #a0b4c8;
-    border-radius: 10px;
+  /* Loading state indicator */
+  #loading-zone {
     background: #fff;
+    border-radius: 10px;
     padding: 40px;
     text-align: center;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
   }
-  #drop-zone .icon { font-size: 36px; margin-bottom: 10px; }
-  #drop-zone p { color: #555; font-size: 14px; }
+  #loading-zone .icon { font-size: 36px; margin-bottom: 10px; animation: spin 2s linear infinite; display: inline-block; }
+  #loading-zone p { color: #555; font-size: 14px; }
+
+  @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 
   /* Configuration Controls panel */
   #controls {
@@ -110,19 +112,6 @@ title: Home
     z-index: 1;
   }
 
-  /* Map Info Legend Box */
-  .info-legend {
-    padding: 10px 14px;
-    font: 12px/14px Arial, Helvetica, sans-serif;
-    background: white;
-    background: rgba(255,255,255,0.9);
-    box-shadow: 0 0 15px rgba(0,0,0,0.2);
-    border-radius: 5px;
-    line-height: 18px;
-    color: #555;
-  }
-  .info-legend i { width: 18px; height: 18px; float: left; margin-right: 8px; opacity: 0.8; }
-
   /* Metrics panels */
   #stats {
     display: none;
@@ -163,9 +152,9 @@ title: Home
 
 <div class="container">
 
-  <div id="drop-zone">
+  <div id="loading-zone">
     <div class="icon">🔄</div>
-    <p>Ingesting datasets and compiling spatial metrics...</p>
+    <p>Ingesting summary database metrics dynamically...</p>
   </div>
   <div id="error-msg"></div>
 
@@ -240,11 +229,12 @@ let chartInstance = null;
 let mapInstance = null;
 let geojsonLayer = null;
 let uniqueYearsList = [];
-let oblastDamageTotals = {}; // Stores dynamically grouped regional tracking metrics
+let oblastDamageTotals = {}; 
+let geojsonDataCache = null;
 
-// Automated async PapaParse fetch loop matching Jekyll tracking pattern
+// Trigger internal retrieval immediately upon DOM frame readiness
 window.addEventListener('DOMContentLoaded', () => {
-  const csvPath = 'data/ukraine-damages.csv'; 
+  const csvPath = 'data/ukraine-damages-weekly-summary.csv'; 
   
   Papa.parse(csvPath, {
     download: true,
@@ -252,13 +242,13 @@ window.addEventListener('DOMContentLoaded', () => {
     skipEmptyLines: true,
     complete: function(results) {
       if (!results.data || results.data.length === 0) {
-        showError('Empty database parsed.');
+        showError('Could not process summary dataset payload.');
         return;
       }
       rawCSVData = results.data;
       initializeDashboardOptions();
     },
-    error: () => showError('Unable to route repository CSV file source arrays.')
+    error: () => showError('Unable to load server endpoint target: data/ukraine-damages-weekly-summary.csv')
   });
 });
 
@@ -266,7 +256,7 @@ function showError(msg) {
   const el = document.getElementById('error-msg');
   el.textContent = msg;
   el.style.display = 'block';
-  document.getElementById('drop-zone').style.display = 'none';
+  document.getElementById('loading-zone').style.display = 'none';
 }
 
 function initializeDashboardOptions() {
@@ -283,7 +273,7 @@ function initializeDashboardOptions() {
   uniqueYearsList = Array.from(detectedYears).sort((a, b) => a - b);
   
   if (uniqueYearsList.length < 1) {
-    showError("Could not extract timeline metrics from source rows.");
+    showError("Could not extract timelines from summarized database maps.");
     return;
   }
 
@@ -309,7 +299,7 @@ function initializeDashboardOptions() {
   buildPeriodDropdowns();
   initLeafletCanvas();
   
-  document.getElementById('drop-zone').style.display = 'none';
+  document.getElementById('loading-zone').style.display = 'none';
   document.getElementById('controls').style.display = 'flex';
 }
 
@@ -366,7 +356,6 @@ function updateChartAndStats() {
   const baseCounts = new Array(periodLabels.length).fill(0);
   const compCounts = new Array(periodLabels.length).fill(0);
 
-  // Clear regional counter dictionary for this execution
   oblastDamageTotals = {};
 
   rawCSVData.forEach(row => {
@@ -382,17 +371,22 @@ function updateChartAndStats() {
     if (pIdx >= periodLabels.length) pIdx = periodLabels.length - 1;
     if (pIdx < 0) pIdx = 0;
 
-    if (year === baseYear) baseCounts[pIdx]++;
+    // Support flexible count structure (handles row multipliers if present, otherwise default to 1)
+    const incidenceWeight = parseInt(row.damaged_buildings || row.count || 1);
+
+    if (year === baseYear) baseCounts[pIdx] += incidenceWeight;
     
-    // Process comparison tracking metrics + aggregate space coordinates
     if (year === compYear) {
-      compCounts[pIdx]++;
+      compCounts[pIdx] += incidenceWeight;
       
-      // Map and extract clean Oblast labels
-      let oblast = row.oblast || row.region || 'Unknown';
+      let oblast = row.oblast || row.region || row.admin1 || row.admin1_txt || 'Unknown';
       oblast = oblast.trim().replace(/ Oblast$/i, '');
+      
+      if (oblast === 'Zaporizhzhia') oblast = 'Zaporizhia';
+      if (oblast === 'Kyiv City') oblast = 'Kyiv';
+
       if(oblast) {
-        oblastDamageTotals[oblast] = (oblastDamageTotals[oblast] || 0) + 1;
+        oblastDamageTotals[oblast] = (oblastDamageTotals[oblast] || 0) + incidenceWeight;
       }
     }
   });
@@ -497,25 +491,22 @@ function updateChartAndStats() {
   document.getElementById('stats').style.display = 'flex';
 }
 
-/* LEAFLET GEOGRAPHIC DATA MAPPING LOGIC ENGINE */
-let geojsonDataCache = null;
-
 function initLeafletCanvas() {
   document.getElementById('map-card').style.display = 'block';
   
-  if (mapInstance) return;
+  if (mapInstance) {
+    mapInstance.invalidateSize();
+    return;
+  }
 
-  // Center the view canvas over coordinates matching Ukraine's geographical center
   mapInstance = L.map('map-wrapper').setView([48.3794, 31.1656], 6);
 
-  // Render a clean background layout styling layer
   L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
     attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
     subdomains: 'abcd',
     maxZoom: 20
   }).addTo(mapInstance);
 
-  // Async download open-source boundaries for Ukraine administrative areas
   fetch('https://raw.githubusercontent.com/wgroeneveld/ukraine-geojson/master/ukraine.geojson')
     .then(res => res.json())
     .then(data => {
@@ -525,7 +516,6 @@ function initLeafletCanvas() {
     .catch(err => console.error("Could not fetch boundaries:", err));
 }
 
-// Generate color hues matching severity thresholds
 function getChoroplethColor(d) {
   return d > 1000 ? '#7f0000' :
          d > 500  ? '#b30000' :
@@ -533,7 +523,7 @@ function getChoroplethColor(d) {
          d > 50   ? '#ef6548' :
          d > 10   ? '#fc8d59' :
          d > 0    ? '#fdd49e' :
-                    '#f7f7f7'; // Gray out safe or unaffected regions
+                    '#f7f7f7'; 
 }
 
 function updateSpatialMapLayer() {
@@ -543,10 +533,8 @@ function updateSpatialMapLayer() {
     mapInstance.removeLayer(geojsonLayer);
   }
 
-  // Cross-reference GeoJSON vector keys with parsed data row metrics
   geojsonLayer = L.geoJson(geojsonDataCache, {
     style: function(feature) {
-      // Normalize spelling keys to align vector arrays with API maps
       let name = feature.properties.name || '';
       name = name.replace(/’/g, "'"); 
       const damageCount = oblastDamageTotals[name] || 0;
@@ -584,6 +572,8 @@ function updateSpatialMapLayer() {
       });
     }
   }).addTo(mapInstance);
+
+  setTimeout(() => { mapInstance.invalidateSize(); }, 200);
 }
 </script>
 </body>
