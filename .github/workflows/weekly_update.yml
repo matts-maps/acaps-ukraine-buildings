@@ -45,4 +45,3 @@ steps:
         git commit -m "Weekly ACAPS update"
         git push
       fi
-```
