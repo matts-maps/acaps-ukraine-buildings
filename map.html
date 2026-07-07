@@ -1,0 +1,297 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>E-PACC Ukraine – Dynamic Building Damage Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f4f6f8; color: #333; }
+
+  header {
+    background: #112233; color: #fff; padding: 20px 28px;
+    display: flex; align-items: center; justify-content: space-between; border-bottom: 4px solid #ffd700;
+  }
+  header h1 { font-size: 20px; font-weight: 600; }
+  header span { font-size: 13px; opacity: 0.7; }
+
+  .container { max-width: 1200px; margin: 32px auto; padding: 0 20px; }
+
+  /* Notification Banner Styles */
+  #status-banner {
+    background: #fff; border-radius: 10px; padding: 15px 20px; text-align: center; 
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08); margin-bottom: 24px; font-size: 14px; font-weight: 500;
+  }
+  #error-msg { color: #c0392b; font-weight: bold; }
+
+  /* Control Panel Style */
+  .control-card {
+    background: #fff; border-radius: 10px; padding: 24px; margin-bottom: 24px; box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  }
+  .control-card h3 { font-size: 14px; font-weight: 600; color: #444; margin-bottom: 12px; }
+  
+  /* Multi-Select Year Checklist */
+  .year-checklist {
+    display: flex; flex-wrap: wrap; gap: 16px; padding: 12px 16px; 
+    border: 1px solid #cbd5e1; border-radius: 6px; background: #f8fafc;
+  }
+  .year-item { display: flex; align-items: center; gap: 8px; font-size: 14px; cursor: pointer; font-weight: 500; }
+  .year-item input { cursor: pointer; width: 16px; height: 16px; }
+
+  /* Dashboard Grid */
+  .dashboard-grid {
+    display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 20px; margin-bottom: 24px;
+  }
+  .metric-card {
+    background: #fff; padding: 20px; border-radius: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.08); border-left: 4px solid #112233;
+  }
+  .metric-card h3 { font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; color: #64748b; margin-bottom: 6px; }
+  .metric-card .value { font-size: 24px; font-weight: 700; color: #0f172a; }
+
+  /* Chart Layout Container */
+  .chart-card {
+    background: #fff; border-radius: 10px; padding: 28px; box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  }
+  .chart-card h2 { font-size: 16px; color: #112233; margin-bottom: 4px; }
+  .chart-card .subtitle { font-size: 12px; color: #888; margin-bottom: 24px; }
+  .chart-container { position: relative; height: 450px; width: 100%; }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>E-PACC Ukraine — Building Damage Analytical Panel</h1>
+    <span>Multi-Year Comparison Dashboard Matrix</span>
+  </div>
+</header>
+
+<div class="container">
+  <div id="status-banner">
+    <span id="status-text">Initialization: Activating analytical workflow engine...</span>
+  </div>
+
+  <div class="control-card">
+    <h3>Select Horizon Target Years to Compare (Select Multiple):</h3>
+    <div id="year-checklist-container" class="year-checklist">
+      <span style="color:#777; font-size:13px; font-style:italic;">Awaiting CSV pipeline validation...</span>
+    </div>
+  </div>
+
+  <div class="dashboard-grid">
+    <div class="metric-card" style="border-left-color: #3b82f6;">
+      <h3>Total Selection Damages</h3>
+      <div id="metric-total" class="value">0</div>
+    </div>
+    <div class="metric-card" style="border-left-color: #ef4444;">
+      <h3>Peak Damage (Single Week)</h3>
+      <div id="metric-peak" class="value">0</div>
+    </div>
+    <div class="metric-card" style="border-left-color: #10b981;">
+      <h3>Weekly Average</h3>
+      <div id="metric-avg" class="value">0</div>
+    </div>
+  </div>
+
+  <div class="chart-card">
+    <h2 id="chart-title">Dynamic Incident Timeline Multi-Plot</h2>
+    <div class="subtitle">Normalized week-by-week layout mapping independent trajectory trends over checked historical cycles.</div>
+    <div class="chart-container">
+      <canvas id="timeSeriesChart"></canvas>
+    </div>
+  </div>
+</div>
+
+<script>
+let rawCSVData = [];
+let chartInstance = null;
+
+// Distinct operational color palette arrays to assign unique line colors to years dynamically
+const lineColors = ['#3b82f6', '#ef4444', '#10b981', '#f59e0b', '#8b5cf6', '#ec4899', '#6366f1'];
+
+window.addEventListener('DOMContentLoaded', () => {
+  loadCSVPayload();
+});
+
+function loadCSVPayload() {
+  Papa.parse('data/ukraine-damages-weekly-summary.csv', {
+    download: true,
+    header: true,
+    skipEmptyLines: true,
+    complete: function(results) {
+      if (!results.data || results.data.length === 0) {
+        showError('CSV file parsed successfully, but zero tracking entries were detected.');
+        return;
+      }
+      rawCSVData = results.data;
+      updateStatus("Database linked successfully. Building timeline checklists...");
+      buildYearChecklist();
+    },
+    error: () => showError("Data Pipeline Error: Could not resolve file 'data/ukraine-damages-weekly-summary.csv'. Verify your repository paths.")
+  });
+}
+
+function buildYearChecklist() {
+  const detectedYears = new Set();
+  rawCSVData.forEach(row => {
+    const dateStr = (row.date_of_event || row.Date || row.date || '').trim();
+    if (!dateStr) return;
+    const d = new Date(dateStr);
+    if (!isNaN(d)) detectedYears.add(d.getFullYear());
+  });
+
+  const uniqueYears = Array.from(detectedYears).sort((a, b) => b - a);
+  if (uniqueYears.length < 1) {
+    showError("Attribute Error: Unable to determine timeline properties within spreadsheet records.");
+    return;
+  }
+
+  const checklistContainer = document.getElementById('year-checklist-container');
+  checklistContainer.innerHTML = '';
+
+  uniqueYears.forEach((yr, idx) => {
+    const label = document.createElement('label');
+    label.className = 'year-item';
+    
+    const checkbox = document.createElement('input');
+    checkbox.type = 'checkbox';
+    checkbox.value = yr;
+    // Check the two most recent available years automatically as initial defaults
+    if (idx === 0 || idx === 1) checkbox.checked = true; 
+    checkbox.addEventListener('change', renderMultiYearChart);
+
+    label.appendChild(checkbox);
+    label.appendChild(document.createTextNode(` ${yr} Framework`));
+    checklistContainer.appendChild(label);
+  });
+
+  updateStatus("✅ System running. All temporal streams operational.");
+  renderMultiYearChart();
+}
+
+// Function to find which calendar week of the year a specific date falls into (1-53)
+function getWeekNumber(d) {
+  d = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  d.setUTCDate(d.getUTCDate() + 4 - (d.getUTCDay() || 7));
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  return Math.ceil((((d - yearStart) / 86400000) + 1) / 7);
+}
+
+function renderMultiYearChart() {
+  const checkedBoxes = document.querySelectorAll('#year-checklist-container input[type="checkbox"]:checked');
+  const selectedYears = Array.from(checkedBoxes).map(cb => parseInt(cb.value)).sort((a, b) => a - b);
+  
+  if (selectedYears.length === 0) {
+    updateMetricCards(0, 0, 0);
+    if (chartInstance) chartInstance.destroy();
+    document.getElementById('chart-title').textContent = "No Data Streams Active";
+    return;
+  }
+
+  document.getElementById('chart-title').textContent = selectedYears.length === 1 
+    ? `${selectedYears[0]} Structural Damage Profile Trend` 
+    : `Aggregated Multi-Year Damage Performance Trend (${selectedYears.join(', ')})`;
+
+  // Structure sub-objects for tracking structural damage data per week per active year
+  // Format: { 2022: { week1: total, week2: total }, 2023: {...} }
+  const temporalDataMatrix = {};
+  selectedYears.forEach(yr => { temporalDataMatrix[yr] = {}; });
+
+  let aggregateTotalVolume = 0;
+  let historicalWeekMaxPeak = 0;
+  let activeDataPointCount = 0;
+
+  rawCSVData.forEach(row => {
+    const dateStr = (row.date_of_event || row.Date || row.date || '').trim();
+    if (!dateStr) return;
+    const d = new Date(dateStr);
+    if (isNaN(d)) return;
+
+    const rowYear = d.getFullYear();
+    if (selectedYears.includes(rowYear)) {
+      const weekNum = getWeekNumber(d);
+      const count = parseInt(row.damaged_buildings || row.count || 1);
+
+      temporalDataMatrix[rowYear][weekNum] = (temporalDataMatrix[rowYear][weekNum] || 0) + count;
+      aggregateTotalVolume += count;
+    }
+  });
+
+  // Compile datasets formatting rules for Chart.js array injects
+  const datasetsArray = selectedYears.map((yr, idx) => {
+    const chartPoints = [];
+    // Cycle through a complete standardized year horizon (Weeks 1 through 53)
+    for (let w = 1; w <= 53; w++) {
+      const val = temporalDataMatrix[yr][w] || 0;
+      chartPoints.push(val);
+      
+      // Update global analytical peak/average values if active points are above 0
+      if (temporalDataMatrix[yr][w] !== undefined) {
+        if (val > historicalWeekMaxPeak) historicalWeekMaxPeak = val;
+        activeDataPointCount++;
+      }
+    }
+
+    const assignedColor = lineColors[idx % lineColors.length];
+    return {
+      label: `Year ${yr}`,
+      data: chartPoints,
+      borderColor: assignedColor,
+      backgroundColor: assignedColor + '15', // Subtle line shading fill
+      borderWidth: 2.5,
+      tension: 0.25,
+      pointRadius: 2,
+      fill: false
+    };
+  });
+
+  // Calculate moving evaluation metrics averages safely
+  const averageVolumePerWeek = activeDataPointCount > 0 ? Math.round(aggregateTotalVolume / activeDataPointCount) : 0;
+  updateMetricCards(aggregateTotalVolume, historicalWeekMaxPeak, averageVolumePerWeek);
+
+  // Re-generate chart canvas frame instances cleanly to avoid hover redraw bugs
+  if (chartInstance) chartInstance.destroy();
+
+  const chartLabels = Array.from({ length: 53 }, (_, i) => `Week ${i + 1}`);
+  const ctx = document.getElementById('timeSeriesChart').getContext('2d');
+
+  chartInstance = new Chart(ctx, {
+    type: 'line',
+    data: {
+      labels: chartLabels,
+      datasets: datasetsArray
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: { position: 'top', labels: { boxWidth: 15, font: { size: 12 } } },
+        tooltip: { mode: 'index', intersect: false }
+      },
+      scales: {
+        x: { grid: { display: false }, ticks: { font: { size: 11 }, maxTicksLimit: 26 } },
+        y: { beginAtZero: true, ticks: { font: { size: 11 } }, title: { display: true, text: 'Incidents Logged' } }
+      }
+    }
+  });
+}
+
+function updateMetricCards(total, peak, avg) {
+  document.getElementById('metric-total').textContent = total.toLocaleString();
+  document.getElementById('metric-peak').textContent = peak.toLocaleString();
+  document.getElementById('metric-avg').textContent = avg.toLocaleString();
+}
+
+function updateStatus(msg) {
+  document.getElementById('status-text').textContent = msg;
+}
+
+function showError(msg) {
+  document.getElementById('status-banner').innerHTML = `<span id="error-msg">⚠️ ${msg}</span>`;
+}
+</script>
+</body>
+</html>
