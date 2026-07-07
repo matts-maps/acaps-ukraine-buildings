@@ -1,0 +1,213 @@
+<script>
+let parsedData = [];
+let chartInstance = null;
+let fortnightLabels = [];
+let counts2025 = [];
+let counts2026 = [];
+
+// Automatically fetch data on page load
+window.addEventListener('DOMContentLoaded', () => {
+  const csvPath = 'ukraine-damages.csv'; // Relative file path inside the data folder
+  
+  Papa.parse(csvPath, {
+    download: true,
+    header: true,
+    skipEmptyLines: true,
+    complete: function(results) {
+      if (!results.data || results.data.length === 0) {
+        showError('Could not read dataset — empty or missing data file.');
+        return;
+      }
+      parsedData = results.data;
+      processData();
+    },
+    error: () => showError('Error loading automated data file. Make sure ukraine-damages.csv is in the same directory.')
+  });
+});
+
+function showError(msg) {
+  const el = document.getElementById('error-msg');
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+
+function dayOfYear(d) {
+  const start = new Date(d.getFullYear(), 0, 0);
+  const diff = d - start;
+  return Math.floor(diff / 86400000);
+}
+
+function fortnightIndex(dateStr) {
+  const d = new Date(dateStr);
+  if (isNaN(d)) return null;
+  return Math.floor((dayOfYear(d) - 1) / 14);
+}
+
+function fortnightLabel(idx) {
+  const base = new Date(2025, 0, 1);
+  base.setDate(1 + idx * 14);
+  const end = new Date(base);
+  end.setDate(base.getDate() + 13);
+  const fmt = d => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  return fmt(base) + ' – ' + fmt(end);
+}
+
+function processData() {
+  const c2025 = new Array(27).fill(0);
+  const c2026 = new Array(27).fill(0);
+
+  for (const row of parsedData) {
+    const dateStr = (row.date_of_event || '').trim();
+    if (!dateStr) continue;
+    const year = parseInt(dateStr.slice(0, 4));
+    const idx = fortnightIndex(dateStr);
+    if (idx === null || idx < 0 || idx > 26) continue;
+    if (year === 2025) c2025[idx]++;
+    else if (year === 2026) c2026[idx]++;
+  }
+
+  let maxIdx = 0;
+  for (let i = 26; i >= 0; i--) {
+    if (c2025[i] > 0 || c2026[i] > 0) { maxIdx = i; break; }
+  }
+
+  fortnightLabels = [];
+  counts2025 = [];
+  counts2026 = [];
+  for (let i = 0; i <= maxIdx; i++) {
+    fortnightLabels.push(fortnightLabel(i));
+    counts2025.push(c2025[i]);
+    counts2026.push(c2026[i]);
+  }
+
+  const sel = document.getElementById('fortnight-select');
+  sel.innerHTML = '';
+  fortnightLabels.forEach((lbl, i) => {
+    const opt = document.createElement('option');
+    opt.value = i;
+    opt.textContent = lbl;
+    sel.appendChild(opt);
+  });
+  
+  let defaultIdx = 0;
+  for (let i = counts2026.length - 1; i >= 0; i--) {
+    if (counts2026[i] > 0) { defaultIdx = i; break; }
+  }
+  sel.value = defaultIdx;
+
+  // Adjust container display configurations seamlessly
+  document.getElementById('drop-zone').style.display = 'none';
+  document.getElementById('controls').style.display = 'flex';
+  renderChart();
+}
+
+function renderChart() {
+  const highlightIdx = parseInt(document.getElementById('fortnight-select').value);
+
+  const highlightPlugin = {
+    id: 'highlightBand',
+    beforeDraw(chart) {
+      const { ctx, chartArea, scales } = chart;
+      if (!chartArea) return;
+      const xScale = scales.x;
+      const x0 = xScale.getPixelForValue(highlightIdx) - xScale.width / (fortnightLabels.length * 2);
+      const x1 = xScale.getPixelForValue(highlightIdx) + xScale.width / (fortnightLabels.length * 2);
+      ctx.save();
+      ctx.fillStyle = 'rgba(180, 220, 150, 0.35)';
+      ctx.fillRect(x0, chartArea.top, x1 - x0, chartArea.bottom - chartArea.top);
+      ctx.restore();
+    }
+  };
+
+  const canvas = document.getElementById('myChart');
+  if (chartInstance) { chartInstance.destroy(); chartInstance = null; }
+
+  chartInstance = new Chart(canvas, {
+    type: 'line',
+    data: {
+      labels: fortnightLabels,
+      datasets: [
+        {
+          label: '2025',
+          data: counts2025,
+          borderColor: '#1a3a5c',
+          backgroundColor: 'transparent',
+          pointRadius: 4,
+          pointHoverRadius: 6,
+          borderWidth: 2.5,
+          tension: 0.3
+        },
+        {
+          label: '2026',
+          data: counts2026,
+          borderColor: '#e07b39',
+          backgroundColor: 'transparent',
+          pointRadius: 4,
+          pointHoverRadius: 6,
+          borderWidth: 2.5,
+          tension: 0.3
+        }
+      ]
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: {
+        legend: {
+          position: 'bottom',
+          labels: { font: { size: 12 }, usePointStyle: true, pointStyleWidth: 16 }
+        },
+        tooltip: {
+          callbacks: {
+            title: items => items[0].label,
+            label: item => ` ${item.dataset.label}: ${item.raw} buildings`
+          }
+        }
+      },
+      scales: {
+        x: {
+          ticks: {
+            font: { size: 11 },
+            maxRotation: 45,
+            callback: function(val, idx) {
+              return fortnightLabels[idx].split(' – ')[0];
+            }
+          },
+          grid: { display: false }
+        },
+        y: {
+          beginAtZero: true,
+          ticks: { font: { size: 11 } },
+          title: { display: true, text: 'Number of damaged buildings', font: { size: 11 } }
+        }
+      }
+    },
+    plugins: [highlightPlugin]
+  });
+
+  document.getElementById('chart-card').style.display = 'block';
+  document.getElementById('chart-title').textContent = 'Damaged buildings per fortnight — 2025 vs 2026';
+  document.getElementById('chart-subtitle').textContent =
+    'Highlighted: ' + fortnightLabels[highlightIdx] + ' (reporting period)';
+
+  const v25 = counts2025[highlightIdx] || 0;
+  const v26 = counts2026[highlightIdx] || 0;
+  document.getElementById('v2025').textContent = v25.toLocaleString();
+  document.getElementById('sub2025').textContent = fortnightLabels[highlightIdx];
+  document.getElementById('v2026').textContent = v26.toLocaleString();
+  document.getElementById('sub2026').textContent = fortnightLabels[highlightIdx];
+
+  const changeEl = document.getElementById('v-change');
+  if (v25 === 0) {
+    changeEl.textContent = 'No 2025 data';
+    changeEl.className = 'value change neutral';
+  } else {
+    const pct = Math.round((v26 - v25) / v25 * 100);
+    const sign = pct > 0 ? '+' : '';
+    changeEl.textContent = sign + pct + '%';
+    changeEl.className = 'value change ' + (pct > 0 ? 'up' : pct < 0 ? 'down' : 'neutral');
+  }
+
+  document.getElementById('stats').style.display = 'flex';
+}
+</script>
