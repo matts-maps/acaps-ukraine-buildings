@@ -1,3 +1,181 @@
+---
+layout: default
+title: Home
+---
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>E-PACC Ukraine – Fortnightly Building Damage</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { font-family: Arial, sans-serif; background: #f4f6f8; color: #333; }
+
+  header {
+    background: #1a3a5c;
+    color: #fff;
+    padding: 18px 28px;
+    display: flex;
+    align-items: center;
+    gap: 14px;
+  }
+  header h1 { font-size: 17px; font-weight: 600; letter-spacing: 0.3px; }
+  header span { font-size: 13px; opacity: 0.7; }
+
+  .container { max-width: 960px; margin: 32px auto; padding: 0 20px; }
+
+  /* Drop zone */
+  #drop-zone {
+    border: 2px dashed #a0b4c8;
+    border-radius: 10px;
+    background: #fff;
+    padding: 40px;
+    text-align: center;
+    cursor: pointer;
+    transition: border-color 0.2s, background 0.2s;
+  }
+  #drop-zone.drag-over { border-color: #1a3a5c; background: #eef3f8; }
+  #drop-zone .icon { font-size: 36px; margin-bottom: 10px; }
+  #drop-zone p { color: #555; font-size: 14px; margin-top: 6px; }
+  #drop-zone strong { color: #1a3a5c; }
+  #file-input { display: none; }
+
+  /* Controls */
+  #controls {
+    display: none;
+    background: #fff;
+    border-radius: 10px;
+    padding: 20px 24px;
+    margin-top: 20px;
+    align-items: center;
+    gap: 20px;
+    flex-wrap: wrap;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  }
+  #controls label { font-size: 13px; font-weight: 600; color: #444; }
+  #controls select {
+    padding: 7px 12px;
+    border: 1px solid #ccc;
+    border-radius: 6px;
+    font-size: 13px;
+    background: #fff;
+    cursor: pointer;
+  }
+  #controls .file-name {
+    font-size: 12px;
+    color: #888;
+    margin-left: auto;
+  }
+  #controls button {
+    padding: 7px 16px;
+    background: #1a3a5c;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    font-size: 13px;
+    cursor: pointer;
+  }
+  #controls button:hover { background: #255080; }
+
+  /* Chart card */
+  #chart-card {
+    display: none;
+    background: #fff;
+    border-radius: 10px;
+    padding: 28px;
+    margin-top: 20px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  }
+  #chart-card h2 { font-size: 15px; color: #1a3a5c; margin-bottom: 4px; }
+  #chart-card .subtitle { font-size: 12px; color: #888; margin-bottom: 20px; }
+  #chart-wrapper { position: relative; height: 380px; }
+
+  /* Stats row */
+  #stats {
+    display: none;
+    gap: 16px;
+    margin-top: 16px;
+    flex-wrap: wrap;
+  }
+  .stat-box {
+    flex: 1;
+    min-width: 160px;
+    background: #f0f4f8;
+    border-radius: 8px;
+    padding: 14px 18px;
+    border-left: 4px solid #1a3a5c;
+  }
+  .stat-box.orange { border-left-color: #e07b39; }
+  .stat-box .label { font-size: 11px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
+  .stat-box .value { font-size: 26px; font-weight: 700; color: #1a3a5c; margin-top: 2px; }
+  .stat-box.orange .value { color: #e07b39; }
+  .stat-box .sub { font-size: 11px; color: #888; margin-top: 2px; }
+
+  /* Change indicator */
+  .change { font-size: 13px; margin-top: 4px; font-weight: 600; }
+  .change.up { color: #c0392b; }
+  .change.down { color: #27ae60; }
+  .change.neutral { color: #888; }
+
+  /* Error */
+  #error-msg { color: #c0392b; font-size: 13px; margin-top: 10px; display: none; }
+</style>
+</head>
+<body>
+
+<header>
+  <div>
+    <h1>E-PACC Ukraine — Fortnightly Building Damage Comparison</h1>
+    <span>2025 vs 2026 · All infrastructure types</span>
+  </div>
+</header>
+
+<div class="container">
+
+  <div id="drop-zone" style="display: block;">
+    <div class="icon">🔄</div>
+    <p>Loading dataset directly from API updates...</p>
+  </div>
+  <div id="error-msg"></div>
+
+  <div id="controls">
+    <label for="fortnight-select">Highlight reporting fortnight:</label>
+    <select id="fortnight-select"></select>
+    <button onclick="renderChart()">Update chart</button>
+    <span class="file-name" id="file-name-label"></span>
+  </div>
+
+  <div id="chart-card">
+    <h2 id="chart-title">Damaged buildings per fortnight</h2>
+    <div class="subtitle" id="chart-subtitle"></div>
+    <div id="chart-wrapper">
+      <canvas id="myChart"></canvas>
+    </div>
+  </div>
+
+  <div id="stats">
+    <div class="stat-box" id="stat-2025">
+      <div class="label">2025 — highlighted fortnight</div>
+      <div class="value" id="v2025">—</div>
+      <div class="sub" id="sub2025"></div>
+    </div>
+    <div class="stat-box orange" id="stat-2026">
+      <div class="label">2026 — highlighted fortnight</div>
+      <div class="value" id="v2026">—</div>
+      <div class="sub" id="sub2026"></div>
+    </div>
+    <div class="stat-box" id="stat-change" style="border-left-color:#555">
+      <div class="label">Year-on-year change</div>
+      <div class="value change neutral" id="v-change">—</div>
+      <div class="sub" id="sub-change">same fortnight</div>
+    </div>
+  </div>
+
+</div>
+
 <script>
 let parsedData = [];
 let chartInstance = null;
@@ -5,9 +183,9 @@ let fortnightLabels = [];
 let counts2025 = [];
 let counts2026 = [];
 
-// Automatically fetch data on page load
+// Automatically fetch data on page load from the data directory
 window.addEventListener('DOMContentLoaded', () => {
-  const csvPath = 'ukraine-damages.csv'; // Relative file path inside the data folder
+  const csvPath = 'data/ukraine-damages.csv'; 
   
   Papa.parse(csvPath, {
     download: true,
@@ -21,7 +199,7 @@ window.addEventListener('DOMContentLoaded', () => {
       parsedData = results.data;
       processData();
     },
-    error: () => showError('Error loading automated data file. Make sure ukraine-damages.csv is in the same directory.')
+    error: () => showError('Error loading automated data file. Make sure ukraine-damages.csv is in the data folder.')
   });
 });
 
@@ -29,6 +207,7 @@ function showError(msg) {
   const el = document.getElementById('error-msg');
   el.textContent = msg;
   el.style.display = 'block';
+  document.getElementById('drop-zone').style.display = 'none';
 }
 
 function dayOfYear(d) {
@@ -95,7 +274,6 @@ function processData() {
   }
   sel.value = defaultIdx;
 
-  // Adjust container display configurations seamlessly
   document.getElementById('drop-zone').style.display = 'none';
   document.getElementById('controls').style.display = 'flex';
   renderChart();
@@ -211,3 +389,5 @@ function renderChart() {
   document.getElementById('stats').style.display = 'flex';
 }
 </script>
+</body>
+</html>

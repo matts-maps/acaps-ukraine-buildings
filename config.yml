@@ -1,0 +1,7 @@
+title: E-PACC Ukraine Damage Tracker
+description: Automated fortnightly and weekly building damage data visualisations.
+theme: minima # A clean, default Jekyll theme
+
+# CRITICAL: Tell Jekyll not to ignore your automated data folder
+include:
+  - data
