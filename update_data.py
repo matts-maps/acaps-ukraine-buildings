@@ -48,3 +48,4 @@ def fetch_and_update():
 
 if __name__ == "__main__":
     fetch_and_update()
+    
