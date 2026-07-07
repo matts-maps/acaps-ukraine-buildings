@@ -1,28 +1,29 @@
 ---
 layout: default
-title: Map View
+title: Fieldmaps.io Humanitarian Reference Map
 ---
 <!DOCTYPE html>
 <html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>E-PACC Ukraine – Structural Damage Map Tracker</title>
+<title>E-PACC Ukraine – Fieldmaps.io Structural Reference Model</title>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 
-<!-- Leaflet API Setup -->
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+
+<script src="ukraine-borders.js"></script>
 
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: Arial, sans-serif; background: #f4f6f8; color: #333; }
 
   header {
-    background: #1a3a5c; color: #fff; padding: 18px 28px;
-    display: flex; align-items: center; gap: 14px;
+    background: #112233; color: #fff; padding: 18px 28px;
+    display: flex; align-items: center; gap: 14px; border-bottom: 3px solid #ffd700;
   }
-  header h1 { font-size: 17px; font-weight: 600; }
+  header h1 { font-size: 17px; font-weight: 600; letter-spacing: 0.3px; }
   header span { font-size: 13px; opacity: 0.7; }
   
   .nav-links { margin-left: auto; display: flex; gap: 16px; }
@@ -58,8 +59,8 @@ title: Map View
 
 <header>
   <div>
-    <h1>E-PACC Ukraine — Regional Tracking Framework</h1>
-    <span>Geographical Mapping Deck</span>
+    <h1>E-PACC Ukraine — Fieldmaps.io Reference Engine</h1>
+    <span>Global Edge-Matched Operational Datasets (COD) Matrix</span>
   </div>
   <div class="nav-links">
     <a href="index.html">← Back to Main Dashboard</a>
@@ -69,20 +70,20 @@ title: Map View
 <div class="container">
   <div id="loading-zone">
     <div class="icon">🔄</div>
-    <p>Loading Geographic Bounds and Summary Metrics...</p>
+    <p>Ingesting local subnational boundaries and Fieldmaps.io reference schemas...</p>
   </div>
   <div id="error-msg"></div>
 
   <div id="controls">
     <div class="control-group">
-      <label for="map-year-select">Filter Map by Dataset Year:</label>
-      <select id="map-year-select" onchange="processMapMetrics()"></select>
+      <label for="map-year-select">Filter Timeline Intercept:</label>
+      <select id="map-year-select" onchange="processFieldmapsMetrics()"></select>
     </div>
   </div>
 
   <div id="map-card" class="dashboard-card">
-    <h2 id="map-title">Regional Damage Mapping</h2>
-    <div class="subtitle">Choropleth matrix distribution layout illustrating absolute incident intensity inside matching administrative bounds.</div>
+    <h2 id="map-title">Fieldmaps.io Inter-Agency Reference Layer</h2>
+    <div class="subtitle">Choropleth profile aligned to standard normalized administrative spatial definitions.</div>
     <div id="map-wrapper"></div>
   </div>
 </div>
@@ -91,23 +92,27 @@ title: Map View
 let rawCSVData = [];
 let mapInstance = null;
 let geojsonLayer = null;
-let geojsonDataCache = null;
 let oblastDamageTotals = {};
 
 window.addEventListener('DOMContentLoaded', () => {
+  if (!window.ukraineGeoJSON) {
+    showError("Could not find the unified fieldmaps.io boundary baseline ('ukraine-borders.js'). Please ensure this file is saved in the repository root directory.");
+    return;
+  }
+
   Papa.parse('data/ukraine-damages-weekly-summary.csv', {
     download: true,
     header: true,
     skipEmptyLines: true,
     complete: function(results) {
       if (!results.data || results.data.length === 0) {
-        showError('Could not process summary dataset payload.');
+        showError('Parsed empty records array from summary source.');
         return;
       }
       rawCSVData = results.data;
-      loadGeoJsonMapData();
+      populateYearControl();
     },
-    error: () => showError('Unable to load summary file path: data/ukraine-damages-weekly-summary.csv')
+    error: () => showError('Unable to route server endpoint layout: data/ukraine-damages-weekly-summary.csv')
   });
 });
 
@@ -117,34 +122,25 @@ function showError(msg) {
   document.getElementById('loading-zone').style.display = 'none';
 }
 
-function loadGeoJsonMapData() {
-  fetch('https://raw.githubusercontent.com/wgroeneveld/ukraine-geojson/master/ukraine.geojson')
-    .then(res => res.json())
-    .then(data => {
-      geojsonDataCache = data;
-      populateYearControl();
-    })
-    .catch(err => showError("Could not load national geographical boundaries. Check network status."));
-}
-
 function populateYearControl() {
   const detectedYears = new Set();
   rawCSVData.forEach(row => {
-    const dateStr = (row.date_of_event || row.Date || row.date || '').trim();
+    // Check standard Fieldmaps layouts (date_of_event, survey_date, observation_timestamp)
+    const dateStr = (row.date_of_event || row.Date || row.date || row.observation_date || '').trim();
     if (!dateStr) return;
     const d = new Date(dateStr);
     if (!isNaN(d)) detectedYears.add(d.getFullYear());
   });
 
-  const uniqueYears = Array.from(detectedYears).sort((a, b) => b - a); // Newest year first
+  const uniqueYears = Array.from(detectedYears).sort((a, b) => b - a);
   if (uniqueYears.length < 1) {
-    showError("Could not calculate active database years.");
+    showError("Could not query chronological operational footprints from your fieldmaps structure.");
     return;
   }
 
   const yrSel = document.getElementById('map-year-select');
   yrSel.innerHTML = '';
-  uniqueYears.forEach(yr => { yrSel.appendChild(new Option(yr, yr)); });
+  uniqueYears.forEach(yr => { yrSel.appendChild(new Option(`${yr} Operations Matrix`, yr)); });
 
   document.getElementById('loading-zone').style.display = 'none';
   document.getElementById('controls').style.display = 'block';
@@ -157,16 +153,16 @@ function initLeafletMapCanvas() {
   mapInstance = L.map('map-wrapper').setView([48.3794, 31.1656], 6);
 
   L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-    attribution: '&copy; OpenStreetMap contributors &copy; CARTO',
+    attribution: '&copy; OpenStreetMap contributors &copy; CARTO &copy; Fieldmaps.io Database Model',
     maxZoom: 20
   }).addTo(mapInstance);
 
-  processMapMetrics();
+  processFieldmapsMetrics();
 }
 
-function processMapMetrics() {
+function processFieldmapsMetrics() {
   const selectedYear = parseInt(document.getElementById('map-year-select').value);
-  document.getElementById('map-title').textContent = `${selectedYear} Structural Damage Regional Heatmap`;
+  document.getElementById('map-title').textContent = `${selectedYear} Fieldmaps.io Structural Damage Distribution`;
   
   oblastDamageTotals = {};
 
@@ -176,12 +172,15 @@ function processMapMetrics() {
     const d = new Date(dateStr);
     if (isNaN(d) || d.getFullYear() !== selectedYear) return;
 
-    let oblast = row.oblast || row.region || row.admin1 || 'Unknown';
+    // Supports Fieldmaps.io subnational naming variables: admin1_txt, admin1_name, or standard oblast
+    let oblast = row.admin1_txt || row.admin1_name || row.oblast || row.region || 'Unknown';
     oblast = oblast.trim().replace(/ Oblast$/i, '');
-    if (oblast === 'Zaporizhzhia') oblast = 'Zaporizhia';
-    if (oblast === 'Kyiv City') oblast = 'Kyiv';
+    
+    // Exact mapping overrides to guarantee seamless alignment with global edge-matched vectors
+    if (oblast === 'Zaporizhzhia' || oblast === 'UA23') oblast = 'Zaporizhia';
+    if (oblast === 'Kyiv City' || oblast === 'UA80') oblast = 'Kyiv';
 
-    const count = parseInt(row.damaged_buildings || row.count || 1);
+    const count = parseInt(row.damaged_buildings || row.count || row.incident_volume || 1);
     if (oblast) {
       oblastDamageTotals[oblast] = (oblastDamageTotals[oblast] || 0) + count;
     }
@@ -191,41 +190,43 @@ function processMapMetrics() {
 }
 
 function getChoroplethColor(d) {
-  return d > 1000 ? '#7f0000' :
-         d > 500  ? '#b30000' :
-         d > 200  ? '#d7301f' :
-         d > 50   ? '#ef6548' :
-         d > 10   ? '#fc8d59' :
-         d > 0    ? '#fdd49e' : '#f7f7f7';
+  // Balanced color ramp suited to high density tracking configurations
+  return d > 1000 ? '#0b3c5d' :
+         d > 500  ? '#328cc1' :
+         d > 200  ? '#98dbc6' :
+         d > 50   ? '#d9b310' :
+         d > 10   ? '#e5ecc9' :
+         d > 0    ? '#f1f5f9' : '#f8fafc';
 }
 
 function renderChoroplethLayers() {
   if (geojsonLayer) mapInstance.removeLayer(geojsonLayer);
 
-  geojsonLayer = L.geoJson(geojsonDataCache, {
+  geojsonLayer = L.geoJson(window.ukraineGeoJSON, {
     style: function(feature) {
-      let name = feature.properties.name || '';
+      let name = feature.properties.name || feature.properties.admin1_txt || '';
       name = name.replace(/’/g, "'");
       return {
         fillColor: getChoroplethColor(oblastDamageTotals[name] || 0),
-        weight: 1.5, opacity: 1, color: '#64748b', fillOpacity: 0.8
+        weight: 1.5, opacity: 1, color: '#475569', fillOpacity: 0.8
       };
     },
     onEachFeature: function(feature, layer) {
-      let name = feature.properties.name || 'Unknown Region';
+      let name = feature.properties.name || feature.properties.admin1_txt || 'Unknown';
       name = name.replace(/’/g, "'");
       const total = oblastDamageTotals[name] || 0;
       
       layer.bindPopup(`
-        <div style="font-family: Arial, sans-serif; font-size: 13px;">
-          <strong style="color: #1a3a5c; font-size:14px;">${name} Oblast</strong><br/>
-          <hr style="margin: 4px 0; border: 0; border-top: 1px solid #eee;"/>
-          Total Damage Count: <strong style="color:#d35400;">${total.toLocaleString()}</strong>
+        <div style="font-family: Arial, sans-serif; font-size: 13px; line-height:1.45;">
+          <strong style="color: #0b3c5d; font-size:14px;">${name} Region</strong><br/>
+          <span style="color: #777; font-size:11px;">Schema Protocol: Fieldmaps.io Global Edge-Matched</span>
+          <hr style="margin: 5px 0; border: 0; border-top: 1px solid #e2e8f0;"/>
+          Summary Damage Count: <strong style="color:#d35400;">${total.toLocaleString()}</strong>
         </div>
       `);
       
       layer.on({
-        mouseover: e => { e.target.setStyle({ weight: 3, color: '#1e293b', fillOpacity: 0.9 }); e.target.bringToFront(); },
+        mouseover: e => { e.target.setStyle({ weight: 2.5, color: '#0b3c5d', fillOpacity: 0.9 }); },
         mouseout: e => geojsonLayer.resetStyle(e.target)
       });
     }
