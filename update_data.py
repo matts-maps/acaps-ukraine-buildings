@@ -8,11 +8,24 @@ API_URL = "https://api.acaps.org/api/v1/ukraine/damages/"
 def fetch_and_update():
     print("Fetching data from ACAPS API...")
     
+    # Grab the hidden token from the environment
+    api_token = os.environ.get("ACAPS_TOKEN")
+    
+    # Debug check (safe: only prints length, not the token itself)
+    if api_token:
+        print(f"Token found in environment! Length: {len(api_token)} characters.")
+    else:
+        print("WARNING: ACAPS_TOKEN environment variable is completely empty or missing.")
+
+    if not api_token:
+        raise ValueError("API Token missing! Make sure ACAPS_API_TOKEN is set in GitHub Secrets.")
+
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        # Some APIs use "Token", some use "Bearer". Let's use the standard ACAPS Django format:
+        "Authorization": f"Token {api_token}" 
     }
     
-    # We remove the try/except block so GitHub Actions captures the raw error traceback
     response = requests.get(API_URL, headers=headers)
     response.raise_for_status() 
         
@@ -48,4 +61,3 @@ def fetch_and_update():
 
 if __name__ == "__main__":
     fetch_and_update()
-    
