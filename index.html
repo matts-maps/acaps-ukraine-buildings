@@ -11,9 +11,6 @@ title: Home
 <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 
-<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-
 <style>
   * { box-sizing: border-box; margin: 0; padding: 0; }
   body { font-family: Arial, sans-serif; background: #f4f6f8; color: #333; }
@@ -29,9 +26,12 @@ title: Home
   header h1 { font-size: 17px; font-weight: 600; letter-spacing: 0.3px; }
   header span { font-size: 13px; opacity: 0.7; }
 
+  .nav-links { margin-left: auto; display: flex; gap: 16px; }
+  .nav-links a { color: #fff; text-decoration: none; font-size: 13px; font-weight: 600; padding: 6px 12px; border-radius: 4px; background: rgba(255,255,255,0.1); }
+  .nav-links a:hover { background: rgba(255,255,255,0.2); }
+
   .container { max-width: 1000px; margin: 32px auto; padding: 0 20px; }
 
-  /* Loading state indicator */
   #loading-zone {
     background: #fff;
     border-radius: 10px;
@@ -41,10 +41,8 @@ title: Home
   }
   #loading-zone .icon { font-size: 36px; margin-bottom: 10px; animation: spin 2s linear infinite; display: inline-block; }
   #loading-zone p { color: #555; font-size: 14px; }
-
   @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
 
-  /* Configuration Controls panel */
   #controls {
     display: none;
     background: #fff;
@@ -55,43 +53,13 @@ title: Home
     gap: 16px;
     box-shadow: 0 1px 4px rgba(0,0,0,0.08);
   }
-  
-  .control-row {
-    display: flex;
-    align-items: center;
-    gap: 24px;
-    flex-wrap: wrap;
-  }
-
-  .control-group {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-  }
-
+  .control-row { display: flex; align-items: center; gap: 24px; flex-wrap: wrap; }
+  .control-group { display: flex; align-items: center; gap: 10px; }
   #controls label { font-size: 13px; font-weight: 600; color: #444; }
-  #controls select {
-    padding: 7px 12px;
-    border: 1px solid #ccc;
-    border-radius: 6px;
-    font-size: 13px;
-    background: #fff;
-    cursor: pointer;
-  }
-
-  #controls button {
-    padding: 8px 18px;
-    background: #1a3a5c;
-    color: #fff;
-    border: none;
-    border-radius: 6px;
-    font-size: 13px;
-    font-weight: 600;
-    cursor: pointer;
-  }
+  #controls select { padding: 7px 12px; border: 1px solid #ccc; border-radius: 6px; font-size: 13px; background: #fff; cursor: pointer; }
+  #controls button { padding: 8px 18px; background: #1a3a5c; color: #fff; border: none; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; }
   #controls button:hover { background: #255080; }
 
-  /* Card Modules */
   .dashboard-card {
     display: none;
     background: #fff;
@@ -104,29 +72,8 @@ title: Home
   .dashboard-card .subtitle { font-size: 12px; color: #888; margin-bottom: 20px; }
   #chart-wrapper { position: relative; height: 400px; }
   
-  /* Map Canvas Styling */
-  #map-wrapper { 
-    height: 500px; 
-    border-radius: 8px; 
-    border: 1px solid #cbd5e1;
-    z-index: 1;
-  }
-
-  /* Metrics panels */
-  #stats {
-    display: none;
-    gap: 16px;
-    margin-top: 16px;
-    flex-wrap: wrap;
-  }
-  .stat-box {
-    flex: 1;
-    min-width: 220px;
-    background: #f0f4f8;
-    border-radius: 8px;
-    padding: 16px 20px;
-    border-left: 4px solid #1a3a5c;
-  }
+  #stats { display: none; gap: 16px; margin-top: 16px; flex-wrap: wrap; }
+  .stat-box { flex: 1; min-width: 220px; background: #f0f4f8; border-radius: 8px; padding: 16px 20px; border-left: 4px solid #1a3a5c; }
   .stat-box.comparison-year { border-left-color: #e07b39; }
   .stat-box .label { font-size: 11px; color: #666; text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
   .stat-box .value { font-size: 28px; font-weight: 700; color: #1a3a5c; margin-top: 2px; }
@@ -137,7 +84,6 @@ title: Home
   .change.up { color: #c0392b; }
   .change.down { color: #27ae60; }
   .change.neutral { color: #7f8c8d; }
-
   #error-msg { color: #c0392b; font-size: 13px; margin-top: 10px; display: none; }
 </style>
 </head>
@@ -146,12 +92,14 @@ title: Home
 <header>
   <div>
     <h1>E-PACC Ukraine — Dynamic Building Damage Framework Analytics</h1>
-    <span>Automated System Dashboard with Regional Tracking Maps</span>
+    <span>Automated System Dashboard</span>
+  </div>
+  <div class="nav-links">
+    <a href="map.html">Regional Map View →</a>
   </div>
 </header>
 
 <div class="container">
-
   <div id="loading-zone">
     <div class="icon">🔄</div>
     <p>Ingesting summary database metrics dynamically...</p>
@@ -168,18 +116,15 @@ title: Home
           <option value="30">Monthly (30-day periods)</option>
         </select>
       </div>
-
       <div class="control-group">
         <label for="base-year-select">Baseline Year:</label>
         <select id="base-year-select" onchange="updateDashboard()"></select>
       </div>
-
       <div class="control-group">
         <label for="comp-year-select">Comparison Year:</label>
         <select id="comp-year-select" onchange="updateDashboard()"></select>
       </div>
     </div>
-
     <div class="control-row">
       <div class="control-group">
         <label for="period-select">Highlight Target Period:</label>
@@ -192,9 +137,7 @@ title: Home
   <div id="chart-card" class="dashboard-card">
     <h2 id="chart-title">Damaged Buildings Time Series</h2>
     <div class="subtitle" id="chart-subtitle"></div>
-    <div id="chart-wrapper">
-      <canvas id="myChart"></canvas>
-    </div>
+    <div id="chart-wrapper"><canvas id="myChart"></canvas></div>
   </div>
 
   <div id="stats">
@@ -214,29 +157,15 @@ title: Home
       <div class="sub" id="sub-change">Comparing frames grouped by index position</div>
     </div>
   </div>
-
-  <div id="map-card" class="dashboard-card">
-    <h2>Regional Structural Damage Heatmap — Aggregate Geographic View</h2>
-    <div class="subtitle">Real-time geographical distribution layout of structural incidents across Ukraine's Oblasts for your selected Comparison Year.</div>
-    <div id="map-wrapper"></div>
-  </div>
-
 </div>
 
 <script>
 let rawCSVData = [];
 let chartInstance = null;
-let mapInstance = null;
-let geojsonLayer = null;
 let uniqueYearsList = [];
-let oblastDamageTotals = {}; 
-let geojsonDataCache = null;
 
-// Trigger internal retrieval immediately upon DOM frame readiness
 window.addEventListener('DOMContentLoaded', () => {
-  const csvPath = 'data/ukraine-damages-weekly-summary.csv'; 
-  
-  Papa.parse(csvPath, {
+  Papa.parse('data/ukraine-damages-weekly-summary.csv', {
     download: true,
     header: true,
     skipEmptyLines: true,
@@ -248,40 +177,39 @@ window.addEventListener('DOMContentLoaded', () => {
       rawCSVData = results.data;
       initializeDashboardOptions();
     },
-    error: () => showError('Unable to load server endpoint target: data/ukraine-damages-weekly-summary.csv')
+    error: () => showError('Unable to load summary file path: data/ukraine-damages-weekly-summary.csv')
   });
 });
 
 function showError(msg) {
   const el = document.getElementById('error-msg');
-  el.textContent = msg;
-  el.style.display = 'block';
+  el.textContent = msg; el.style.display = 'block';
   document.getElementById('loading-zone').style.display = 'none';
 }
 
 function initializeDashboardOptions() {
   const detectedYears = new Set();
-  
   rawCSVData.forEach(row => {
-    const dateStr = (row.date_of_event || '').trim();
-    if (dateStr.length >= 4) {
-      const yr = parseInt(dateStr.slice(0, 4));
-      if (!isNaN(yr)) detectedYears.add(yr);
+    const dateStr = (row.date_of_event || row.Date || row.date || '').trim();
+    if (!dateStr) return;
+    const parsedDate = new Date(dateStr);
+    if (!isNaN(parsedDate)) {
+      detectedYears.add(parsedDate.getFullYear());
+    } else {
+      const match = dateStr.match(/\b(202\d)\b/);
+      if (match) detectedYears.add(parseInt(match[1]));
     }
   });
 
   uniqueYearsList = Array.from(detectedYears).sort((a, b) => a - b);
-  
   if (uniqueYearsList.length < 1) {
-    showError("Could not extract timelines from summarized database maps.");
+    showError("Could not extract timelines from summary columns. Check header formatting.");
     return;
   }
 
   const baseSel = document.getElementById('base-year-select');
   const compSel = document.getElementById('comp-year-select');
-  
-  baseSel.innerHTML = '';
-  compSel.innerHTML = '';
+  baseSel.innerHTML = ''; compSel.innerHTML = '';
 
   uniqueYearsList.forEach(yr => {
     baseSel.appendChild(new Option(yr, yr));
@@ -292,13 +220,10 @@ function initializeDashboardOptions() {
     baseSel.value = uniqueYearsList[uniqueYearsList.length - 2];
     compSel.value = uniqueYearsList[uniqueYearsList.length - 1];
   } else {
-    baseSel.value = uniqueYearsList[0];
-    compSel.value = uniqueYearsList[0];
+    baseSel.value = uniqueYearsList[0]; compSel.value = uniqueYearsList[0];
   }
 
   buildPeriodDropdowns();
-  initLeafletCanvas();
-  
   document.getElementById('loading-zone').style.display = 'none';
   document.getElementById('controls').style.display = 'flex';
 }
@@ -306,15 +231,12 @@ function initializeDashboardOptions() {
 function getPeriodLabels(daysInStep) {
   const labels = [];
   const totalPeriods = Math.ceil(365 / daysInStep);
-  
   for (let i = 0; i < totalPeriods; i++) {
     const startDay = i * daysInStep + 1;
     let endDay = startDay + daysInStep - 1;
     if (endDay > 365) endDay = 365;
-
     const dStart = new Date(2025, 0, startDay);
     const dEnd = new Date(2025, 0, endDay);
-    
     const fmt = d => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
     labels.push(`${fmt(dStart)} – ${fmt(dEnd)}`);
   }
@@ -323,30 +245,22 @@ function getPeriodLabels(daysInStep) {
 
 function calculateDayOfYear(date) {
   const start = new Date(date.getFullYear(), 0, 0);
-  const diff = date - start;
-  return Math.floor(diff / 86400000);
+  return Math.floor((date - start) / 86400000);
 }
 
 function buildPeriodDropdowns() {
   const stepDays = parseInt(document.getElementById('period-type').value);
   const labels = getPeriodLabels(stepDays);
   const pSelect = document.getElementById('period-select');
-  
   pSelect.innerHTML = '';
   labels.forEach((label, index) => {
     pSelect.appendChild(new Option(`Period ${index + 1}: (${label})`, index));
   });
-  
   pSelect.value = 0;
   updateDashboard();
 }
 
 function updateDashboard() {
-  updateChartAndStats();
-  updateSpatialMapLayer();
-}
-
-function updateChartAndStats() {
   const stepDays = parseInt(document.getElementById('period-type').value);
   const baseYear = parseInt(document.getElementById('base-year-select').value);
   const compYear = parseInt(document.getElementById('comp-year-select').value);
@@ -356,12 +270,9 @@ function updateChartAndStats() {
   const baseCounts = new Array(periodLabels.length).fill(0);
   const compCounts = new Array(periodLabels.length).fill(0);
 
-  oblastDamageTotals = {};
-
   rawCSVData.forEach(row => {
-    const dateStr = (row.date_of_event || '').trim();
+    const dateStr = (row.date_of_event || row.Date || row.date || '').trim();
     if (!dateStr) return;
-    
     const d = new Date(dateStr);
     if (isNaN(d)) return;
     
@@ -371,24 +282,9 @@ function updateChartAndStats() {
     if (pIdx >= periodLabels.length) pIdx = periodLabels.length - 1;
     if (pIdx < 0) pIdx = 0;
 
-    // Support flexible count structure (handles row multipliers if present, otherwise default to 1)
     const incidenceWeight = parseInt(row.damaged_buildings || row.count || 1);
-
     if (year === baseYear) baseCounts[pIdx] += incidenceWeight;
-    
-    if (year === compYear) {
-      compCounts[pIdx] += incidenceWeight;
-      
-      let oblast = row.oblast || row.region || row.admin1 || row.admin1_txt || 'Unknown';
-      oblast = oblast.trim().replace(/ Oblast$/i, '');
-      
-      if (oblast === 'Zaporizhzhia') oblast = 'Zaporizhia';
-      if (oblast === 'Kyiv City') oblast = 'Kyiv';
-
-      if(oblast) {
-        oblastDamageTotals[oblast] = (oblastDamageTotals[oblast] || 0) + incidenceWeight;
-      }
-    }
+    if (year === compYear) compCounts[pIdx] += incidenceWeight;
   });
 
   const highlightPlugin = {
@@ -399,62 +295,26 @@ function updateChartAndStats() {
       const xScale = scales.x;
       const x0 = xScale.getPixelForValue(highlightIdx) - xScale.width / (periodLabels.length * 2);
       const x1 = xScale.getPixelForValue(highlightIdx) + xScale.width / (periodLabels.length * 2);
-      ctx.save();
-      ctx.fillStyle = 'rgba(230, 126, 34, 0.15)';
-      ctx.fillRect(x0, chartArea.top, x1 - x0, chartArea.bottom - chartArea.top);
-      ctx.restore();
+      ctx.save(); ctx.fillStyle = 'rgba(230, 126, 34, 0.15)';
+      ctx.fillRect(x0, chartArea.top, x1 - x0, chartArea.bottom - chartArea.top); ctx.restore();
     }
   };
 
-  const canvas = document.getElementById('myChart');
   if (chartInstance) chartInstance.destroy();
-
-  chartInstance = new Chart(canvas, {
+  chartInstance = new Chart(document.getElementById('myChart'), {
     type: 'line',
     data: {
       labels: periodLabels,
       datasets: [
-        {
-          label: `Baseline Year: ${baseYear}`,
-          data: baseCounts,
-          borderColor: '#1a3a5c',
-          backgroundColor: 'transparent',
-          borderWidth: 2.5,
-          tension: 0.25,
-          pointRadius: 3
-        },
-        {
-          label: `Comparison Year: ${compYear}`,
-          data: compCounts,
-          borderColor: '#e07b39',
-          backgroundColor: 'transparent',
-          borderWidth: 2.5,
-          tension: 0.25,
-          pointRadius: 3
-        }
+        { label: `Baseline Year: ${baseYear}`, data: baseCounts, borderColor: '#1a3a5c', backgroundColor: 'transparent', borderWidth: 2.5, tension: 0.25, pointRadius: 3 },
+        { label: `Comparison Year: ${compYear}`, data: compCounts, borderColor: '#e07b39', backgroundColor: 'transparent', borderWidth: 2.5, tension: 0.25, pointRadius: 3 }
       ]
     },
     options: {
-      responsive: true,
-      maintainAspectRatio: false,
-      plugins: {
-        legend: { position: 'bottom', labels: { usePointStyle: true } },
-        tooltip: {
-          callbacks: {
-            label: item => ` Year ${item.dataset.label.slice(-4)}: ${item.raw.toLocaleString()} incidents`
-          }
-        }
-      },
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { position: 'bottom', labels: { usePointStyle: true } } },
       scales: {
-        x: {
-          ticks: {
-            maxRotation: 45,
-            callback: function(val, idx) {
-              return idx % 2 === 0 ? periodLabels[idx].split(' – ')[0] : '';
-            }
-          },
-          grid: { display: false }
-        },
+        x: { ticks: { maxRotation: 45, callback: (v, i) => i % 2 === 0 ? periodLabels[i].split(' – ')[0] : '' } },
         y: { beginAtZero: true, title: { display: true, text: 'Recorded Structural Damages' } }
       }
     },
@@ -464,116 +324,25 @@ function updateChartAndStats() {
   document.getElementById('chart-card').style.display = 'block';
   document.getElementById('chart-title').textContent = `Damaged Buildings Profile Breakdown — ${baseYear} vs ${compYear}`;
   document.getElementById('chart-subtitle').textContent = `Highlighted Interval Window: ${periodLabels[highlightIdx]}`;
-
   document.getElementById('lbl-base').textContent = `${baseYear} — Selected Frame`;
   document.getElementById('lbl-comp').textContent = `${compYear} — Selected Frame`;
 
   const vBase = baseCounts[highlightIdx] || 0;
   const vComp = compCounts[highlightIdx] || 0;
-
   document.getElementById('v-base').textContent = vBase.toLocaleString();
   document.getElementById('sub-base').textContent = `Totaled over date block (${periodLabels[highlightIdx]})`;
-  
   document.getElementById('v-comp').textContent = vComp.toLocaleString();
   document.getElementById('sub-comp').textContent = `Totaled over date block (${periodLabels[highlightIdx]})`;
 
   const changeEl = document.getElementById('v-change');
   if (vBase === 0) {
-    changeEl.textContent = 'N/A (Zero Base)';
-    changeEl.className = 'value change neutral';
+    changeEl.textContent = 'N/A'; changeEl.className = 'value change neutral';
   } else {
     const pct = Math.round((vComp - vBase) / vBase * 100);
-    const sign = pct > 0 ? '+' : '';
-    changeEl.textContent = `${sign}${pct}%`;
+    changeEl.textContent = `${pct > 0 ? '+' : ''}${pct}%`;
     changeEl.className = 'value change ' + (pct > 0 ? 'up' : pct < 0 ? 'down' : 'neutral');
   }
-
   document.getElementById('stats').style.display = 'flex';
-}
-
-function initLeafletCanvas() {
-  document.getElementById('map-card').style.display = 'block';
-  
-  if (mapInstance) {
-    mapInstance.invalidateSize();
-    return;
-  }
-
-  mapInstance = L.map('map-wrapper').setView([48.3794, 31.1656], 6);
-
-  L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
-    attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/attributions">CARTO</a>',
-    subdomains: 'abcd',
-    maxZoom: 20
-  }).addTo(mapInstance);
-
-  fetch('https://raw.githubusercontent.com/wgroeneveld/ukraine-geojson/master/ukraine.geojson')
-    .then(res => res.json())
-    .then(data => {
-      geojsonDataCache = data;
-      updateSpatialMapLayer();
-    })
-    .catch(err => console.error("Could not fetch boundaries:", err));
-}
-
-function getChoroplethColor(d) {
-  return d > 1000 ? '#7f0000' :
-         d > 500  ? '#b30000' :
-         d > 200  ? '#d7301f' :
-         d > 50   ? '#ef6548' :
-         d > 10   ? '#fc8d59' :
-         d > 0    ? '#fdd49e' :
-                    '#f7f7f7'; 
-}
-
-function updateSpatialMapLayer() {
-  if (!mapInstance || !geojsonDataCache) return;
-
-  if (geojsonLayer) {
-    mapInstance.removeLayer(geojsonLayer);
-  }
-
-  geojsonLayer = L.geoJson(geojsonDataCache, {
-    style: function(feature) {
-      let name = feature.properties.name || '';
-      name = name.replace(/’/g, "'"); 
-      const damageCount = oblastDamageTotals[name] || 0;
-      
-      return {
-        fillColor: getChoroplethColor(damageCount),
-        weight: 1.5,
-        opacity: 1,
-        color: '#64748b',
-        fillOpacity: 0.8
-      };
-    },
-    onEachFeature: function(feature, layer) {
-      let name = feature.properties.name || 'Unknown Region';
-      name = name.replace(/’/g, "'");
-      const total = oblastDamageTotals[name] || 0;
-      
-      layer.bindPopup(`
-        <div style="font-family: Arial, sans-serif; font-size: 13px;">
-          <strong style="color: #1a3a5c; font-size:14px;">${name} Oblast</strong><br/>
-          <hr style="margin: 4px 0; border: 0; border-top: 1px solid #eee;"/>
-          Total Structural Damages: <strong style="color:#d35400;">${total.toLocaleString()}</strong>
-        </div>
-      `);
-      
-      layer.on({
-        mouseover: function(e) {
-          const l = e.target;
-          l.setStyle({ weight: 3, color: '#1e293b', fillOpacity: 0.9 });
-          l.bringToFront();
-        },
-        mouseout: function(e) {
-          geojsonLayer.resetStyle(e.target);
-        }
-      });
-    }
-  }).addTo(mapInstance);
-
-  setTimeout(() => { mapInstance.invalidateSize(); }, 200);
 }
 </script>
 </body>
