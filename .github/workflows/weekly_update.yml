@@ -31,16 +31,20 @@ jobs:
           ACAPS_API_TOKEN: ${{ secrets.ACAPS_API_TOKEN }}
         run: python scripts/update.py
 
+      - name: Run summariser
+        run: python scripts/summarise.py
+
       - name: Commit changes
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add data/ukraine-damages.csv
+          # Stage both the raw data and the weekly summary data
+          git add data/ukraine-damages.csv data/ukraine-damages-weekly-summary.csv
 
           if git diff --cached --quiet; then
-            echo "No changes"
+            echo "No changes detected in raw data or summary."
           else
-            git commit -m "Weekly ACAPS update"
+            git commit -m "Weekly ACAPS update and summary analytics"
             git push
           fi
