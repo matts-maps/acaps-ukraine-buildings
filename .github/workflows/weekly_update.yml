@@ -2,15 +2,14 @@ name: Weekly ACAPS Data Update
 
 on:
   schedule:
-    # Runs at 00:00 every Monday (UTC)
     - cron: '0 0 * * 1'
-  workflow_dispatch: # Allows you to manually trigger the run whenever you want from the Actions tab
+  workflow_dispatch: 
 
 jobs:
   update-csv:
     runs-on: ubuntu-latest
     permissions:
-      contents: write # Allows the GitHub Actions bot to push changes back to your repo
+      contents: write 
 
     steps:
     - name: Checkout repository
@@ -27,6 +26,8 @@ jobs:
         pip install pandas requests
 
     - name: Run update script
+      env:
+        ACAPS_TOKEN: ${{ secrets.ACAPS_API_TOKEN }}
       run: python update_data.py
 
     - name: Commit and push changes
@@ -34,10 +35,8 @@ jobs:
         git config --global user.name "github-actions[bot]"
         git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
         
-        # Check if the file exists before trying to stage it
         if [ -f ukraine_damages.csv ]; then
           git add ukraine_damages.csv
-          # Only commit and push if the file actually has new data/changes
           git diff-index --quiet HEAD || (git commit -m "Automated weekly ACAPS data update" && git push)
         else
           echo "ukraine_damages.csv was not found. Skipping git commit."

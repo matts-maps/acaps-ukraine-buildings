@@ -11,22 +11,28 @@ def fetch_and_update():
     # Grab the hidden token from the environment
     api_token = os.environ.get("ACAPS_TOKEN")
     
-    # Debug check (safe: only prints length, not the token itself)
     if api_token:
-        print(f"Token found in environment! Length: {len(api_token)} characters.")
+        print(f"Token found in environment. Length: {len(api_token)} characters.")
     else:
         print("WARNING: ACAPS_TOKEN environment variable is completely empty or missing.")
 
     if not api_token:
         raise ValueError("API Token missing! Make sure ACAPS_API_TOKEN is set in GitHub Secrets.")
 
+    # Try standard Django Token header format first
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        # Some APIs use "Token", some use "Bearer". Let's use the standard ACAPS Django format:
         "Authorization": f"Token {api_token}" 
     }
     
     response = requests.get(API_URL, headers=headers)
+    
+    # If standard Token fails with 401, try the alternate Bearer format automatically
+    if response.status_code == 401:
+        print("Standard token auth failed (401). Retrying with Bearer authentication...")
+        headers["Authorization"] = f"Bearer {api_token}"
+        response = requests.get(API_URL, headers=headers)
+        
     response.raise_for_status() 
         
     api_data = response.json()
