@@ -34,17 +34,23 @@ jobs:
       - name: Run summariser
         run: python scripts/summarise.py
 
+      - name: Run week-4 comparison analysis
+        run: python scripts/compare_weeks.py
+
       - name: Commit changes
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          # Stage both the raw data and the weekly summary data
-          git add data/ukraine-damages.csv data/ukraine-damages-weekly-summary.csv
+          # Stage raw datasets, summaries, and generated analytical image
+          git add data/ukraine-damages.csv \
+                  data/ukraine-damages-weekly-summary.csv \
+                  data/week_4_comparison.csv \
+                  data/week_4_comparison.png
 
           if git diff --cached --quiet; then
-            echo "No changes detected in raw data or summary."
+            echo "No changes detected in raw data, summaries, or plots."
           else
-            git commit -m "Weekly ACAPS update and summary analytics"
+            git commit -m "Weekly ACAPS updates, analytical summaries, and historical trend plots"
             git push
           fi
