@@ -2,7 +2,23 @@
 
 This repository automatically updates the Ukraine Damages dataset from the ACAPS API every week.
 
-## Outputs
+## Setup
+
+1. Create a GitHub repository.
+
+2. Upload your existing CSV to:
+
+   data/ukraine-damages.csv
+
+3. Add a GitHub Secret:
+
+   ACAPS_API_TOKEN
+
+4. Enable GitHub Actions.
+
+5. Run the workflow manually once from the Actions tab.
+
+## Output
 
 The workflow updates:
 
