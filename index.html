@@ -1,30 +1,13 @@
 ---
 layout: default
 title: Home
+extra_head: >
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
 ---
-<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>E-PACC Ukraine – Dynamic Building Damage Dashboard</title>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script>
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+
 <style>
-  * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { font-family: Arial, sans-serif; background: #f4f6f8; color: #333; }
-
-  header {
-    background: #1a3a5c;
-    color: #fff;
-    padding: 18px 28px;
-    display: flex;
-    align-items: center;
-    gap: 14px;
-  }
-  header h1 { font-size: 17px; font-weight: 600; letter-spacing: 0.3px; }
-  header span { font-size: 13px; opacity: 0.7; }
-
+  /* Localized Dashboard Components & Component Overrides */
   .container { max-width: 1000px; margin: 32px auto; padding: 0 20px; }
 
   /* Loading State */
@@ -127,15 +110,6 @@ title: Home
 
   #error-msg { color: #c0392b; font-size: 13px; margin-top: 10px; display: none; }
 </style>
-</head>
-<body>
-
-<header>
-  <div>
-    <h1>E-PACC Ukraine — Custom Dynamic Historical Building Damage Analytics</h1>
-    <span>Automated Pipeline Monitoring Dashboard</span>
-  </div>
-</header>
 
 <div class="container">
 
@@ -211,7 +185,8 @@ let uniqueYearsList = [];
 
 // Automated async PapaParse fetch loop matching Jekyll tracking pattern
 window.addEventListener('DOMContentLoaded', () => {
-  const csvPath = 'data/ukraine-damages.csv'; 
+  // Uses Jekyll's relative_url filter safely inside script contexts
+  const csvPath = "{{ '/data/ukraine-damages.csv' | relative_url }}"; 
   
   Papa.parse(csvPath, {
     download: true,
@@ -236,7 +211,6 @@ function showError(msg) {
   document.getElementById('drop-zone').style.display = 'none';
 }
 
-// Scans dataset dynamically to automatically identify years
 function initializeDashboardOptions() {
   const detectedYears = new Set();
   
@@ -255,7 +229,6 @@ function initializeDashboardOptions() {
     return;
   }
 
-  // Populate dynamic comparison dropdown selectors
   const baseSel = document.getElementById('base-year-select');
   const compSel = document.getElementById('comp-year-select');
   
@@ -267,7 +240,6 @@ function initializeDashboardOptions() {
     compSel.appendChild(new Option(yr, yr));
   });
 
-  // Smart defaults: Set baseline to second to last year, comparison to latest year
   if (uniqueYearsList.length >= 2) {
     baseSel.value = uniqueYearsList[uniqueYearsList.length - 2];
     compSel.value = uniqueYearsList[uniqueYearsList.length - 1];
@@ -282,7 +254,6 @@ function initializeDashboardOptions() {
   document.getElementById('controls').style.display = 'flex';
 }
 
-// Dynamically segments a 365-day calendar into user-chosen intervals
 function getPeriodLabels(daysInStep) {
   const labels = [];
   const totalPeriods = Math.ceil(365 / daysInStep);
@@ -292,7 +263,6 @@ function getPeriodLabels(daysInStep) {
     let endDay = startDay + daysInStep - 1;
     if (endDay > 365) endDay = 365;
 
-    // Use a fixed leap-neutral frame (2025) to derive standard calendar labels
     const dStart = new Date(2025, 0, startDay);
     const dEnd = new Date(2025, 0, endDay);
     
@@ -318,7 +288,7 @@ function buildPeriodDropdowns() {
     pSelect.appendChild(new Option(`Period ${index + 1}: (${label})`, index));
   });
   
-  pSelect.value = 0; // Default to highlight the first period
+  pSelect.value = 0; 
   updateChartAndStats();
 }
 
@@ -332,7 +302,6 @@ function updateChartAndStats() {
   const baseCounts = new Array(periodLabels.length).fill(0);
   const compCounts = new Array(periodLabels.length).fill(0);
 
-  // Group damage metrics into calculated timeline matrices
   rawCSVData.forEach(row => {
     const dateStr = (row.date_of_event || '').trim();
     if (!dateStr) return;
@@ -350,7 +319,6 @@ function updateChartAndStats() {
     if (year === compYear) compCounts[pIdx]++;
   });
 
-  // Render ChartJS Layer Line matrix
   const highlightPlugin = {
     id: 'dynamicHighlightBand',
     beforeDraw(chart) {
@@ -360,7 +328,7 @@ function updateChartAndStats() {
       const x0 = xScale.getPixelForValue(highlightIdx) - xScale.width / (periodLabels.length * 2);
       const x1 = xScale.getPixelForValue(highlightIdx) + xScale.width / (periodLabels.length * 2);
       ctx.save();
-      ctx.fillStyle = 'rgba(230, 126, 34, 0.15)'; // Elegant orange accent transparent highlight
+      ctx.fillStyle = 'rgba(230, 126, 34, 0.15)'; 
       ctx.fillRect(x0, chartArea.top, x1 - x0, chartArea.bottom - chartArea.top);
       ctx.restore();
     }
@@ -410,7 +378,6 @@ function updateChartAndStats() {
           ticks: {
             maxRotation: 45,
             callback: function(val, idx) {
-              // Shows every second label on the x-axis to keep text legible
               return idx % 2 === 0 ? periodLabels[idx].split(' – ')[0] : '';
             }
           },
@@ -422,7 +389,6 @@ function updateChartAndStats() {
     plugins: [highlightPlugin]
   });
 
-  // Calculate dynamic dashboard stat summary blocks
   document.getElementById('chart-card').style.display = 'block';
   document.getElementById('chart-title').textContent = `Damaged Buildings Profile Breakdown — ${baseYear} vs ${compYear}`;
   document.getElementById('chart-subtitle').textContent = `Highlighted Interval Window: ${periodLabels[highlightIdx]}`;
@@ -453,5 +419,3 @@ function updateChartAndStats() {
   document.getElementById('stats').style.display = 'flex';
 }
 </script>
-</body>
-</html>
