@@ -15,7 +15,7 @@ body {
 main.site-content {
   flex: 1;
   padding: 20px;
-  max-width: 1200px;
+  max-width: 95%;
   width: 100%;
   margin: 0 auto;
   box-sizing: border-box;
@@ -76,7 +76,7 @@ main.site-content {
 
 /* Container Layout */
 .container { 
-  max-width: 1000px; 
+  max-width: 90%; 
   margin: 32px auto; 
   padding: 0 20px; 
 }
