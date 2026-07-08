@@ -4,17 +4,17 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Damage Assessment Map | E-PACC Ukraine</title>
-  <link rel="stylesheet" href="/assets/css/style.css">
+  <link rel="stylesheet" href="/acaps-ukraine-buildings/assets/css/style.css">
   
 </head>
 <body>
 
   <header class="site-header">
   <div class="header-container">
-    <a href="/" class="site-title">E-PACC Ukraine</a>
+    <a href="/acaps-ukraine-buildings/" class="site-title">E-PACC Ukraine</a>
     <nav class="site-nav">
-      <a href="/">Home</a>
-      <a href="/map.html">Map</a>
+      <a href="/acaps-ukraine-buildings/">National</a>
+      <a href="/acaps-ukraine-buildings/map.html">Oblast</a>
     </nav>
   </div>
 </header>
@@ -22,41 +22,15 @@
   <main class="site-content">
     <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
 
-<style>
-  .container { max-width: 1000px; margin: 32px auto; padding: 0 20px; }
-
-  /* Hero Panel Styles */
-  .hero-panel {
-    background: #ffffff;
-    border-radius: 10px;
-    padding: 32px;
-    margin-bottom: 24px;
-    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
-    border-left: 5px solid #1a3a5c;
-  }
-  .hero-panel h1 {
-    font-size: 24px;
-    color: #1a3a5c;
-    margin-bottom: 12px;
-    font-weight: 600;
-  }
-  .hero-panel p {
-    font-size: 14px;
-    color: #555;
-    line-height: 1.6;
-  }
-</style>
-
 <div class="container">
-
   <section class="hero-panel">
-    <h1>Spatial analysis</h1>
+    <h1>Oblast analysis</h1>
     <p>
       Interactive map visualisation of the spatial distribution of recorded structural damage incidents across Ukraine. The map is dynamically generated based on the selected assessment year and time frame filter type. Use the controls on the left to adjust the parameters and explore the data.
     </p>
   </section>
 
-<link rel="stylesheet" href="/assets/css/map-visualisations.css">
+  <link rel="stylesheet" href="/acaps-ukraine-buildings/assets/css/map-visualisations.css">
 
 <div class="map-dashboard-container">
   <aside id="map-controls">
@@ -92,7 +66,7 @@
     </div>
   </aside>
   <main id="map-wrapper-card">
-    <h2 id="map-view-title">Spatial Damage Assessment Mapping Profile</h2>
+    <h2 id="map-view-title">Oblast Damage Analysis</h2>
     <div id="map-container"></div>
   </main>
 </div>
@@ -114,14 +88,15 @@
 </section>
 
 <script>
-  window.MAP_CSV_PATH = "/data/ukraine-damages.csv";
-  window.MAP_GEOJSON_PATH = "/data/ukr_admn_ad1_py_s0_fieldmaps_pp_oblast.json";
+  window.MAP_CSV_PATH = "/acaps-ukraine-buildings/data/ukraine-damages.csv";
+  window.MAP_GEOJSON_PATH = "/acaps-ukraine-buildings/data/ukr_admn_ad1_py_s0_fieldmaps_pp_oblast.json";
 </script>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
-<script src="/assets/js/papaparse.min.js" defer></script>
+<script src="/acaps-ukraine-buildings/assets/js/papaparse.min.js" defer></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js" defer></script>
-<script src="/assets/js/map-visualisations.js" defer></script>
+<script src="/acaps-ukraine-buildings/assets/js/map-visualisations.js" defer></script>
+</div> 
   </main>
 
   <footer class="site-footer">

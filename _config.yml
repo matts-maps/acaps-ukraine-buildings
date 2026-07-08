@@ -7,7 +7,7 @@ repository: "matts-maps/acaps-ukraine-buildings"
 url: "https://matts-maps.github.io"
 baseurl: "/acaps-ukraine-buildings"
 
-theme: minima
+
 
 # Ensure Jekyll processes your automated data folder
 include:

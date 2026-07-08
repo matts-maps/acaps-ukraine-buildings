@@ -71,3 +71,31 @@ main.site-content {
 .footer-container p {
   margin: 5px 0;
 }
+
+/* Container Layout */
+.container { 
+  max-width: 1000px; 
+  margin: 32px auto; 
+  padding: 0 20px; 
+}
+
+/* Hero Panel Styles */
+.hero-panel {
+  background: #ffffff;
+  border-radius: 10px;
+  padding: 32px;
+  margin-bottom: 24px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  border-left: 5px solid #1a3a5c;
+}
+.hero-panel h1 {
+  font-size: 24px;
+  color: #1a3a5c;
+  margin-bottom: 12px;
+  font-weight: 600;
+}
+.hero-panel p {
+  font-size: 14px;
+  color: #555;
+  line-height: 1.6;
+}
