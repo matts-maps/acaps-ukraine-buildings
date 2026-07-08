@@ -26,11 +26,23 @@ window.addEventListener('DOMContentLoaded', () => {
     .then(([geoData, csvData]) => {
         geoJSONData = geoData;
         rawDamageCSV = csvData;
+
+        // Fit the view to the full extent of the administrative boundaries
+        // so the whole of Ukraine is visible, regardless of screen size.
+        const bounds = L.geoJSON(geoData).getBounds();
+        if (bounds.isValid()) {
+            mapInstance.fitBounds(bounds, { padding: [15, 15] });
+        }
+
         buildMapFilterOptions();
     });
 });
 
+const THEMATIC_COLORS = ['#fff5eb', '#fee6ce', '#fdd0a2', '#fdae6b', '#f16913', '#d94801'];
+
 function initMapElement() {
+    // Start on a reasonable default view; this gets replaced by fitBounds()
+    // once the Ukraine boundary geoJSON has loaded.
     mapInstance = L.map('map-container', { zoomSnap: 0.5 }).setView([48.3794, 31.1656], 6);
     L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
         attribution: '&copy; OpenStreetMap', maxZoom: 20
@@ -45,23 +57,70 @@ function initMapElement() {
     };
     window.mapInfoPanel.addTo(mapInstance);
 
-    // UI: Legend
-    const legend = L.control({ position: 'bottomright' });
-    legend.onAdd = function() {
-        const div = L.DomUtil.create('div', 'map-legend');
-        const grades = [0, 50, 200, 500, 1000, 1500];
-        div.innerHTML = '<strong>Damage Scale</strong><br>';
-        for (let i = 0; i < grades.length; i++) {
-            div.innerHTML += '<i style="background:' + getThematicColor(grades[i] + 1) + '"></i> ' +
-                grades[i] + (grades[i + 1] ? '&ndash;' + grades[i + 1] + '<br>' : '+');
-        }
-        return div;
+    // UI: Legend (populated/refreshed dynamically by updateLegend())
+    window.mapLegend = L.control({ position: 'bottomright' });
+    window.mapLegend.onAdd = function() {
+        this._div = L.DomUtil.create('div', 'map-legend');
+        this._div.innerHTML = '<strong>Damage Scale</strong><br>Loading&hellip;';
+        return this._div;
     };
-    legend.addTo(mapInstance);
+    window.mapLegend.addTo(mapInstance);
 }
 
-function getThematicColor(val) {
-    return val > 1500 ? '#d94801' : val > 1000 ? '#f16913' : val > 500 ? '#fdae6b' : val > 200 ? '#fdd0a2' : val > 50 ? '#fee6ce' : '#fff5eb';
+// Computes 6 ascending thematic breakpoints from whatever data is currently
+// on screen, so the legend/colour scale adapts to the selected period
+// instead of using a single fixed scale for every view.
+function computeDynamicBreaks(counts) {
+    const values = Object.values(counts).filter(v => v > 0);
+    const max = values.length ? Math.max(...values) : 0;
+
+    if (max <= 5) {
+        // Small counts: keep the scale simple and integer-based.
+        return [0, 1, 2, 3, 4, 5];
+    }
+
+    const proportions = [0.05, 0.15, 0.35, 0.65, 1];
+    const breaks = [0];
+    proportions.forEach(p => {
+        let v = roundNice(max * p);
+        if (v <= breaks[breaks.length - 1]) v = breaks[breaks.length - 1] + 1;
+        breaks.push(v);
+    });
+    return breaks; // e.g. [0, b1, b2, b3, b4, b5]
+}
+
+// Rounds a number to a "nice" value (1/2/5/10 x a power of ten) so legend
+// labels read cleanly instead of showing arbitrary decimals.
+function roundNice(n) {
+    if (n < 10) return Math.round(n);
+    const magnitude = Math.pow(10, Math.floor(Math.log10(n)));
+    const normalized = n / magnitude;
+    let niceNormalized;
+    if (normalized <= 1) niceNormalized = 1;
+    else if (normalized <= 2) niceNormalized = 2;
+    else if (normalized <= 5) niceNormalized = 5;
+    else niceNormalized = 10;
+    return niceNormalized * magnitude;
+}
+
+function getThematicColor(val, breaks) {
+    const grades = breaks || [0, 50, 200, 500, 1000, 1500];
+    return val > grades[5] ? THEMATIC_COLORS[5]
+        : val > grades[4] ? THEMATIC_COLORS[4]
+        : val > grades[3] ? THEMATIC_COLORS[3]
+        : val > grades[2] ? THEMATIC_COLORS[2]
+        : val > grades[1] ? THEMATIC_COLORS[1]
+        : THEMATIC_COLORS[0];
+}
+
+function updateLegend(breaks) {
+    if (!window.mapLegend || !window.mapLegend._div) return;
+    let html = '<strong>Damage Scale</strong><br>';
+    for (let i = 0; i < breaks.length; i++) {
+        html += '<i style="background:' + THEMATIC_COLORS[i] + '"></i> ' +
+            breaks[i] + (breaks[i + 1] !== undefined ? '&ndash;' + breaks[i + 1] + '<br>' : '+');
+    }
+    window.mapLegend._div.innerHTML = html;
 }
 
 function buildMapFilterOptions() {
@@ -74,11 +133,22 @@ function buildMapFilterOptions() {
 
 function buildMapPeriodDropdowns() {
     const aggType = document.getElementById('map-aggregation-select').value;
-    const periodSel = document.getElementById('map-period-select');
-    if (!periodSel) return;
-    periodSel.innerHTML = aggType === '30' 
+    const startSel = document.getElementById('map-period-start-select');
+    const endSel = document.getElementById('map-period-end-select');
+    if (!startSel || !endSel) return;
+
+    const options = aggType === '30'
         ? monthsList.map((m, i) => `<option value="${i}">${m}</option>`).join('')
         : Array.from({length: Math.ceil(365/aggType)}, (_, i) => `<option value="${i}">${aggType==7?'Week':'Fortnight'} ${i+1}</option>`).join('');
+
+    startSel.innerHTML = options;
+    endSel.innerHTML = options;
+
+    // Default to a single-window range (behaves like a normal single-period
+    // selection until the user widens the "to" side).
+    startSel.selectedIndex = 0;
+    endSel.selectedIndex = 0;
+
     processMapVisualisations();
 }
 
@@ -86,14 +156,17 @@ function processMapVisualisations() {
     if (!geoJSONData || !rawDamageCSV) return;
 
     const yearEl = document.getElementById('map-year-select');
-    const periodEl = document.getElementById('map-period-select');
+    const startEl = document.getElementById('map-period-start-select');
+    const endEl = document.getElementById('map-period-end-select');
     const aggEl = document.getElementById('map-aggregation-select');
     const totalEl = document.getElementById('map-total-value');
     
-    if (!yearEl || !periodEl || !aggEl) return;
+    if (!yearEl || !startEl || !endEl || !aggEl) return;
 
     const targetYear = parseInt(yearEl.value);
-    const targetPeriod = parseInt(periodEl.value);
+    let startPeriod = parseInt(startEl.value);
+    let endPeriod = parseInt(endEl.value);
+    if (startPeriod > endPeriod) [startPeriod, endPeriod] = [endPeriod, startPeriod];
     const step = parseInt(aggEl.value);
 
     // Add specific name overrides here if auto-normalization isn't enough
@@ -109,7 +182,7 @@ function processMapVisualisations() {
             const day = Math.floor((d - new Date(d.getFullYear(), 0, 0)) / 86400000);
             const p = step === 30 ? d.getMonth() : Math.floor((day - 1) / step);
             
-            if (p === targetPeriod) {
+            if (p >= startPeriod && p <= endPeriod) {
                 // Normalize names to match GeoJSON properties
                 const name = nameMap[rawOblast] || rawOblast.replace('ska', '');
                 counts[name] = (counts[name] || 0) + 1;
@@ -119,6 +192,11 @@ function processMapVisualisations() {
 
     if (totalEl) totalEl.textContent = Object.values(counts).reduce((a, b) => a + b, 0).toLocaleString();
 
+    // Recompute the colour scale from the data actually shown in this
+    // period, rather than a scale fixed for every view.
+    const breaks = computeDynamicBreaks(counts);
+    updateLegend(breaks);
+
     if (leafletGeoLayer) mapInstance.removeLayer(leafletGeoLayer);
     
     leafletGeoLayer = L.geoJSON(geoJSONData, {
@@ -126,7 +204,7 @@ function processMapVisualisations() {
             const rawGeoName = (f.properties.adm1_name || f.properties.ADM1_EN || '');
             const geoName = nameMap[rawGeoName] || rawGeoName.replace('ska', '');
             return {
-                fillColor: getThematicColor(counts[geoName] || 0),
+                fillColor: getThematicColor(counts[geoName] || 0, breaks),
                 weight: 1, 
                 color: '#666', 
                 fillOpacity: 0.7

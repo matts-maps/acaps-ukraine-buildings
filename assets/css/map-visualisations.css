@@ -29,6 +29,23 @@
   gap: 8px;
 }
 
+.map-range-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.map-range-row select {
+  flex: 1;
+  min-width: 0;
+}
+
+.map-range-sep {
+  font-size: 12px;
+  color: #777;
+  flex-shrink: 0;
+}
+
 #map-controls label {
   font-size: 13px;
   font-weight: 600;

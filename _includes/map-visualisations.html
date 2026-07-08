@@ -16,8 +16,12 @@
       </select>
     </div>
     <div class="map-control-group">
-      <label for="map-period-select">Select Window Frame Target:</label>
-      <select id="map-period-select" onchange="processMapVisualisations()"></select>
+      <label for="map-period-start-select">Select Window Frame Range:</label>
+      <div class="map-range-row">
+        <select id="map-period-start-select" onchange="processMapVisualisations()"></select>
+        <span class="map-range-sep">to</span>
+        <select id="map-period-end-select" onchange="processMapVisualisations()"></select>
+      </div>
     </div>
     <div class="map-summary-box">
       <div class="label">National Frame Total</div>

@@ -4,17 +4,5 @@ title: Damage Assessment Map
 ---
 
 <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
-<link rel="stylesheet" href="{{ '/assets/css/map-visualisations.css' | relative_url }}">
 
-<div id="map-container" style="height: 600px; width: 100%;"></div>
-
-<script>
-  window.MAP_CSV_PATH = "{{ '/data/ukraine-damages.csv' | relative_url }}";
-  window.MAP_GEOJSON_PATH = "{{ '/data/ukr_admn_ad1_py_s0_fieldmaps_pp_oblast.json' | relative_url }}";
-</script>
-
-<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-
-<script src="{{ '/assets/js/papaparse.min.js' | relative_url }}"></script>
-
-<script src="{{ '/assets/js/map-visualisations.js' | relative_url }}"></script>
+{% include map-visualisations.html %}
