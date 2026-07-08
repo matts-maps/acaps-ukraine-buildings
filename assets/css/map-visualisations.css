@@ -160,3 +160,88 @@
   margin-bottom: 12px;
   display: none;
 }
+
+/* Cross-filter: active selection badge */
+#map-active-filter-group {
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: #fff4ec;
+  border: 1px solid #f4c9a5;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+#map-active-filter-label {
+  font-weight: 600;
+  color: #a2440a;
+}
+
+#map-clear-filter-btn {
+  border: 1px solid #d94801;
+  background: #fff;
+  color: #d94801;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+#map-clear-filter-btn:hover {
+  background: #d94801;
+  color: #fff;
+}
+
+.map-hint {
+  font-size: 11px;
+  color: #888;
+  line-height: 1.4;
+  margin: 0;
+}
+
+/* Cross-filter: clickable oblast polygons */
+.leaflet-interactive {
+  cursor: pointer;
+}
+
+/* Summary Charts Section */
+#map-charts-section {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  max-width: 1000px;
+  margin: 0 auto 32px;
+  padding: 0 20px;
+  box-sizing: border-box;
+}
+
+.map-chart-card {
+  flex: 1 1 280px;
+  background: #fff;
+  border-radius: 10px;
+  padding: 20px;
+  box-sizing: border-box;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+}
+
+.map-chart-card h3 {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1a3a5c;
+  margin: 0 0 14px;
+}
+
+.map-chart-card .chart-wrap {
+  position: relative;
+  height: 220px;
+}
+
+.map-charts-note {
+  flex-basis: 100%;
+  font-size: 12px;
+  color: #888;
+  margin: 0;
+  text-align: center;
+}
