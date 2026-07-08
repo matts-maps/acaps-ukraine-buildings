@@ -1,10 +1,14 @@
-title: E-PACC Ukraine
-description: Dynamic Building Damage Analytics
-repository: matts-maps/acaps-ukraine-buildings
-# ... other config settings
+title: "E-PACC Ukraine"
+description: "Dynamic Building Damage Analytics"
 
-theme: minima # A clean, default Jekyll theme
+repository: "matts-maps/acaps-ukraine-buildings"
 
-# CRITICAL: Tell Jekyll not to ignore your automated data folder
+# Required for GitHub Pages project sites
+url: "https://matts-maps.github.io"
+baseurl: "/acaps-ukraine-buildings"
+
+theme: minima
+
+# Ensure Jekyll processes your automated data folder
 include:
   - data
