@@ -21,31 +21,36 @@ main.site-content {
   box-sizing: border-box;
 }
 
+
 /* Header Styles */
 .site-header {
-  background-color: #1f2937;
+  background-color: #1a3a5c; /* Updated to dark blue */
   color: #ffffff;
-  padding: 15px 20px;
+  padding: 18px 20px;
+  box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
 }
 
 .header-container {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  max-width: 1200px;
+  max-width: 1000px; /* Matches the container width of your visualisations */
   margin: 0 auto;
 }
 
 .site-title {
-  font-size: 1.5rem;
-  font-weight: bold;
+  font-size: 1.2rem;
+  font-weight: 600;
+  letter-spacing: 0.3px;
   color: #ffffff;
   text-decoration: none;
 }
 
 .site-nav a {
-  color: #9ca3af;
+  color: rgba(255, 255, 255, 0.8);
   text-decoration: none;
+  font-size: 14px;
+  font-weight: 600;
   margin-left: 20px;
   transition: color 0.2s ease;
 }
