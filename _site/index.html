@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Home | E-PACC Ukraine</title>
+  <link rel="stylesheet" href="/assets/css/style.css">
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/PapaParse/5.4.1/papaparse.min.js"></script> <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+
+</head>
+<body>
+
+  <header class="site-header">
+  <div class="header-container">
+    <a href="/" class="site-title">E-PACC Ukraine</a>
+    <nav class="site-nav">
+      <a href="/">Home</a>
+      <a href="/map.html">Map Visualisations</a>
+    </nav>
+  </div>
+</header>
+
+  <main class="site-content">
+    <style>
+  .container { max-width: 1000px; margin: 32px auto; padding: 0 20px; }
+
+  /* Hero Panel Styles */
+  .hero-panel {
+    background: #ffffff;
+    border-radius: 10px;
+    padding: 32px;
+    margin-bottom: 24px;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    border-left: 5px solid #1a3a5c;
+  }
+  .hero-panel h1 {
+    font-size: 24px;
+    color: #1a3a5c;
+    margin-bottom: 12px;
+    font-weight: 600;
+  }
+  .hero-panel p {
+    font-size: 14px;
+    color: #555;
+    line-height: 1.6;
+  }
+</style>
+
+<div class="container">
+
+  <section class="hero-panel">
+    <h1>Dynamic Building Damage Analytics</h1>
+    <p>
+      Welcome to the automated pipeline monitoring dashboard. This platform provides historical time-series analytics regarding recorded structural damage incidents across Ukraine. By leveraging data components processed from the ACAPS API, this tool enables structural comparisons across standardized temporal cycles. Adjust the aggregation parameters below to query, filter, and refresh the localized data visualisations.
+    </p>
+  </section>
+
+  <link rel="stylesheet" href="/assets/css/damage-dashboard.css">
+
+<div class="dashboard-container">
+
+  <div id="error-msg"></div>
+
+  <div id="controls">
+    <div class="control-row">
+      <div class="control-group">
+        <label for="period-type">Data Aggregation:</label>
+        <select id="period-type" onchange="buildPeriodDropdowns()">
+          <option value="7">Weekly (7-day periods)</option>
+          <option value="14" selected>Fortnightly (14-day periods)</option>
+          <option value="30">Monthly</option>
+        </select>
+      </div>
+
+      <div class="control-group">
+        <label for="base-year-select">Baseline Year:</label>
+        <select id="base-year-select" onchange="updateChartAndStats()"></select>
+      </div>
+
+      <div class="control-group">
+        <label for="comp-year-select">Comparison Year:</label>
+        <select id="comp-year-select" onchange="updateChartAndStats()"></select>
+      </div>
+    </div>
+
+    <div class="control-row">
+      <div class="control-group">
+        <label for="highlight-start">Highlight Range From:</label>
+        <select id="highlight-start" onchange="updateChartAndStats()"></select>
+      </div>
+      <div class="control-group">
+        <label for="highlight-end">To:</label>
+        <select id="highlight-end" onchange="updateChartAndStats()"></select>
+      </div>
+      <button onclick="updateChartAndStats()">Refresh Visualisations</button>
+    </div>
+  </div>
+
+  <div id="chart-card">
+    <h2 id="chart-title">Damaged Buildings Time Series</h2>
+    <div class="subtitle" id="chart-subtitle"></div>
+    <div id="chart-wrapper">
+      <canvas id="myChart"></canvas>
+    </div>
+  </div>
+
+  <div id="stats">
+    <div class="stat-box" id="stat-base">
+      <div class="label" id="lbl-base">Baseline Year Data</div>
+      <div class="value" id="v-base">—</div>
+      <div class="sub" id="sub-base"></div>
+    </div>
+    <div class="stat-box comparison-year" id="stat-comp">
+      <div class="label" id="lbl-comp">Comparison Year Data</div>
+      <div class="value" id="v-comp">—</div>
+      <div class="sub" id="sub-comp"></div>
+    </div>
+    <div class="stat-box" id="stat-change" style="border-left-color:#555">
+      <div class="label">Historical Period Delta</div>
+      <div class="value change neutral" id="v-change">—</div>
+      <div class="sub" id="sub-change">Comparing targeted frames matching exactly by normalized calendar index position</div>
+    </div>
+  </div>
+
+</div>
+
+<script>
+  window.DASHBOARD_CSV_PATH = "/data/ukraine-damages.csv";
+</script>
+<script src="/assets/js/damage-dashboard.js"></script>
+
+</div>
+  </main>
+
+  <footer class="site-footer">
+  <div class="footer-container">
+    <p>&copy; 2026 E-PACC Ukraine Project. Created by MapAction and ACAPS.</p>
+    <p>Data sourced from ACAPS. Interactive building damage visualisations.</p>
+  </div>
+</footer>
+
+</body>
+</html>

@@ -1,5 +1,8 @@
-title: E-PACC Ukraine Damage Tracker
-description: Automated fortnightly and weekly building damage data visualisations.
+title: E-PACC Ukraine
+description: Dynamic Building Damage Analytics
+repository: matts-maps/acaps-ukraine-buildings
+# ... other config settings
+
 theme: minima # A clean, default Jekyll theme
 
 # CRITICAL: Tell Jekyll not to ignore your automated data folder

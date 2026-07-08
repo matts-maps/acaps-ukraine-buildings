@@ -1,0 +1,40 @@
+<link rel="stylesheet" href="{{ '/assets/css/map-visualisations.css' | relative_url }}">
+
+<div class="map-dashboard-container">
+  <aside id="map-controls">
+    <div id="map-error-msg"></div>
+    <div class="map-control-group">
+      <label for="map-year-select">Target Assessment Year:</label>
+      <select id="map-year-select" onchange="processMapVisualisations()"></select>
+    </div>
+    <div class="map-control-group">
+      <label for="map-aggregation-select">Time Frame Filter Type:</label>
+      <select id="map-aggregation-select" onchange="buildMapPeriodDropdowns()">
+        <option value="7">Weekly Granularity</option>
+        <option value="14">Fortnightly Granularity</option>
+        <option value="30" selected>Monthly Granularity</option>
+      </select>
+    </div>
+    <div class="map-control-group">
+      <label for="map-period-select">Select Window Frame Target:</label>
+      <select id="map-period-select" onchange="processMapVisualisations()"></select>
+    </div>
+    <div class="map-summary-box">
+      <div class="label">National Frame Total</div>
+      <div class="value" id="map-total-value">0</div>
+    </div>
+  </aside>
+  <main id="map-wrapper-card">
+    <h2 id="map-view-title">Spatial Damage Assessment Mapping Profile</h2>
+    <div id="map-container"></div>
+  </main>
+</div>
+
+<script>
+  window.MAP_CSV_PATH = "{{ '/data/ukraine-damages.csv' | relative_url }}";
+  window.MAP_GEOJSON_PATH = "{{ '/data/ukr_admn_ad1_py_s0_fieldmaps_pp_oblast.json' | relative_url }}";
+</script>
+
+<script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
+<script src="{{ '/assets/js/papaparse.min.js' | relative_url }}" defer></script>
+<script src="{{ '/assets/js/map-visualisations.js' | relative_url }}" defer></script>
