@@ -1,0 +1,247 @@
+/* Layout Framework */
+.map-dashboard-container {
+  display: flex;
+  width: 1000px;
+  max-width: 100%;
+  margin: 32px auto;
+  padding: 0 20px;
+  box-sizing: border-box;
+  gap: 20px;
+}
+
+/* Control Framework Panel */
+#map-controls {
+  width: 280px;
+  min-width: 280px;
+  background: #fff;
+  border-radius: 10px;
+  padding: 24px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+}
+
+.map-control-group {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.map-range-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.map-range-row select {
+  flex: 1;
+  min-width: 0;
+}
+
+.map-range-sep {
+  font-size: 12px;
+  color: #777;
+  flex-shrink: 0;
+}
+
+#map-controls label {
+  font-size: 13px;
+  font-weight: 600;
+  color: #444;
+}
+
+#map-controls select {
+  padding: 7px 12px;
+  border: 1px solid #ccc;
+  border-radius: 6px;
+  font-size: 13px;
+  background: #fff;
+  font-family: inherit;
+  cursor: pointer;
+  width: 100%;
+}
+
+/* Map Screen Bounds */
+#map-wrapper-card {
+  flex: 1;
+  background: #fff;
+  border-radius: 10px;
+  padding: 20px;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  display: flex;
+  flex-direction: column;
+}
+
+#map-wrapper-card h2 {
+  font-size: 16px;
+  color: #1a3a5c;
+  margin: 0 0 4px 0;
+}
+
+#map-wrapper-card .subtitle {
+  font-size: 12px;
+  color: #888;
+  margin-bottom: 16px;
+}
+
+#map-container {
+  width: 100%;
+  height: 500px; /* Explicit height prevents layout jumps */
+  display: block;
+}
+
+/* Leaflet UI Overlays & Floating Map Panels */
+.map-info-panel {
+  padding: 12px 16px;
+  font-family: inherit;
+  font-size: 13px;
+  background: #fff;
+  color: #333;
+  border: none;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  border-radius: 6px;
+  min-width: 180px;
+}
+
+.map-info-panel h4 {
+  margin: 0 0 6px 0;
+  font-size: 14px;
+  color: #1a3a5c;
+}
+
+.map-legend {
+  line-height: 20px;
+  color: #555;
+  background: #fff;
+  padding: 12px;
+  border-radius: 6px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  font-size: 12px;
+}
+
+.map-legend i {
+  width: 16px;
+  height: 16px;
+  float: left;
+  margin-right: 8px;
+  opacity: 0.85;
+  border-radius: 3px;
+}
+
+/* Metrics summary box */
+.map-summary-box {
+  margin-top: auto;
+  background: #f0f4f8;
+  border-radius: 8px;
+  padding: 14px;
+  border-left: 4px solid #1a3a5c;
+}
+
+.map-summary-box .label {
+  font-size: 11px;
+  color: #666;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+}
+
+.map-summary-box .value {
+  font-size: 22px;
+  font-weight: 700;
+  color: #1a3a5c;
+  margin-top: 2px;
+}
+
+#map-error-msg {
+  color: #c0392b;
+  font-size: 13px;
+  margin-bottom: 12px;
+  display: none;
+}
+
+/* Cross-filter: active selection badge */
+#map-active-filter-group {
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  background: #fff4ec;
+  border: 1px solid #f4c9a5;
+  border-radius: 8px;
+  padding: 8px 10px;
+  font-size: 12px;
+}
+
+#map-active-filter-label {
+  font-weight: 600;
+  color: #a2440a;
+}
+
+#map-clear-filter-btn {
+  border: 1px solid #d94801;
+  background: #fff;
+  color: #d94801;
+  border-radius: 6px;
+  padding: 4px 10px;
+  font-size: 12px;
+  cursor: pointer;
+  flex-shrink: 0;
+}
+
+#map-clear-filter-btn:hover {
+  background: #d94801;
+  color: #fff;
+}
+
+.map-hint {
+  font-size: 11px;
+  color: #888;
+  line-height: 1.4;
+  margin: 0;
+}
+
+/* Cross-filter: clickable oblast polygons */
+.leaflet-interactive {
+  cursor: pointer;
+}
+
+/* Summary Charts Section */
+#map-charts-section {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  max-width: 1000px;
+  margin: 0 auto 32px;
+  padding: 0 20px;
+  box-sizing: border-box;
+}
+
+.map-chart-card {
+  flex: 1 1 280px;
+  background: #fff;
+  border-radius: 10px;
+  padding: 20px;
+  box-sizing: border-box;
+  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+}
+
+.map-chart-card h3 {
+  font-size: 14px;
+  font-weight: 600;
+  color: #1a3a5c;
+  margin: 0 0 14px;
+}
+
+.map-chart-card .chart-wrap {
+  position: relative;
+  height: 220px;
+}
+
+.map-charts-note {
+  flex-basis: 100%;
+  font-size: 12px;
+  color: #888;
+  margin: 0;
+  text-align: center;
+}
