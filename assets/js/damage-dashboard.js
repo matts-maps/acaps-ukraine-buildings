@@ -162,6 +162,7 @@ function updateChartAndStats() {
   
   const baseCounts = new Array(totalPeriods).fill(0);
   const compCounts = new Array(totalPeriods).fill(0);
+  let maxDate = null;
 
   rawCSVData.forEach(row => {
     const dateStr = (row.date_of_event || '').trim();
@@ -169,6 +170,8 @@ function updateChartAndStats() {
     
     const d = new Date(dateStr);
     if (isNaN(d)) return;
+
+    if (!maxDate || d > maxDate) maxDate = d;
     
     const year = d.getFullYear();
     let pIdx = 0;
@@ -186,6 +189,22 @@ function updateChartAndStats() {
     if (year === compYear) compCounts[pIdx]++;
   });
 
+  // Whichever year holds the most recent recorded event is still "in
+  // progress" - periods after that point haven't happened yet, so the line
+  // should stop there instead of dropping to a misleading 0.
+  const maxDataYear = maxDate ? maxDate.getFullYear() : null;
+  let maxDataPeriodIdx = null;
+  if (maxDate) {
+    if (stepDays === 30) {
+      maxDataPeriodIdx = maxDate.getMonth();
+    } else {
+      const dayNum = calculateDayOfYear(maxDate);
+      maxDataPeriodIdx = Math.floor((dayNum - 1) / stepDays);
+      if (maxDataPeriodIdx >= totalPeriods) maxDataPeriodIdx = totalPeriods - 1;
+      if (maxDataPeriodIdx < 0) maxDataPeriodIdx = 0;
+    }
+  }
+
   for (let i = 0; i < totalPeriods; i++) {
     let decimalX = 0;
     if (stepDays === 30) {
@@ -194,8 +213,10 @@ function updateChartAndStats() {
       const centerDay = (i * stepDays) + (stepDays / 2);
       decimalX = (centerDay / 365) * 12; 
     }
-    basePoints.push({ x: decimalX, y: baseCounts[i] });
-    compPoints.push({ x: decimalX, y: compCounts[i] });
+    const baseBeyondData = baseYear === maxDataYear && i > maxDataPeriodIdx;
+    const compBeyondData = compYear === maxDataYear && i > maxDataPeriodIdx;
+    basePoints.push({ x: decimalX, y: baseBeyondData ? null : baseCounts[i] });
+    compPoints.push({ x: decimalX, y: compBeyondData ? null : compCounts[i] });
   }
 
   const highlightPlugin = {
