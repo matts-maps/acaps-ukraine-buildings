@@ -20,7 +20,7 @@ const monthsList = ['January', 'February', 'March', 'April', 'May', 'June', 'Jul
 
 window.addEventListener('DOMContentLoaded', () => {
     const csvPath = window.MAP_CSV_PATH || '/data/ukraine-damages.csv';
-    const geojsonPath = window.MAP_GEOJSON_PATH || '/data/ukr_admn_ad2_py_s0_geodata_pp_raion.json';
+    const geojsonPath = window.MAP_GEOJSON_PATH || '/data/ukr_admn_ad2_py_s0_fieldmaps_pp_raions.json';
 
     if (typeof L === 'undefined' || typeof Papa === 'undefined') return;
 
@@ -236,9 +236,10 @@ function processMapVisualisations() {
         const p = step === 30 ? d.getMonth() : Math.floor((day - 1) / step);
         if (p < startPeriod || p > endPeriod) return;
 
-        // The GeoJSON already carries an English raion name matched to this
-        // CSV's spelling (see data build step), so no runtime normalization
-        // is needed here beyond the raw value itself.
+        // The raw CSV value is used as the tally key directly; matching
+        // this up with the GeoJSON's adm2_name happens in the map layer
+        // below via the nameMap override table (a few raions were renamed
+        // after this boundary source was published).
         const name = rawRaion;
         const infraType = r.type_of_infrastructure?.trim() || 'Unspecified';
         const extent = r.extent_of_damage?.trim() || 'Unspecified';
@@ -267,10 +268,21 @@ function processMapVisualisations() {
     updateSummaryCharts(counts, infraCounts, extentCounts);
 
     if (leafletGeoLayer) mapInstance.removeLayer(leafletGeoLayer);
-    
+
+    // A handful of raions were renamed after this boundary data was
+    // published (decommunization/derussification renames); map the
+    // boundary's name to the spelling actually used in the CSV.
+    const nameMap = {
+        'Kerchynskyi': 'Kerchenskyi',
+        'Krasnoperekopskyi': 'Perekopskyi',
+        'Chervonohradskyi': 'Sheptytskyi',
+        'Sievierodonetskyi': 'Siverskodonetskyi'
+    };
+
     leafletGeoLayer = L.geoJSON(geoJSONData, {
         style: f => {
-            const geoName = f.properties.rayon || '';
+            const rawGeoName = f.properties.adm2_name || '';
+            const geoName = nameMap[rawGeoName] || rawGeoName;
             const isSelected = activeFilter && activeFilter.dimension === 'raion' && activeFilter.value === geoName;
             return {
                 fillColor: getThematicColor(counts[geoName] || 0, breaks),
@@ -280,10 +292,11 @@ function processMapVisualisations() {
             };
         },
         onEachFeature: (f, l) => {
-            const geoName = f.properties.rayon || '';
+            const rawGeoName = f.properties.adm2_name || '';
+            const geoName = nameMap[rawGeoName] || rawGeoName;
 
             l.on('mouseover', e => {
-                window.mapInfoPanel._div.innerHTML = `<h4>${geoName}</h4><b>Damages:</b> ${(counts[geoName] || 0).toLocaleString()}`;
+                window.mapInfoPanel._div.innerHTML = `<h4>${rawGeoName}</h4><b>Damages:</b> ${(counts[geoName] || 0).toLocaleString()}`;
             });
             l.on('click', e => {
                 setActiveFilter('raion', geoName);
