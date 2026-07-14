@@ -46,8 +46,7 @@ jobs:
           git add data/ukraine-damages.csv \
                   data/ukraine-damages-weekly-summary.csv \
                   data/week_4_comparison.csv \
-                  data/week_4_comparison.png \
-                  data/index.html
+                  index.html
 
           if git diff --cached --quiet; then
             echo "No changes detected in raw data, summaries, plots, or dashboard."
