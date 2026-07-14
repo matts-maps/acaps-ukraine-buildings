@@ -15,14 +15,9 @@
         </select>
       </div>
 
-      <div class="control-group">
-        <label for="base-year-select">Baseline Year:</label>
-        <select id="base-year-select" onchange="updateChartAndStats()"></select>
-      </div>
-
-      <div class="control-group">
-        <label for="comp-year-select">Comparison Year:</label>
-        <select id="comp-year-select" onchange="updateChartAndStats()"></select>
+      <div class="control-group year-checkbox-group">
+        <label>Years to Compare:</label>
+        <div id="year-checkboxes" class="year-checkbox-row"></div>
       </div>
     </div>
 
@@ -40,30 +35,24 @@
   </div>
 
   <div id="chart-card">
-    <h2 id="chart-title">Damaged Buildings Time Series</h2>
-    <div class="subtitle" id="chart-subtitle"></div>
+    <div class="chart-header">
+      <div>
+        <h2 id="chart-title">Damaged Buildings Time Series</h2>
+        <div class="subtitle" id="chart-subtitle"></div>
+      </div>
+      <div class="export-buttons">
+        <span class="export-label">Export:</span>
+        <button type="button" onclick="exportChart('png')">PNG</button>
+        <button type="button" onclick="exportChart('jpg')">JPG</button>
+        <button type="button" onclick="exportChart('svg')">SVG</button>
+      </div>
+    </div>
     <div id="chart-wrapper">
       <canvas id="myChart"></canvas>
     </div>
   </div>
 
-  <div id="stats">
-    <div class="stat-box" id="stat-base">
-      <div class="label" id="lbl-base">Baseline Year Data</div>
-      <div class="value" id="v-base">—</div>
-      <div class="sub" id="sub-base"></div>
-    </div>
-    <div class="stat-box comparison-year" id="stat-comp">
-      <div class="label" id="lbl-comp">Comparison Year Data</div>
-      <div class="value" id="v-comp">—</div>
-      <div class="sub" id="sub-comp"></div>
-    </div>
-    <div class="stat-box" id="stat-change" style="border-left-color:#555">
-      <div class="label">Historical Period Delta</div>
-      <div class="value change neutral" id="v-change">—</div>
-      <div class="sub" id="sub-change">Comparing targeted frames matching exactly by normalized calendar index position</div>
-    </div>
-  </div>
+  <div id="stats"></div>
 
 </div>
 

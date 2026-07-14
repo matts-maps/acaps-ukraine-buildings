@@ -1,8 +1,14 @@
 let rawCSVData = [];
 let chartInstance = null;
 let uniqueYearsList = [];
+let lastChartSVG = '';
 
 const calendarMonths = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
+
+// One colour per year, assigned by position in uniqueYearsList so a given
+// year always renders the same colour regardless of which other years are
+// currently selected alongside it.
+const YEAR_COLORS = ['#1a3a5c', '#e07b39', '#2c8f7a', '#c0392b', '#8e44ad', '#2c5f8a', '#d4a017', '#555555'];
 
 window.addEventListener('DOMContentLoaded', () => {
   const csvPath = window.DASHBOARD_CSV_PATH || '/data/ukraine-damages.csv'; 
@@ -36,6 +42,17 @@ function showError(msg) {
   }
 }
 
+function colorForYear(year) {
+  const idx = uniqueYearsList.indexOf(year);
+  return YEAR_COLORS[idx % YEAR_COLORS.length];
+}
+
+function getSelectedYears() {
+  return Array.from(document.querySelectorAll('#year-checkboxes input[type="checkbox"]:checked'))
+    .map(cb => parseInt(cb.value))
+    .sort((a, b) => a - b);
+}
+
 function initializeDashboardOptions() {
   const detectedYears = new Set();
   
@@ -54,26 +71,33 @@ function initializeDashboardOptions() {
     return;
   }
 
-  const baseSel = document.getElementById('base-year-select');
-  const compSel = document.getElementById('comp-year-select');
-  
-  if (!baseSel || !compSel) return;
-  
-  baseSel.innerHTML = '';
-  compSel.innerHTML = '';
+  const checkboxContainer = document.getElementById('year-checkboxes');
+  if (!checkboxContainer) return;
+
+  checkboxContainer.innerHTML = '';
+
+  // Default to the most recent 4 years checked (matches the typical
+  // "compare the last few years" use case) while still exposing every
+  // available year as an option.
+  const defaultCheckedYears = new Set(uniqueYearsList.slice(-4));
 
   uniqueYearsList.forEach(yr => {
-    baseSel.appendChild(new Option(yr, yr));
-    compSel.appendChild(new Option(yr, yr));
-  });
+    const id = `year-cb-${yr}`;
+    const wrapper = document.createElement('label');
+    wrapper.setAttribute('for', id);
+    wrapper.style.color = colorForYear(yr);
 
-  if (uniqueYearsList.length >= 2) {
-    baseSel.value = uniqueYearsList[uniqueYearsList.length - 2];
-    compSel.value = uniqueYearsList[uniqueYearsList.length - 1];
-  } else {
-    baseSel.value = uniqueYearsList[0];
-    compSel.value = uniqueYearsList[0];
-  }
+    const cb = document.createElement('input');
+    cb.type = 'checkbox';
+    cb.id = id;
+    cb.value = yr;
+    cb.checked = defaultCheckedYears.has(yr);
+    cb.addEventListener('change', updateChartAndStats);
+
+    wrapper.appendChild(cb);
+    wrapper.appendChild(document.createTextNode(yr));
+    checkboxContainer.appendChild(wrapper);
+  });
 
   buildPeriodDropdowns();
   
@@ -134,16 +158,24 @@ function buildPeriodDropdowns() {
 
 function updateChartAndStats() {
   const periodTypeEl = document.getElementById('period-type');
-  const baseYearEl = document.getElementById('base-year-select');
-  const compYearEl = document.getElementById('comp-year-select');
   const startSel = document.getElementById('highlight-start');
   const endSel = document.getElementById('highlight-end');
   
-  if (!periodTypeEl || !baseYearEl || !compYearEl || !startSel || !endSel) return;
+  if (!periodTypeEl || !startSel || !endSel) return;
+
+  const selectedYears = getSelectedYears();
+  const chartCard = document.getElementById('chart-card');
+  const statsEl = document.getElementById('stats');
+
+  if (selectedYears.length === 0) {
+    if (chartCard) chartCard.style.display = 'none';
+    if (statsEl) { statsEl.style.display = 'none'; statsEl.innerHTML = ''; }
+    showError('Select at least one year to display the timeline.');
+    return;
+  }
+  document.getElementById('error-msg').style.display = 'none';
 
   const stepDays = parseInt(periodTypeEl.value);
-  const baseYear = parseInt(baseYearEl.value);
-  const compYear = parseInt(compYearEl.value);
   
   let idxStart = parseInt(startSel.value);
   let idxEnd = parseInt(endSel.value);
@@ -156,12 +188,9 @@ function updateChartAndStats() {
 
   const periodLabels = getPeriodLabels(stepDays);
   const totalPeriods = periodLabels.length;
-  
-  const basePoints = [];
-  const compPoints = [];
-  
-  const baseCounts = new Array(totalPeriods).fill(0);
-  const compCounts = new Array(totalPeriods).fill(0);
+
+  // Per-year tallies, built in a single pass over the data.
+  const countsByYear = new Map(selectedYears.map(yr => [yr, new Array(totalPeriods).fill(0)]));
   let maxDate = null;
 
   rawCSVData.forEach(row => {
@@ -174,8 +203,10 @@ function updateChartAndStats() {
     if (!maxDate || d > maxDate) maxDate = d;
     
     const year = d.getFullYear();
-    let pIdx = 0;
+    const yearCounts = countsByYear.get(year);
+    if (!yearCounts) return;
 
+    let pIdx = 0;
     if (stepDays === 30) {
       pIdx = d.getMonth();
     } else {
@@ -184,9 +215,7 @@ function updateChartAndStats() {
       if (pIdx >= totalPeriods) pIdx = totalPeriods - 1;
       if (pIdx < 0) pIdx = 0;
     }
-
-    if (year === baseYear) baseCounts[pIdx]++;
-    if (year === compYear) compCounts[pIdx]++;
+    yearCounts[pIdx]++;
   });
 
   // Whichever year holds the most recent recorded event is still "in
@@ -205,19 +234,24 @@ function updateChartAndStats() {
     }
   }
 
-  for (let i = 0; i < totalPeriods; i++) {
-    let decimalX = 0;
-    if (stepDays === 30) {
-      decimalX = i;
-    } else {
-      const centerDay = (i * stepDays) + (stepDays / 2);
-      decimalX = (centerDay / 365) * 12; 
+  const pointsByYear = new Map();
+  selectedYears.forEach(yr => {
+    const yearCounts = countsByYear.get(yr);
+    const beyondData = yr === maxDataYear;
+    const pts = [];
+    for (let i = 0; i < totalPeriods; i++) {
+      let decimalX = 0;
+      if (stepDays === 30) {
+        decimalX = i;
+      } else {
+        const centerDay = (i * stepDays) + (stepDays / 2);
+        decimalX = (centerDay / 365) * 12;
+      }
+      const isBeyond = beyondData && i > maxDataPeriodIdx;
+      pts.push({ x: decimalX, y: isBeyond ? null : yearCounts[i] });
     }
-    const baseBeyondData = baseYear === maxDataYear && i > maxDataPeriodIdx;
-    const compBeyondData = compYear === maxDataYear && i > maxDataPeriodIdx;
-    basePoints.push({ x: decimalX, y: baseBeyondData ? null : baseCounts[i] });
-    compPoints.push({ x: decimalX, y: compBeyondData ? null : compCounts[i] });
-  }
+    pointsByYear.set(yr, pts);
+  });
 
   const highlightPlugin = {
     id: 'dynamicHighlightBand',
@@ -231,7 +265,7 @@ function updateChartAndStats() {
 
       if (stepDays === 30) {
         xStartVal = idxStart;
-        xEndVal = idxEnd;
+        xEndVal = idxEnd + 1;
       } else {
         xStartVal = ((idxStart * stepDays) / 365) * 12;
         xEndVal = (((idxEnd + 1) * stepDays) / 365) * 12;
@@ -251,31 +285,23 @@ function updateChartAndStats() {
   if (!canvas) return;
   if (chartInstance) chartInstance.destroy();
 
+  const titleText = selectedYears.length === 1
+    ? `Damaged Buildings Profile — ${selectedYears[0]}`
+    : `Damaged Buildings Profile Breakdown — ${selectedYears.join(' vs ')}`;
+
   chartInstance = new Chart(canvas, {
     type: 'line',
     data: {
-      datasets: [
-        {
-          label: `Baseline Year: ${baseYear}`,
-          data: basePoints,
-          borderColor: '#1a3a5c',
-          backgroundColor: 'transparent',
-          borderWidth: 2.5,
-          tension: 0.25,
-          pointRadius: 0,
-          pointHitRadius: 10
-        },
-        {
-          label: `Comparison Year: ${compYear}`,
-          data: compPoints,
-          borderColor: '#e07b39',
-          backgroundColor: 'transparent',
-          borderWidth: 2.5,
-          tension: 0.25,
-          pointRadius: 0,
-          pointHitRadius: 10
-        }
-      ]
+      datasets: selectedYears.map(yr => ({
+        label: `${yr}`,
+        data: pointsByYear.get(yr),
+        borderColor: colorForYear(yr),
+        backgroundColor: 'transparent',
+        borderWidth: 2.5,
+        tension: 0.25,
+        pointRadius: 0,
+        pointHitRadius: 10
+      }))
     },
     options: {
       responsive: true,
@@ -289,7 +315,7 @@ function updateChartAndStats() {
               const itemIdx = items[0].dataIndex;
               return periodLabels[itemIdx].split(' (')[0];
             },
-            label: item => ` Year ${item.dataset.label.slice(-4)}: ${item.raw.y.toLocaleString()} incidents`
+            label: item => ` Year ${item.dataset.label}: ${item.raw.y.toLocaleString()} incidents`
           }
         }
       },
@@ -313,16 +339,16 @@ function updateChartAndStats() {
     plugins: [highlightPlugin]
   });
 
-  let totalBaseInWindow = 0;
-  let totalCompInWindow = 0;
-
-  for (let i = idxStart; i <= idxEnd; i++) {
-    totalBaseInWindow += baseCounts[i] || 0;
-    totalCompInWindow += compCounts[i] || 0;
-  }
+  const totalsByYear = new Map();
+  selectedYears.forEach(yr => {
+    const yearCounts = countsByYear.get(yr);
+    let total = 0;
+    for (let i = idxStart; i <= idxEnd; i++) total += yearCounts[i] || 0;
+    totalsByYear.set(yr, total);
+  });
 
   document.getElementById('chart-card').style.display = 'block';
-  document.getElementById('chart-title').textContent = `Damaged Buildings Profile Breakdown — ${baseYear} vs ${compYear}`;
+  document.getElementById('chart-title').textContent = titleText;
   
   const cleanStartStr = periodLabels[idxStart].split(' (')[0];
   const cleanEndStr = periodLabels[idxEnd].split(' (')[0];
@@ -330,25 +356,208 @@ function updateChartAndStats() {
   
   document.getElementById('chart-subtitle').textContent = `Highlighted Interval Window: ${rangeDisplay}`;
 
-  document.getElementById('lbl-base').textContent = `${baseYear} — Selected Frame`;
-  document.getElementById('lbl-comp').textContent = `${compYear} — Selected Frame`;
+  renderStatsBoxes(selectedYears, totalsByYear, rangeDisplay);
 
-  document.getElementById('v-base').textContent = totalBaseInWindow.toLocaleString();
-  document.getElementById('sub-base').textContent = `Totaled over custom frame (${rangeDisplay})`;
-  
-  document.getElementById('v-comp').textContent = totalCompInWindow.toLocaleString();
-  document.getElementById('sub-comp').textContent = `Totaled over custom frame (${rangeDisplay})`;
+  // Build the exportable SVG snapshot from the same data used above, so
+  // "Export as SVG" always matches exactly what's currently on screen.
+  lastChartSVG = buildChartSVG({
+    selectedYears, pointsByYear, periodLabels, stepDays, idxStart, idxEnd,
+    titleText, subtitleText: `Highlighted Interval Window: ${rangeDisplay}`
+  });
+}
 
-  const changeEl = document.getElementById('v-change');
-  if (totalBaseInWindow === 0) {
-    changeEl.textContent = 'N/A (Zero Base)';
-    changeEl.className = 'value change neutral';
-  } else {
-    const pct = Math.round((totalCompInWindow - totalBaseInWindow) / totalBaseInWindow * 100);
-    const sign = pct > 0 ? '+' : '';
-    changeEl.textContent = `${sign}${pct}%`;
-    changeEl.className = 'value change ' + (pct > 0 ? 'up' : pct < 0 ? 'down' : 'neutral');
+function renderStatsBoxes(selectedYears, totalsByYear, rangeDisplay) {
+  const statsEl = document.getElementById('stats');
+  if (!statsEl) return;
+
+  const baselineYear = selectedYears[0];
+  const baselineTotal = totalsByYear.get(baselineYear);
+
+  statsEl.innerHTML = selectedYears.map(yr => {
+    const total = totalsByYear.get(yr);
+    const color = colorForYear(yr);
+    let deltaHTML = '';
+
+    if (yr !== baselineYear) {
+      if (baselineTotal === 0) {
+        deltaHTML = `<div class="change neutral">N/A vs ${baselineYear} (zero base)</div>`;
+      } else {
+        const pct = Math.round((total - baselineTotal) / baselineTotal * 100);
+        const sign = pct > 0 ? '+' : '';
+        const cls = pct > 0 ? 'up' : pct < 0 ? 'down' : 'neutral';
+        deltaHTML = `<div class="change ${cls}">${sign}${pct}% vs ${baselineYear}</div>`;
+      }
+    }
+
+    return `
+      <div class="stat-box" style="border-left-color:${color};">
+        <div class="label">${yr}${yr === baselineYear ? ' — Baseline' : ''}</div>
+        <div class="value" style="color:${color};">${total.toLocaleString()}</div>
+        <div class="sub">Totaled over custom frame (${rangeDisplay})</div>
+        ${deltaHTML}
+      </div>`;
+  }).join('');
+
+  statsEl.style.display = 'flex';
+}
+
+// ---------------------------------------------------------------------
+// Chart export: PNG / JPG use the live canvas directly; SVG is rebuilt as
+// real vector markup from the same point data so it stays crisp at any
+// size instead of embedding a rasterized image.
+// ---------------------------------------------------------------------
+
+function exportChart(format) {
+  if (!chartInstance) return;
+  const filenameBase = 'damage-timeline-' + new Date().toISOString().slice(0, 10);
+
+  if (format === 'png') {
+    downloadUrl(chartInstance.toBase64Image('image/png', 1.0), `${filenameBase}.png`);
+    return;
   }
 
-  document.getElementById('stats').style.display = 'flex';
+  if (format === 'jpg') {
+    // Composite onto a white background first - JPG has no alpha channel,
+    // and the chart canvas itself is transparent, so exporting directly
+    // would render as solid black.
+    const srcCanvas = chartInstance.canvas;
+    const tmp = document.createElement('canvas');
+    tmp.width = srcCanvas.width;
+    tmp.height = srcCanvas.height;
+    const ctx = tmp.getContext('2d');
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(0, 0, tmp.width, tmp.height);
+    ctx.drawImage(srcCanvas, 0, 0);
+    downloadUrl(tmp.toDataURL('image/jpeg', 0.95), `${filenameBase}.jpg`);
+    return;
+  }
+
+  if (format === 'svg') {
+    if (!lastChartSVG) return;
+    const blob = new Blob([lastChartSVG], { type: 'image/svg+xml' });
+    const url = URL.createObjectURL(blob);
+    downloadUrl(url, `${filenameBase}.svg`, true);
+  }
+}
+window.exportChart = exportChart;
+
+function downloadUrl(url, filename, revoke) {
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  document.body.removeChild(a);
+  if (revoke) setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+function escapeXML(str) {
+  return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+// Rounds up to a "nice" axis maximum (1/2/5/10 x a power of ten).
+function roundNiceUp(n) {
+  if (n <= 10) return Math.ceil(n);
+  const magnitude = Math.pow(10, Math.floor(Math.log10(n)));
+  const normalized = n / magnitude;
+  let nice;
+  if (normalized <= 1) nice = 1;
+  else if (normalized <= 2) nice = 2;
+  else if (normalized <= 5) nice = 5;
+  else nice = 10;
+  return nice * magnitude;
+}
+
+function buildChartSVG({ selectedYears, pointsByYear, periodLabels, stepDays, idxStart, idxEnd, titleText, subtitleText }) {
+  const width = 960, height = 560;
+  const marginLeft = 65, marginRight = 30, marginTop = 60, marginBottom = 90;
+  const plotWidth = width - marginLeft - marginRight;
+  const plotHeight = height - marginTop - marginBottom;
+
+  let yMax = 0;
+  selectedYears.forEach(yr => {
+    (pointsByYear.get(yr) || []).forEach(p => {
+      if (p.y !== null && p.y !== undefined && p.y > yMax) yMax = p.y;
+    });
+  });
+  yMax = roundNiceUp(Math.max(yMax, 1) * 1.15);
+
+  const xToPx = x => marginLeft + (x / 12) * plotWidth;
+  const yToPx = y => marginTop + plotHeight - (y / yMax) * plotHeight;
+
+  // Highlighted interval band (matches the on-screen highlight plugin)
+  let xStartVal, xEndVal;
+  if (stepDays === 30) {
+    xStartVal = idxStart;
+    xEndVal = idxEnd + 1;
+  } else {
+    xStartVal = ((idxStart * stepDays) / 365) * 12;
+    xEndVal = (((idxEnd + 1) * stepDays) / 365) * 12;
+  }
+  const bandSVG = `<rect x="${xToPx(xStartVal).toFixed(1)}" y="${marginTop}" width="${(xToPx(xEndVal) - xToPx(xStartVal)).toFixed(1)}" height="${plotHeight}" fill="rgba(230,126,34,0.18)" />`;
+
+  // Y-axis gridlines + labels
+  const tickCount = 5;
+  let gridSVG = '';
+  for (let i = 0; i <= tickCount; i++) {
+    const val = (yMax / tickCount) * i;
+    const py = yToPx(val).toFixed(1);
+    gridSVG += `<line x1="${marginLeft}" y1="${py}" x2="${marginLeft + plotWidth}" y2="${py}" stroke="#e5e5e5" stroke-width="1" />`;
+    gridSVG += `<text x="${marginLeft - 10}" y="${parseFloat(py) + 4}" font-size="11" fill="#666" text-anchor="end" font-family="Arial, sans-serif">${Math.round(val).toLocaleString()}</text>`;
+  }
+
+  // X-axis (calendar months, same domain as the on-screen chart)
+  const monthAbbrev = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  let xAxisSVG = `<line x1="${marginLeft}" y1="${marginTop + plotHeight}" x2="${marginLeft + plotWidth}" y2="${marginTop + plotHeight}" stroke="#999" stroke-width="1" />`;
+  for (let m = 0; m < 12; m++) {
+    const px = xToPx(m + 0.5).toFixed(1);
+    xAxisSVG += `<text x="${px}" y="${marginTop + plotHeight + 18}" font-size="11" fill="#666" text-anchor="middle" font-family="Arial, sans-serif">${monthAbbrev[m]}</text>`;
+  }
+
+  // One polyline per contiguous (non-null) segment, per year
+  let linesSVG = '';
+  selectedYears.forEach(yr => {
+    const color = colorForYear(yr);
+    const pts = pointsByYear.get(yr) || [];
+    let segment = [];
+    const flush = () => {
+      if (segment.length > 1) {
+        const attr = segment.map(p => `${xToPx(p.x).toFixed(1)},${yToPx(p.y).toFixed(1)}`).join(' ');
+        linesSVG += `<polyline points="${attr}" fill="none" stroke="${color}" stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round" />`;
+      }
+      segment = [];
+    };
+    pts.forEach(p => {
+      if (p.y === null || p.y === undefined) flush();
+      else segment.push(p);
+    });
+    flush();
+  });
+
+  // Legend row along the bottom
+  const legendY = height - 30;
+  const legendItemWidth = Math.min(140, plotWidth / selectedYears.length);
+  const legendTotalWidth = legendItemWidth * selectedYears.length;
+  const legendStartX = marginLeft + (plotWidth - legendTotalWidth) / 2;
+  let legendSVG = '';
+  selectedYears.forEach((yr, i) => {
+    const color = colorForYear(yr);
+    const cx = legendStartX + legendItemWidth * i;
+    legendSVG += `<line x1="${cx}" y1="${legendY}" x2="${cx + 20}" y2="${legendY}" stroke="${color}" stroke-width="3" />`;
+    legendSVG += `<text x="${cx + 26}" y="${legendY + 4}" font-size="12" fill="#333" font-family="Arial, sans-serif">${yr}</text>`;
+  });
+
+  const titleSVG = `<text x="${marginLeft}" y="26" font-size="16" font-weight="700" fill="#1a3a5c" font-family="Arial, sans-serif">${escapeXML(titleText)}</text>`;
+  const subtitleSVG = subtitleText ? `<text x="${marginLeft}" y="44" font-size="12" fill="#888" font-family="Arial, sans-serif">${escapeXML(subtitleText)}</text>` : '';
+
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">
+  <rect x="0" y="0" width="${width}" height="${height}" fill="#ffffff" />
+  ${titleSVG}
+  ${subtitleSVG}
+  ${bandSVG}
+  ${gridSVG}
+  ${xAxisSVG}
+  ${linesSVG}
+  ${legendSVG}
+</svg>`;
 }
