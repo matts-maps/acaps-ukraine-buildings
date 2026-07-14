@@ -5,9 +5,6 @@ let lastChartSVG = '';
 
 const calendarMonths = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
-// One colour per year, assigned by position in uniqueYearsList so a given
-// year always renders the same colour regardless of which other years are
-// currently selected alongside it.
 const YEAR_COLORS = ['#1a3a5c', '#e07b39', '#2c8f7a', '#c0392b', '#8e44ad', '#2c5f8a', '#d4a017', '#555555'];
 
 window.addEventListener('DOMContentLoaded', () => {
@@ -76,9 +73,6 @@ function initializeDashboardOptions() {
 
   checkboxContainer.innerHTML = '';
 
-  // Default to the most recent 2 years checked (matches the typical
-  // "compare the last few years" use case) while still exposing every
-  // available year as an option.
   const defaultCheckedYears = new Set(uniqueYearsList.slice(-2));
 
   uniqueYearsList.forEach(yr => {
@@ -149,9 +143,20 @@ function buildPeriodDropdowns() {
     startSel.appendChild(new Option(label, index));
     endSel.appendChild(new Option(label, index));
   });
-  
-  startSel.value = 0;
-  endSel.value = stepDays === 30 ? 2 : (stepDays === 14 ? 5 : 11); 
+
+  // Highlight most recent period
+  const now = new Date();
+  let mostRecentIndex = 0;
+  if (stepDays === 30) {
+    mostRecentIndex = now.getMonth();
+  } else {
+    const dayNum = calculateDayOfYear(now);
+    mostRecentIndex = Math.floor((dayNum - 1) / stepDays);
+  }
+  mostRecentIndex = Math.max(0, Math.min(mostRecentIndex, labels.length - 1));
+
+  startSel.value = mostRecentIndex;
+  endSel.value = mostRecentIndex; 
 
   updateChartAndStats();
 }
@@ -176,7 +181,6 @@ function updateChartAndStats() {
   document.getElementById('error-msg').style.display = 'none';
 
   const stepDays = parseInt(periodTypeEl.value);
-  
   let idxStart = parseInt(startSel.value);
   let idxEnd = parseInt(endSel.value);
 
@@ -189,19 +193,15 @@ function updateChartAndStats() {
   const periodLabels = getPeriodLabels(stepDays);
   const totalPeriods = periodLabels.length;
 
-  // Per-year tallies, built in a single pass over the data.
   const countsByYear = new Map(selectedYears.map(yr => [yr, new Array(totalPeriods).fill(0)]));
   let maxDate = null;
 
   rawCSVData.forEach(row => {
     const dateStr = (row.date_of_event || '').trim();
     if (!dateStr) return;
-    
     const d = new Date(dateStr);
     if (isNaN(d)) return;
-
     if (!maxDate || d > maxDate) maxDate = d;
-    
     const year = d.getFullYear();
     const yearCounts = countsByYear.get(year);
     if (!yearCounts) return;
@@ -218,9 +218,6 @@ function updateChartAndStats() {
     yearCounts[pIdx]++;
   });
 
-  // Whichever year holds the most recent recorded event is still "in
-  // progress" - periods after that point haven't happened yet, so the line
-  // should stop there instead of dropping to a misleading 0.
   const maxDataYear = maxDate ? maxDate.getFullYear() : null;
   let maxDataPeriodIdx = null;
   if (maxDate) {
@@ -259,10 +256,8 @@ function updateChartAndStats() {
       const { ctx, chartArea, scales } = chart;
       if (!chartArea) return;
       const xScale = scales.x;
-
       let xStartVal = 0;
       let xEndVal = 0;
-
       if (stepDays === 30) {
         xStartVal = idxStart;
         xEndVal = idxEnd + 1;
@@ -270,10 +265,8 @@ function updateChartAndStats() {
         xStartVal = ((idxStart * stepDays) / 365) * 12;
         xEndVal = (((idxEnd + 1) * stepDays) / 365) * 12;
       }
-
       const x0 = xScale.getPixelForValue(xStartVal);
       const x1 = xScale.getPixelForValue(xEndVal);
-
       ctx.save();
       ctx.fillStyle = 'rgba(230, 126, 34, 0.18)'; 
       ctx.fillRect(x0, chartArea.top, x1 - x0, chartArea.bottom - chartArea.top);
@@ -327,9 +320,7 @@ function updateChartAndStats() {
           ticks: {
             stepSize: 1,
             maxRotation: 0,
-            callback: function(val) {
-              return calendarMonths[val] || '';
-            }
+            callback: function(val) { return calendarMonths[val] || ''; }
           },
           grid: { display: false }
         },
@@ -349,35 +340,24 @@ function updateChartAndStats() {
 
   document.getElementById('chart-card').style.display = 'block';
   document.getElementById('chart-title').textContent = titleText;
-  
   const cleanStartStr = periodLabels[idxStart].split(' (')[0];
   const cleanEndStr = periodLabels[idxEnd].split(' (')[0];
   const rangeDisplay = cleanStartStr === cleanEndStr ? cleanStartStr : `${cleanStartStr} – ${cleanEndStr}`;
-  
   document.getElementById('chart-subtitle').textContent = `Highlighted Interval Window: ${rangeDisplay}`;
 
   renderStatsBoxes(selectedYears, totalsByYear, rangeDisplay);
-
-  // Build the exportable SVG snapshot from the same data used above, so
-  // "Export as SVG" always matches exactly what's currently on screen.
-  lastChartSVG = buildChartSVG({
-    selectedYears, pointsByYear, periodLabels, stepDays, idxStart, idxEnd,
-    titleText, subtitleText: `Highlighted Interval Window: ${rangeDisplay}`
-  });
+  lastChartSVG = buildChartSVG({ selectedYears, pointsByYear, periodLabels, stepDays, idxStart, idxEnd, titleText, subtitleText: `Highlighted Interval Window: ${rangeDisplay}` });
 }
 
 function renderStatsBoxes(selectedYears, totalsByYear, rangeDisplay) {
   const statsEl = document.getElementById('stats');
   if (!statsEl) return;
-
   const baselineYear = selectedYears[0];
   const baselineTotal = totalsByYear.get(baselineYear);
-
   statsEl.innerHTML = selectedYears.map(yr => {
     const total = totalsByYear.get(yr);
     const color = colorForYear(yr);
     let deltaHTML = '';
-
     if (yr !== baselineYear) {
       if (baselineTotal === 0) {
         deltaHTML = `<div class="change neutral">N/A vs ${baselineYear} (zero base)</div>`;
@@ -388,7 +368,6 @@ function renderStatsBoxes(selectedYears, totalsByYear, rangeDisplay) {
         deltaHTML = `<div class="change ${cls}">${sign}${pct}% vs ${baselineYear}</div>`;
       }
     }
-
     return `
       <div class="stat-box" style="border-left-color:${color};">
         <div class="label">${yr}${yr === baselineYear ? ' — Baseline' : ''}</div>
@@ -397,29 +376,17 @@ function renderStatsBoxes(selectedYears, totalsByYear, rangeDisplay) {
         ${deltaHTML}
       </div>`;
   }).join('');
-
   statsEl.style.display = 'flex';
 }
-
-// ---------------------------------------------------------------------
-// Chart export: PNG / JPG use the live canvas directly; SVG is rebuilt as
-// real vector markup from the same point data so it stays crisp at any
-// size instead of embedding a rasterized image.
-// ---------------------------------------------------------------------
 
 function exportChart(format) {
   if (!chartInstance) return;
   const filenameBase = 'damage-timeline-' + new Date().toISOString().slice(0, 10);
-
   if (format === 'png') {
     downloadUrl(chartInstance.toBase64Image('image/png', 1.0), `${filenameBase}.png`);
     return;
   }
-
   if (format === 'jpg') {
-    // Composite onto a white background first - JPG has no alpha channel,
-    // and the chart canvas itself is transparent, so exporting directly
-    // would render as solid black.
     const srcCanvas = chartInstance.canvas;
     const tmp = document.createElement('canvas');
     tmp.width = srcCanvas.width;
@@ -431,7 +398,6 @@ function exportChart(format) {
     downloadUrl(tmp.toDataURL('image/jpeg', 0.95), `${filenameBase}.jpg`);
     return;
   }
-
   if (format === 'svg') {
     if (!lastChartSVG) return;
     const blob = new Blob([lastChartSVG], { type: 'image/svg+xml' });
@@ -455,7 +421,6 @@ function escapeXML(str) {
   return String(str).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
-// Rounds up to a "nice" axis maximum (1/2/5/10 x a power of ten).
 function roundNiceUp(n) {
   if (n <= 10) return Math.ceil(n);
   const magnitude = Math.pow(10, Math.floor(Math.log10(n)));
@@ -485,7 +450,6 @@ function buildChartSVG({ selectedYears, pointsByYear, periodLabels, stepDays, id
   const xToPx = x => marginLeft + (x / 12) * plotWidth;
   const yToPx = y => marginTop + plotHeight - (y / yMax) * plotHeight;
 
-  // Highlighted interval band (matches the on-screen highlight plugin)
   let xStartVal, xEndVal;
   if (stepDays === 30) {
     xStartVal = idxStart;
@@ -496,7 +460,6 @@ function buildChartSVG({ selectedYears, pointsByYear, periodLabels, stepDays, id
   }
   const bandSVG = `<rect x="${xToPx(xStartVal).toFixed(1)}" y="${marginTop}" width="${(xToPx(xEndVal) - xToPx(xStartVal)).toFixed(1)}" height="${plotHeight}" fill="rgba(230,126,34,0.18)" />`;
 
-  // Y-axis gridlines + labels
   const tickCount = 5;
   let gridSVG = '';
   for (let i = 0; i <= tickCount; i++) {
@@ -506,7 +469,6 @@ function buildChartSVG({ selectedYears, pointsByYear, periodLabels, stepDays, id
     gridSVG += `<text x="${marginLeft - 10}" y="${parseFloat(py) + 4}" font-size="11" fill="#666" text-anchor="end" font-family="Arial, sans-serif">${Math.round(val).toLocaleString()}</text>`;
   }
 
-  // X-axis (calendar months, same domain as the on-screen chart)
   const monthAbbrev = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
   let xAxisSVG = `<line x1="${marginLeft}" y1="${marginTop + plotHeight}" x2="${marginLeft + plotWidth}" y2="${marginTop + plotHeight}" stroke="#999" stroke-width="1" />`;
   for (let m = 0; m < 12; m++) {
@@ -514,7 +476,6 @@ function buildChartSVG({ selectedYears, pointsByYear, periodLabels, stepDays, id
     xAxisSVG += `<text x="${px}" y="${marginTop + plotHeight + 18}" font-size="11" fill="#666" text-anchor="middle" font-family="Arial, sans-serif">${monthAbbrev[m]}</text>`;
   }
 
-  // One polyline per contiguous (non-null) segment, per year
   let linesSVG = '';
   selectedYears.forEach(yr => {
     const color = colorForYear(yr);
@@ -534,7 +495,6 @@ function buildChartSVG({ selectedYears, pointsByYear, periodLabels, stepDays, id
     flush();
   });
 
-  // Legend row along the bottom
   const legendY = height - 30;
   const legendItemWidth = Math.min(140, plotWidth / selectedYears.length);
   const legendTotalWidth = legendItemWidth * selectedYears.length;
