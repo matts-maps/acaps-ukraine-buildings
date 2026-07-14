@@ -76,10 +76,10 @@ function initializeDashboardOptions() {
 
   checkboxContainer.innerHTML = '';
 
-  // Default to the most recent 4 years checked (matches the typical
+  // Default to the most recent 2 years checked (matches the typical
   // "compare the last few years" use case) while still exposing every
   // available year as an option.
-  const defaultCheckedYears = new Set(uniqueYearsList.slice(-4));
+  const defaultCheckedYears = new Set(uniqueYearsList.slice(-2));
 
   uniqueYearsList.forEach(yr => {
     const id = `year-cb-${yr}`;
