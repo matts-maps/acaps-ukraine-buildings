@@ -150,8 +150,11 @@ function buildPeriodDropdowns() {
     endSel.appendChild(new Option(label, index));
   });
   
-  startSel.value = 0;
-  endSel.value = stepDays === 30 ? 2 : (stepDays === 14 ? 5 : 11); 
+  // --- NEW LOGIC: Highlight the most recent period ---
+  const lastIndex = labels.length - 1;
+  startSel.value = lastIndex; 
+  endSel.value = lastIndex;
+  // ----------------------------------------------------
 
   updateChartAndStats();
 }
