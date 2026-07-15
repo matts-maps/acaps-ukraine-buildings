@@ -122,11 +122,8 @@
 
   // ------------------------------------------------------------------
   // Forces a live Chart.js chart to redraw at an exact pixel height and
-  // label/legend font size, captures that frame, then puts everything
-  // back exactly as it was. Used to make the Top Raions, Infra Type,
-  // and Level of Damage charts all render at one consistent size in
-  // the PDF (300px tall, 9.5px labels), regardless of how each is
-  // configured on the live page.
+  // forces ALL textual elements to a strict font size (9.5px),
+  // captures that frame, then puts everything back exactly as it was.
   // ------------------------------------------------------------------
   async function captureChartAtSize(canvasEl, heightPx, fontSizePx, extraOptions = {}) {
     if (!canvasEl) return null;
@@ -140,19 +137,31 @@
 
     const container = canvasEl.parentElement;
     const currentWidth = canvasEl.getBoundingClientRect().width;
+    
     const legendOpts = chart.options?.plugins?.legend;
-    const xTicks = chart.options?.scales?.x?.ticks;
-    const yTicks = chart.options?.scales?.y?.ticks;
+    const titleOpts = chart.options?.plugins?.title;
+    const subtitleOpts = chart.options?.plugins?.subtitle;
+    const scales = chart.options?.scales || {};
 
+    // Save all original states to restore later
     const original = {
       maintainAspectRatio: chart.options.maintainAspectRatio,
       containerHeight: container ? container.style.height : null,
       legendPosition: legendOpts ? legendOpts.position : undefined,
       legendAlign: legendOpts ? legendOpts.align : undefined,
       legendFontSize: legendOpts?.labels?.font?.size,
-      xTickFontSize: xTicks?.font?.size,
-      yTickFontSize: yTicks?.font?.size,
+      titleFontSize: titleOpts?.font?.size,
+      subtitleFontSize: subtitleOpts?.font?.size,
+      scales: {}
     };
+
+    // Save individual scale configurations
+    Object.keys(scales).forEach(key => {
+      original.scales[key] = {
+        tickFontSize: scales[key]?.ticks?.font?.size,
+        titleFontSize: scales[key]?.title?.font?.size
+      };
+    });
 
     try {
       if (extraOptions.legendPosition && legendOpts) {
@@ -161,7 +170,7 @@
       }
 
       if (fontSizePx) {
-        // Safe navigation: only initialize undefined objects, never re-assign active proxies
+        // 1. Override Legend Font Size
         if (legendOpts) {
           if (legendOpts.labels === undefined) {
             legendOpts.labels = { font: { size: fontSizePx } };
@@ -171,20 +180,48 @@
             legendOpts.labels.font.size = fontSizePx;
           }
         }
-        if (xTicks) {
-          if (xTicks.font === undefined) {
-            xTicks.font = { size: fontSizePx };
+
+        // 2. Override Chart Title Font Size
+        if (titleOpts) {
+          if (titleOpts.font === undefined) {
+            titleOpts.font = { size: fontSizePx };
           } else {
-            xTicks.font.size = fontSizePx;
+            titleOpts.font.size = fontSizePx;
           }
         }
-        if (yTicks) {
-          if (yTicks.font === undefined) {
-            yTicks.font = { size: fontSizePx };
+
+        // 3. Override Chart Subtitle Font Size
+        if (subtitleOpts) {
+          if (subtitleOpts.font === undefined) {
+            subtitleOpts.font = { size: fontSizePx };
           } else {
-            yTicks.font.size = fontSizePx;
+            subtitleOpts.font.size = fontSizePx;
           }
         }
+
+        // 4. Override Scales (Axis Labels & Axis Titles) Font Size
+        Object.keys(scales).forEach(key => {
+          const axis = scales[key];
+          if (axis) {
+            // Ticks (labels along the axis line)
+            if (axis.ticks === undefined) {
+              axis.ticks = { font: { size: fontSizePx } };
+            } else if (axis.ticks.font === undefined) {
+              axis.ticks.font = { size: fontSizePx };
+            } else {
+              axis.ticks.font.size = fontSizePx;
+            }
+
+            // Title (the main label for the entire axis)
+            if (axis.title === undefined) {
+              axis.title = { font: { size: fontSizePx } };
+            } else if (axis.title.font === undefined) {
+              axis.title.font = { size: fontSizePx };
+            } else {
+              axis.title.font.size = fontSizePx;
+            }
+          }
+        });
       }
 
       chart.options.maintainAspectRatio = false;
@@ -205,7 +242,7 @@
       console.warn("Chart capture failed:", e);
       return null;
     } finally {
-      // Revert modifications cleanly without disrupting Chart.js proxies
+      // Revert Legend config
       if (legendOpts) {
         legendOpts.position = original.legendPosition;
         legendOpts.align = original.legendAlign;
@@ -221,28 +258,66 @@
           }
         }
       }
-      if (xTicks) {
-        if (original.xTickFontSize !== undefined) {
-          if (xTicks.font === undefined) {
-            xTicks.font = { size: original.xTickFontSize };
+
+      // Revert Title config
+      if (titleOpts) {
+        if (original.titleFontSize !== undefined) {
+          if (titleOpts.font === undefined) {
+            titleOpts.font = { size: original.titleFontSize };
           } else {
-            xTicks.font.size = original.xTickFontSize;
+            titleOpts.font.size = original.titleFontSize;
           }
-        } else if (xTicks.font) {
-          delete xTicks.font.size;
+        } else if (titleOpts.font) {
+          delete titleOpts.font.size;
         }
       }
-      if (yTicks) {
-        if (original.yTickFontSize !== undefined) {
-          if (yTicks.font === undefined) {
-            yTicks.font = { size: original.yTickFontSize };
+
+      // Revert Subtitle config
+      if (subtitleOpts) {
+        if (original.subtitleFontSize !== undefined) {
+          if (subtitleOpts.font === undefined) {
+            subtitleOpts.font = { size: original.subtitleFontSize };
           } else {
-            yTicks.font.size = original.yTickFontSize;
+            subtitleOpts.font.size = original.subtitleFontSize;
           }
-        } else if (yTicks.font) {
-          delete yTicks.font.size;
+        } else if (subtitleOpts.font) {
+          delete subtitleOpts.font.size;
         }
       }
+
+      // Revert Scale configurations
+      Object.keys(scales).forEach(key => {
+        const axis = scales[key];
+        const origAxis = original.scales[key];
+        if (axis && origAxis) {
+          // Restore ticks
+          if (origAxis.tickFontSize !== undefined) {
+            if (axis.ticks === undefined) {
+              axis.ticks = { font: { size: origAxis.tickFontSize } };
+            } else if (axis.ticks.font === undefined) {
+              axis.ticks.font = { size: origAxis.tickFontSize };
+            } else {
+              axis.ticks.font.size = origAxis.tickFontSize;
+            }
+          } else if (axis.ticks && axis.ticks.font) {
+            delete axis.ticks.font.size;
+          }
+
+          // Restore title
+          if (origAxis.titleFontSize !== undefined) {
+            if (axis.title === undefined) {
+              axis.title = { font: { size: origAxis.titleFontSize } };
+            } else if (axis.title.font === undefined) {
+              axis.title.font = { size: origAxis.titleFontSize };
+            } else {
+              axis.title.font.size = origAxis.titleFontSize;
+            }
+          } else if (axis.title && axis.title.font) {
+            delete axis.title.font.size;
+          }
+        }
+      });
+
       chart.options.maintainAspectRatio = original.maintainAspectRatio;
       if (container) {
         container.style.height = original.containerHeight || "";
@@ -509,7 +584,15 @@
       y = margin + 15;
 
       const timelineCanvas = document.getElementById(IDS.charts.timeline.id);
-      const timelineImg = await captureCanvas(timelineCanvas);
+      
+      // Override text elements in the Timeline chart as well
+      const CHART_TEXT_SIZE_PX = 9.5;
+      const timelineImg = await captureChartAtSize(
+        timelineCanvas,
+        null, // Keep natural height for timeline
+        CHART_TEXT_SIZE_PX
+      );
+
       if (timelineImg) {
         y = addImageWithHeading(
           doc,
@@ -531,22 +614,21 @@
       const extentCanvas = document.getElementById(IDS.charts.extent.id);
 
       const SUMMARY_CHART_HEIGHT_PX = 300;
-      const SUMMARY_CHART_FONT_PX = 9.5;
 
       const topRaionsImg = await captureChartAtSize(
         topRaionsCanvas,
         SUMMARY_CHART_HEIGHT_PX,
-        SUMMARY_CHART_FONT_PX
+        CHART_TEXT_SIZE_PX
       );
       const infraImg = await captureChartAtSize(
         infraCanvas,
         SUMMARY_CHART_HEIGHT_PX,
-        SUMMARY_CHART_FONT_PX
+        CHART_TEXT_SIZE_PX
       );
       const extentImg = await captureChartAtSize(
         extentCanvas,
         SUMMARY_CHART_HEIGHT_PX,
-        SUMMARY_CHART_FONT_PX,
+        CHART_TEXT_SIZE_PX,
         { legendPosition: "right", legendAlign: "center" }
       );
 
