@@ -3,6 +3,15 @@ let geoJSONData = null;
 let leafletGeoLayer = null;
 let mapInstance = null;
 
+// The full-country view, captured once the boundary geoJSON first loads, so
+// we can zoom back out to it when the Oblast/Raion filters are cleared.
+let nationalBounds = null;
+
+// Tracks which oblast/raion scope the map is currently zoomed to, so we only
+// re-fit the view when that scope actually changes (not on every re-render
+// triggered by e.g. a time-window change).
+let lastZoomScopeKey = '';
+
 let topRaionsChartInstance = null;
 let infraTypeChartInstance = null;
 let extentChartInstance = null;
@@ -22,6 +31,22 @@ const monthsList = ['January', 'February', 'March', 'April', 'May', 'June', 'Jul
 // Column name for oblast in the CSV. ASSUMPTION: adjust this single value if
 // your data uses a different column name (e.g. 'oblast_name', 'region').
 const OBLAST_FIELD = 'oblast';
+
+// Property name for oblast on the raion boundary geoJSON features. ASSUMPTION:
+// adjust this if your geoJSON uses a different property (e.g. 'ADM1_EN',
+// 'oblast_name'). Check `geoJSONData.features[0].properties` in devtools if
+// the oblast zoom doesn't work.
+const GEOJSON_OBLAST_PROPERTY = 'adm1_name';
+
+// Corrects for a handful of raion boundary names that differ between the
+// geoJSON source and the CSV's spelling. Used both for map styling/click
+// handling and for computing zoom bounds.
+const RAION_NAME_MAP = {
+    'Kerchynskyi': 'Kerchenskyi',
+    'Krasnoperekopskyi': 'Perekopskyi',
+    'Chervonohradskyi': 'Sheptytskyi',
+    'Sievierodonetskyi': 'Siverskodonetskyi'
+};
 
 window.addEventListener('DOMContentLoaded', () => {
     const csvPath = window.MAP_CSV_PATH || '/data/ukraine-damages.csv';
@@ -49,6 +74,7 @@ window.addEventListener('DOMContentLoaded', () => {
         // so the whole of Ukraine is visible, regardless of screen size.
         const bounds = L.geoJSON(geoData).getBounds();
         if (bounds.isValid()) {
+            nationalBounds = bounds;
             mapInstance.fitBounds(bounds, { padding: [15, 15] });
         }
 
@@ -265,6 +291,45 @@ function onRaionFilterChange() {
 }
 window.onRaionFilterChange = onRaionFilterChange;
 
+// Computes the Leaflet bounds covering the given oblast or raion selection.
+// Precedence: a specific raion narrows furthest, then oblast, then null
+// (meaning: no spatial narrowing, caller should fall back to nationalBounds).
+function computeScopedBounds(oblastValue, raionValue) {
+    if (!geoJSONData) return null;
+
+    let matched;
+    if (raionValue) {
+        matched = geoJSONData.features.filter(f => {
+            const raw = f.properties.adm2_name || '';
+            const geoName = RAION_NAME_MAP[raw] || raw;
+            return geoName === raionValue;
+        });
+    } else if (oblastValue) {
+        matched = geoJSONData.features.filter(f =>
+            (f.properties[GEOJSON_OBLAST_PROPERTY] || '').trim() === oblastValue
+        );
+    } else {
+        return null;
+    }
+
+    if (!matched.length) return null;
+    const bounds = L.geoJSON({ type: 'FeatureCollection', features: matched }).getBounds();
+    return bounds.isValid() ? bounds : null;
+}
+
+function applyMapZoomForScope(oblastValue, raionValue) {
+    const scopeKey = `${oblastValue || ''}|${raionValue || ''}`;
+    if (scopeKey === lastZoomScopeKey) return; // scope hasn't changed, leave the user's current pan/zoom alone
+    lastZoomScopeKey = scopeKey;
+
+    const scopedBounds = computeScopedBounds(oblastValue, raionValue);
+    if (scopedBounds) {
+        mapInstance.fitBounds(scopedBounds, { padding: [30, 30], maxZoom: 10 });
+    } else if (nationalBounds) {
+        mapInstance.fitBounds(nationalBounds, { padding: [15, 15] });
+    }
+}
+
 function processMapVisualisations() {
     if (!geoJSONData || !rawDamageCSV) return;
 
@@ -352,6 +417,12 @@ function processMapVisualisations() {
 
     updateSummaryCharts(counts, infraCounts, extentCounts, timeCounts, labelsList);
 
+    // Zoom the map to the filtered area: a raion selected via the dropdown
+    // takes precedence, then a raion selected by clicking the map/a chart,
+    // then the oblast dropdown; otherwise zoom back out to all of Ukraine.
+    const effectiveRaion = raionFilter || (activeFilter && activeFilter.dimension === 'raion' ? activeFilter.value : null);
+    applyMapZoomForScope(oblastFilter, effectiveRaion);
+
     // Expose the current filter state + underlying numbers for anything
     // outside this module that needs them (e.g. the PDF report generator).
     window.__mapReportState = {
@@ -372,17 +443,10 @@ function processMapVisualisations() {
 
     if (leafletGeoLayer) mapInstance.removeLayer(leafletGeoLayer);
 
-    const nameMap = {
-        'Kerchynskyi': 'Kerchenskyi',
-        'Krasnoperekopskyi': 'Perekopskyi',
-        'Chervonohradskyi': 'Sheptytskyi',
-        'Sievierodonetskyi': 'Siverskodonetskyi'
-    };
-
     leafletGeoLayer = L.geoJSON(geoJSONData, {
         style: f => {
             const rawGeoName = f.properties.adm2_name || '';
-            const geoName = nameMap[rawGeoName] || rawGeoName;
+            const geoName = RAION_NAME_MAP[rawGeoName] || rawGeoName;
             const isSelected = activeFilter && activeFilter.dimension === 'raion' && activeFilter.value === geoName;
             return {
                 fillColor: getThematicColor(counts[geoName] || 0, breaks),
@@ -393,7 +457,7 @@ function processMapVisualisations() {
         },
         onEachFeature: (f, l) => {
             const rawGeoName = f.properties.adm2_name || '';
-            const geoName = nameMap[rawGeoName] || rawGeoName;
+            const geoName = RAION_NAME_MAP[rawGeoName] || rawGeoName;
 
             l.on('mouseover', e => {
                 window.mapInfoPanel._div.innerHTML = `<h4>${rawGeoName}</h4><b>Damages:</b> ${(counts[geoName] || 0).toLocaleString()}`;
