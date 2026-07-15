@@ -245,3 +245,15 @@
   margin: 0;
   text-align: center;
 }
+
+#map-charts-section {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+  gap: 20px;
+}
+
+/* Forces the timeline card to span full width across the grid rows */
+.map-chart-card.timeline-card {
+  grid-column: 1 / -1; 
+  height: 250px; /* Gives the timeline line-series generous horizontal drawing space */
+}

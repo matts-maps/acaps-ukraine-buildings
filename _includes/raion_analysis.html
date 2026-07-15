@@ -27,7 +27,7 @@
       <span id="map-active-filter-label"></span>
       <button type="button" id="map-clear-filter-btn" onclick="clearMapFilter()">Clear</button>
     </div>
-    <p class="map-hint">Click a raion on the map, or a bar/segment in the charts below, to filter everything to that selection.</p>
+    <p class="map-hint">Click a raion on the map, or a bar/segment/point in the charts below, to filter everything to that selection.</p>
     <div class="map-summary-box">
       <div class="label">National Frame Total</div>
       <div class="value" id="map-total-value">0</div>
@@ -40,6 +40,11 @@
 </div>
 
 <section id="map-charts-section">
+  <div class="map-chart-card timeline-card">
+    <h3>Damage Timeline Over Selected Window</h3>
+    <div class="chart-wrap"><canvas id="map-timeline-chart"></canvas></div>
+  </div>
+
   <div class="map-chart-card">
     <h3>Top Raions by Reported Damage</h3>
     <div class="chart-wrap"><canvas id="map-top-oblasts-chart"></canvas></div>
