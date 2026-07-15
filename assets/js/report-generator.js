@@ -61,12 +61,17 @@
         ? filterLabel.textContent.trim()
         : "None (national view)";
 
+    const oblastEl = document.getElementById("map-oblast-select");
+    const raionEl = document.getElementById("map-raion-select");
+
     if (state) {
       return {
         year: state.year,
         aggregationLabel: state.aggregationLabel,
         startLabel: state.startLabel,
         endLabel: state.endLabel,
+        oblastLabel: state.oblastFilter || "All Oblasts",
+        raionLabel: state.raionFilter || "All Raions",
         nationalTotal: state.nationalTotal.toLocaleString(),
         activeFilterText,
         raionCounts: state.raionCounts || {},
@@ -81,6 +86,8 @@
       aggregationLabel: aggEl ? aggEl.options[aggEl.selectedIndex]?.text : "N/A",
       startLabel: startEl ? startEl.options[startEl.selectedIndex]?.text : "N/A",
       endLabel: endEl ? endEl.options[endEl.selectedIndex]?.text : "N/A",
+      oblastLabel: oblastEl && oblastEl.value ? oblastEl.value : "All Oblasts",
+      raionLabel: raionEl && raionEl.value ? raionEl.value : "All Raions",
       nationalTotal: totalEl ? totalEl.textContent.trim() : "0",
       activeFilterText,
       raionCounts: {},
@@ -199,6 +206,8 @@
       const raionsAffected = Object.keys(state.raionCounts).length;
 
       const lines = [
+        `Oblast filter: ${state.oblastLabel}`,
+        `Raion filter: ${state.raionLabel}`,
         `Active selection filter: ${state.activeFilterText}`,
         `National frame total: ${state.nationalTotal}`,
         `Raions with recorded damage in this window: ${raionsAffected || "N/A"}`,

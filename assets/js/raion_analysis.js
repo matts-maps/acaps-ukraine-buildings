@@ -19,6 +19,10 @@ const FILTER_HIGHLIGHT_COLOR = '#d94801';
 
 const monthsList = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
+// Column name for oblast in the CSV. ASSUMPTION: adjust this single value if
+// your data uses a different column name (e.g. 'oblast_name', 'region').
+const OBLAST_FIELD = 'oblast';
+
 window.addEventListener('DOMContentLoaded', () => {
     const csvPath = window.MAP_CSV_PATH || '/data/ukraine-damages.csv';
     const geojsonPath = window.MAP_GEOJSON_PATH || '/data/ukr_admn_ad2_py_s0_fieldmaps_pp_raions.json';
@@ -49,6 +53,7 @@ window.addEventListener('DOMContentLoaded', () => {
         }
 
         buildMapFilterOptions();
+        buildOblastRaionFilterOptions();
     });
 });
 
@@ -210,6 +215,56 @@ function buildMapPeriodDropdowns() {
     processMapVisualisations();
 }
 
+// Builds the Oblast dropdown (all unique oblasts, alphabetical) and the
+// initial Raion dropdown (all unique raions). Called once after the CSV
+// loads. The Raion list is re-scoped to the selected oblast whenever the
+// oblast dropdown changes (see onOblastFilterChange below).
+function buildOblastRaionFilterOptions() {
+    const oblastSel = document.getElementById('map-oblast-select');
+    const raionSel = document.getElementById('map-raion-select');
+    if (!oblastSel || !raionSel) return;
+
+    const oblasts = [...new Set(
+        rawDamageCSV.map(r => r[OBLAST_FIELD]?.trim()).filter(Boolean)
+    )].sort();
+
+    oblastSel.innerHTML = '<option value="">All Oblasts</option>' +
+        oblasts.map(o => `<option value="${o}">${o}</option>`).join('');
+
+    populateRaionOptions('');
+}
+
+// Rebuilds the Raion dropdown, scoped to the given oblast ('' = all raions).
+function populateRaionOptions(oblastValue) {
+    const raionSel = document.getElementById('map-raion-select');
+    if (!raionSel) return;
+
+    const rows = oblastValue
+        ? rawDamageCSV.filter(r => r[OBLAST_FIELD]?.trim() === oblastValue)
+        : rawDamageCSV;
+
+    const raions = [...new Set(
+        rows.map(r => r.rayon?.trim()).filter(Boolean)
+    )].sort();
+
+    raionSel.innerHTML = '<option value="">All Raions</option>' +
+        raions.map(r => `<option value="${r}">${r}</option>`).join('');
+}
+
+// Called on Oblast dropdown change: rescope the Raion dropdown to the
+// selected oblast, reset any specific raion selection, then re-render.
+function onOblastFilterChange() {
+    const oblastSel = document.getElementById('map-oblast-select');
+    populateRaionOptions(oblastSel ? oblastSel.value : '');
+    processMapVisualisations();
+}
+window.onOblastFilterChange = onOblastFilterChange;
+
+function onRaionFilterChange() {
+    processMapVisualisations();
+}
+window.onRaionFilterChange = onRaionFilterChange;
+
 function processMapVisualisations() {
     if (!geoJSONData || !rawDamageCSV) return;
 
@@ -218,7 +273,9 @@ function processMapVisualisations() {
     const endEl = document.getElementById('map-period-end-select');
     const aggEl = document.getElementById('map-aggregation-select');
     const totalEl = document.getElementById('map-total-value');
-    
+    const oblastEl = document.getElementById('map-oblast-select');
+    const raionEl = document.getElementById('map-raion-select');
+
     if (!yearEl || !startEl || !endEl || !aggEl) return;
 
     const targetYear = parseInt(yearEl.value);
@@ -226,6 +283,8 @@ function processMapVisualisations() {
     let endPeriod = parseInt(endEl.value);
     if (startPeriod > endPeriod) [startPeriod, endPeriod] = [endPeriod, startPeriod];
     const step = parseInt(aggEl.value);
+    const oblastFilter = oblastEl ? oblastEl.value : '';
+    const raionFilter = raionEl ? raionEl.value : '';
 
     const counts = {};
     const infraCounts = {};
@@ -251,6 +310,10 @@ function processMapVisualisations() {
     rawDamageCSV.forEach(r => {
         const rawRaion = r.rayon?.trim();
         if (!rawRaion) return;
+
+        // Oblast / Raion filter panel selections
+        if (oblastFilter && r[OBLAST_FIELD]?.trim() !== oblastFilter) return;
+        if (raionFilter && rawRaion !== raionFilter) return;
 
         const d = new Date(r.date_of_event);
         if (isNaN(d) || d.getFullYear() !== targetYear) return;
@@ -296,6 +359,8 @@ function processMapVisualisations() {
         aggregationLabel: aggEl.options[aggEl.selectedIndex]?.text || '',
         startLabel: startEl.options[startEl.selectedIndex]?.text || '',
         endLabel: endEl.options[endEl.selectedIndex]?.text || '',
+        oblastFilter: oblastFilter || null,
+        raionFilter: raionFilter || null,
         activeFilter: activeFilter ? { ...activeFilter } : null,
         nationalTotal: Object.values(counts).reduce((a, b) => a + b, 0),
         raionCounts: { ...counts },
