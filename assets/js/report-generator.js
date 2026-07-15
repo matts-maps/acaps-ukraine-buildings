@@ -483,6 +483,7 @@
         
         meta.xTicks.forEach(tick => {
             const tickX = xPos + (tick.x * ratioX);
+<<<<<<< HEAD
             const tickY = y + (meta.chartArea.bottom * ratioY) + 12; // Standard padding beneath axis
             
             // Protect borders
@@ -492,6 +493,12 @@
                 } else {
                     doc.text(tick.label, tickX, tickY, { align: "center" });
                 }
+=======
+            const tickY = y + (meta.chartArea.bottom * ratioY) + 12; 
+            
+            if (tickX >= xPos - 5 && tickX <= xPos + targetWidth + 5) {
+                doc.text(tick.label, tickX, tickY, { align: angle !== 0 ? "right" : "center", angle: angle });
+>>>>>>> parent of c39cc56 (Update report-generator.js)
             }
         });
     }
@@ -499,10 +506,17 @@
     // Y-Axis Vector Ticks
     if (meta.yTicks && meta.yTicks.length > 0) {
         meta.yTicks.forEach(tick => {
+<<<<<<< HEAD
             const tickY = y + (tick.y * ratioY) + 3; // +3 to align to vertical middle
             const tickX = xPos + (meta.chartArea.left * ratioX) - 5; // offset slightly off the axis line
             
             if (tickY >= y && tickY <= y + targetHeight) {
+=======
+            const tickY = y + (tick.y * ratioY) + 3; 
+            const tickX = xPos + (meta.chartArea.left * ratioX) - 5; 
+            
+            if (tickY >= y - 10 && tickY <= y + targetHeight + 10) {
+>>>>>>> parent of c39cc56 (Update report-generator.js)
                 doc.text(tick.label, tickX, tickY, { align: "right" });
             }
         });
