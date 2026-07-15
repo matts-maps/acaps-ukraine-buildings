@@ -109,7 +109,7 @@
   }
 
   // --------------------------------------------------------------------
-  // 2. Capture helpers
+  // 2. Capture helpers (Includes Temporary Auto-Centering Bounds Adjustments)
   // --------------------------------------------------------------------
   async function captureCanvas(canvasEl) {
     if (!canvasEl) return null;
@@ -127,6 +127,35 @@
       console.error("html2canvas is not loaded.");
       return null;
     }
+
+    // Access Leaflet instance via window hook if defined, or look up global objects
+    const mapInstance = window.__leafletMap || (window.map instanceof L.Map ? window.map : null);
+    let originalCenter = null;
+    let originalZoom = null;
+
+    if (mapInstance) {
+      // Store current viewport coordinates so we can revert them later
+      originalCenter = mapInstance.getCenter();
+      originalZoom = mapInstance.getZoom();
+
+      // Find the area of interest based on the active geoJSON/vector features
+      let targetBounds = null;
+      mapInstance.eachLayer((layer) => {
+        if (layer.getBounds && typeof layer.getBounds === "function" && layer.feature) {
+          if (!targetBounds) {
+            targetBounds = layer.getBounds();
+          } else {
+            targetBounds.extend(layer.getBounds());
+          }
+        }
+      });
+
+      // If active layers exist, dynamically fit them centrally in the viewport
+      if (targetBounds && targetBounds.isValid()) {
+        mapInstance.fitBounds(targetBounds, { padding: [20, 20], animate: false });
+      }
+    }
+
     try {
       const canvas = await html2canvas(mapEl, {
         useCORS: true,
@@ -148,9 +177,20 @@
           });
         }
       });
+
+      // Restore user view coordinates immediately after capture
+      if (mapInstance && originalCenter !== null && originalZoom !== null) {
+        mapInstance.setView(originalCenter, originalZoom, { animate: false });
+      }
+
       return canvas.toDataURL("image/png", 1.0);
     } catch (e) {
       console.error("Map capture failed due to CORS or rendering issues:", e);
+      
+      // Revert map view coordinates in the event of an execution error
+      if (mapInstance && originalCenter !== null && originalZoom !== null) {
+        mapInstance.setView(originalCenter, originalZoom, { animate: false });
+      }
       return null;
     }
   }
@@ -214,7 +254,7 @@
       doc.line(margin, y, pageWidth - margin, y);
       y += 25;
 
-      // --- SUMMARY STATISTICS (Dynamic Auto-Wrap Structure) ---
+      // --- SUMMARY STATISTICS ---
       doc.setFont("helvetica", "bold");
       doc.setFontSize(13);
       doc.setTextColor(26, 58, 92);
@@ -225,7 +265,6 @@
       const topInfra = topEntry(state.infraCounts);
       const topExtent = topEntry(state.extentCounts);
 
-      // Define columns & target text wraps
       const colWidth = (pageWidth - (margin * 2) - 40) / 2; 
       doc.setFont("helvetica", "normal");
       doc.setFontSize(9.5);
@@ -242,11 +281,9 @@
         topExtent ? `Top Damage Severity: ${topExtent[0]} (${topExtent[1].toLocaleString()})` : "Top Severity: N/A"
       ];
 
-      // Convert raw texts to safe-wrapped line arrays
       const leftWrapped = leftRaw.map(str => doc.splitTextToSize(str, colWidth));
       const rightWrapped = rightRaw.map(str => doc.splitTextToSize(str, colWidth));
 
-      // Compute dynamic box sizes based on line wrapping
       const getColHeight = (wrappedArray) => {
         return wrappedArray.reduce((acc, lines) => acc + (lines.length * 13) + 6, 0);
       };
@@ -255,16 +292,14 @@
       const rightColHeight = getColHeight(rightWrapped);
       const contentHeight = Math.max(leftColHeight, rightColHeight);
       
-      const statBoxHeight = contentHeight + 45; // Include padding for overall layout
+      const statBoxHeight = contentHeight + 45;
 
-      // Background summary panel block (#f0f4f8) with accent vertical border
       doc.setFillColor(240, 244, 248); 
       doc.roundedRect(margin, y, pageWidth - (margin * 2), statBoxHeight, 6, 6, "F");
       doc.setFillColor(26, 58, 92);
       doc.rect(margin, y, 4, statBoxHeight, "F");
 
-      // Draw wrapped statistics text
-      doc.setTextColor(68, 68, 68); // #444
+      doc.setTextColor(68, 68, 68);
       let currentLeftY = y + 20;
       leftWrapped.forEach(lines => {
         lines.forEach(line => {
@@ -284,7 +319,6 @@
         currentRightY += 6;
       });
 
-      // Total count highlighted layout block at base
       doc.setFont("helvetica", "bold");
       doc.setFontSize(11);
       doc.setTextColor(26, 58, 92);
@@ -309,13 +343,12 @@
       } else {
         doc.setFont("helvetica", "italic");
         doc.setFontSize(10);
-        doc.setTextColor(192, 57, 43); // Error accent color #c0392b
+        doc.setTextColor(192, 57, 43);
         doc.text("(Map image unavailable - likely a basemap CORS issue)", margin, y);
         y += 25;
       }
 
       // --- WEB-ALIGNED GRID CHARTS ATTACHMENT ---
-      // Page Break before Charts section to keep layouts clean and readable
       doc.addPage();
       y = margin + 15;
 
@@ -331,15 +364,14 @@
           margin,
           pageWidth,
           pageHeight,
-          pageWidth - margin * 2 // Spans 100% of writable width
+          pageWidth - margin * 2
         );
       }
 
-      // Grid System Constants for secondary charts (Side-by-Side)
       const gridGap = 16;
       const colChartWidth = (pageWidth - margin * 2 - gridGap) / 2;
 
-      // 2. Top Raions & 3. Infra Type (Rendered side-by-side in grid row)
+      // 2. Top Raions & 3. Infra Type (Side-by-Side)
       const topRaionsCanvas = document.getElementById(IDS.charts.topRaions.id);
       const infraCanvas = document.getElementById(IDS.charts.infra.id);
       const topRaionsImg = await captureCanvas(topRaionsCanvas);
@@ -358,7 +390,7 @@
           pageWidth,
           pageHeight,
           colChartWidth,
-          margin // Left col alignment
+          margin
         );
         maxRowHeight = Math.max(maxRowHeight, nextY - rowYStart);
       }
@@ -373,15 +405,14 @@
           pageWidth,
           pageHeight,
           colChartWidth,
-          margin + colChartWidth + gridGap // Right col alignment
+          margin + colChartWidth + gridGap
         );
         maxRowHeight = Math.max(maxRowHeight, nextY - rowYStart);
       }
 
-      // Advance layout baseline past the side-by-side row
       y = rowYStart + (maxRowHeight > 0 ? maxRowHeight : 0);
 
-      // 4. Extent of Damage (Positioned perfectly centered horizontally in its row)
+      // 4. Extent of Damage (Centered horizontally)
       const extentCanvas = document.getElementById(IDS.charts.extent.id);
       const extentImg = await captureCanvas(extentCanvas);
       if (extentImg) {
@@ -404,7 +435,7 @@
       for (let i = 1; i <= pageCount; i++) {
         doc.setPage(i);
         doc.setFontSize(8);
-        doc.setTextColor(136, 136, 136); // #888
+        doc.setTextColor(136, 136, 136);
         doc.text(
           "E-PACC Ukraine Project - Created by MapAction and ACAPS. Data sourced from ACAPS.",
           margin,
@@ -426,38 +457,32 @@
     }
   }
 
-  // Helper utility styled to lay elements out without card borders (bounding boxes)
   function addImageWithHeading(doc, heading, imgDataUrl, y, margin, pageWidth, pageHeight, targetWidth, explicitX = null) {
     const xPos = explicitX !== null ? explicitX : margin;
     const props = doc.getImageProperties(imgDataUrl);
     const imgWidth = targetWidth;
     const imgHeight = (props.height * imgWidth) / props.width;
 
-    // Set font size to 10 for all chart titles / labels
     doc.setFont("helvetica", "bold");
     doc.setFontSize(10);
-    doc.setTextColor(26, 58, 92); // #1a3a5c
+    doc.setTextColor(26, 58, 92);
 
-    // Split text automatically to allow clean heading wraps within the image width boundaries
     const headingLines = doc.splitTextToSize(heading, targetWidth);
     const headingHeight = headingLines.length * 13;
 
-    // Page overflow checking before printing titles/images
     if (y + imgHeight + headingHeight + 20 > pageHeight - margin) {
       doc.addPage();
       y = margin + 15;
     }
 
-    // Render wrapped Heading
     headingLines.forEach((line) => {
       doc.text(line, xPos, y);
       y += 13;
     });
-    y += 6; // Spacing adjustment between wrapped heading text and canvas graphic
+    y += 6;
 
-    // Draw raw visual assets directly without bounding boxes
     doc.addImage(imgDataUrl, "PNG", xPos, y, imgWidth, imgHeight);
-    return y + imgHeight + 30; // Returns calculated spacing placement
+    return y + imgHeight + 30;
   }
 
   // --------------------------------------------------------------------
