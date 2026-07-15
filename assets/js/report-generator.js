@@ -150,7 +150,7 @@
   }
 
   // --------------------------------------------------------------------
-  // 3. Build the PDF
+  // 3. Build the PDF (STYLED WITH RAION_ANALYSIS.CSS THEME)
   // --------------------------------------------------------------------
   async function generateReport() {
     const btn = document.getElementById("generate-report-btn");
@@ -178,57 +178,91 @@
         timeStyle: "short",
       });
 
-      // Title
+      // --- BRAND HEADER BAND ---
+      // Adds a top layout bar using the primary color #1a3a5c
+      doc.setFillColor(26, 58, 92); 
+      doc.rect(0, 0, pageWidth, 8, "F");
+      y += 15;
+
+      // Title (#1a3a5c primary color)
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(20);
-      doc.text("E-PACC Ukraine - Raion Analysis Report", margin, y);
-      y += 26;
+      doc.setFontSize(22);
+      doc.setTextColor(26, 58, 92);
+      doc.text("E-PACC Ukraine", margin, y);
+      y += 22;
 
-      // Period covered
+      doc.setFontSize(14);
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(12);
-      doc.text(`Period covered: ${formatPeriod(state)}`, margin, y);
-      y += 16;
-      doc.text(`Report generated: ${generatedAt}`, margin, y);
-      y += 24;
+      doc.setTextColor(102, 102, 102); // #666
+      doc.text("Raion Damage Analysis Report", margin, y);
+      y += 25;
 
-      // Summary statistics
+      // Metadata details line (#888)
+      doc.setFontSize(9);
+      doc.setTextColor(136, 136, 136); 
+      doc.text(`Period: ${formatPeriod(state)}`, margin, y);
+      doc.text(`Generated: ${generatedAt}`, pageWidth - margin - 150, y);
+      
+      y += 12;
+      doc.setDrawColor(224, 224, 224); // Subtle horizontal rule
+      doc.setLineWidth(1);
+      doc.line(margin, y, pageWidth - margin, y);
+      y += 25;
+
+      // --- SUMMARY STATISTICS (Styled like .map-summary-box) ---
       doc.setFont("helvetica", "bold");
       doc.setFontSize(13);
+      doc.setTextColor(26, 58, 92);
       doc.text("Summary Statistics", margin, y);
-      y += 18;
+      y += 12;
 
+      // Background card block for statistics (using #f0f4f8 background)
+      const statBoxHeight = 110;
+      doc.setFillColor(240, 244, 248); 
+      doc.roundedRect(margin, y, pageWidth - (margin * 2), statBoxHeight, 6, 6, "F");
+      
+      // Accent vertical bar on the left (matches border-left: 4px solid #1a3a5c)
+      doc.setFillColor(26, 58, 92);
+      doc.rect(margin, y, 4, statBoxHeight, "F");
+
+      // Text elements inside the card styled matching #444 body text
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(11);
+      doc.setFontSize(10);
+      doc.setTextColor(68, 68, 68); 
+
+      const leftColX = margin + 20;
+      const rightColX = pageWidth / 2 + 10;
+      let cardY = y + 22;
+
+      // Left column values
+      doc.text(`Oblast coverage: ${state.oblastLabel}`, leftColX, cardY);
+      doc.text(`Raion coverage: ${state.raionLabel}`, leftColX, cardY + 18);
+      doc.text(`Affected Raions: ${Object.keys(state.raionCounts).length || "N/A"}`, leftColX, cardY + 36);
+
+      // Right column values
       const topRaion = topEntry(state.raionCounts);
       const topInfra = topEntry(state.infraCounts);
       const topExtent = topEntry(state.extentCounts);
-      const raionsAffected = Object.keys(state.raionCounts).length;
 
-      const lines = [
-        `Oblast coverage: ${state.oblastLabel}`,
-        `Raion coverage: ${state.raionLabel}`,
-       // `Active selection filter: ${state.activeFilterText}`,
-        `Total damaged buildings: ${state.nationalTotal}`,
-        `Raions with recorded damage: ${raionsAffected || "N/A"}`,
-        topRaion ? `Most affected raion: ${topRaion[0]} (${topRaion[1].toLocaleString()})` : null,
-        topInfra ? `Most reported damage infrastructure: ${topInfra[0]} (${topInfra[1].toLocaleString()})` : null,
-        topExtent ? `Most common level of damage: ${topExtent[0]} (${topExtent[1].toLocaleString()})` : null,
-      ].filter(Boolean);
+      doc.text(topRaion ? `Most affected: ${topRaion[0]} (${topRaion[1].toLocaleString()})` : "Most affected: N/A", rightColX, cardY);
+      doc.text(topInfra ? `Top Infra category: ${topInfra[0]} (${topInfra[1].toLocaleString()})` : "Top Infra: N/A", rightColX, cardY + 18);
+      doc.text(topExtent ? `Top Damage Severity: ${topExtent[0]} (${topExtent[1].toLocaleString()})` : "Top Severity: N/A", rightColX, cardY + 36);
 
-      lines.forEach((line) => {
-        doc.text(line, margin, y);
-        y += 16;
-      });
-      y += 10;
+      // Total count highlight - styled like the dynamic .map-summary-box .value
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(11);
+      doc.setTextColor(26, 58, 92);
+      doc.text(`Total Buildings Impacted: ${state.nationalTotal}`, leftColX, cardY + 65);
 
-      // Map
+      y += statBoxHeight + 25;
+
+      // --- MAP ATTACHMENT ---
       const mapEl = document.getElementById(IDS.mapContainer);
       const mapImg = await captureMap(mapEl);
       if (mapImg) {
         y = addImageWithHeading(
           doc,
-          "Damage buildings per Raion",
+          "Damage Buildings per Raion",
           mapImg,
           y,
           margin,
@@ -236,22 +270,26 @@
           pageHeight
         );
       } else {
+        doc.setFont("helvetica", "italic");
+        doc.setFontSize(10);
+        doc.setTextColor(192, 57, 43); // Matches error text colors #c0392b
         doc.text(
-          "(Map image unavailable - see console for details, likely a basemap CORS issue)",
+          "(Map image unavailable - likely a basemap CORS issue)",
           margin,
           y
         );
         y += 20;
       }
 
-      // Charts
+      // --- CHARTS ATTACHMENT ---
       for (const chartDef of IDS.charts) {
         const canvasEl = document.getElementById(chartDef.id);
         const img = await captureCanvas(canvasEl);
         if (!img) {
           doc.addPage();
-          y = margin;
+          y = margin + 15;
           doc.setFontSize(11);
+          doc.setTextColor(136, 136, 136);
           doc.text(`(Chart "${chartDef.label}" could not be captured)`, margin, y);
           y += 20;
           continue;
@@ -259,18 +297,18 @@
         y = addImageWithHeading(doc, chartDef.label, img, y, margin, pageWidth, pageHeight);
       }
 
-      // Footer
+      // --- FOOTER AND PAGE NUMBERING ---
       const pageCount = doc.internal.getNumberOfPages();
       for (let i = 1; i <= pageCount; i++) {
         doc.setPage(i);
         doc.setFontSize(8);
-        doc.setTextColor(120);
+        doc.setTextColor(136, 136, 136); // #888 muted color
         doc.text(
           "E-PACC Ukraine Project - Created by MapAction and ACAPS. Data sourced from ACAPS.",
           margin,
           pageHeight - 20
         );
-        doc.text(`Page ${i} of ${pageCount}`, pageWidth - margin - 60, pageHeight - 20);
+        doc.text(`Page ${i} of ${pageCount}`, pageWidth - margin - 45, pageHeight - 20);
       }
 
       const safeYear = String(state.year || "report").replace(/\s+/g, "_");
@@ -286,34 +324,44 @@
     }
   }
 
+  // Helper utility styled similarly to CSS's ".map-chart-card" borders
   function addImageWithHeading(doc, heading, imgDataUrl, y, margin, pageWidth, pageHeight) {
     const maxImgWidth = pageWidth - margin * 2;
     const props = doc.getImageProperties(imgDataUrl);
     let imgWidth = maxImgWidth;
     let imgHeight = (props.height * imgWidth) / props.width;
 
-    const maxImgHeight = pageHeight - margin * 2 - 40;
+    const maxImgHeight = pageHeight - margin * 2 - 60;
     if (imgHeight > maxImgHeight) {
       imgHeight = maxImgHeight;
       imgWidth = (props.width * imgHeight) / props.height;
     }
 
-    if (y + imgHeight + 30 > pageHeight - margin) {
+    // Check if both heading and image can fit on this page. If not, add page.
+    if (y + imgHeight + 50 > pageHeight - margin) {
       doc.addPage();
-      y = margin;
+      y = margin + 15; // Set page padding
     }
 
+    // Render Heading styled like .map-chart-card h3 / #map-wrapper-card h2
     doc.setFont("helvetica", "bold");
     doc.setFontSize(13);
+    doc.setTextColor(26, 58, 92); // #1a3a5c
     doc.text(heading, margin, y);
-    y += 14;
+    y += 12;
 
+    // Outer card border layout box similar to .map-chart-card border/shadow rules
+    doc.setDrawColor(235, 240, 245); 
+    doc.setLineWidth(1);
+    doc.roundedRect(margin - 8, y - 4, imgWidth + 16, imgHeight + 10, 6, 6, "D");
+
+    // Embed Image
     doc.addImage(imgDataUrl, "PNG", margin, y, imgWidth, imgHeight);
-    return y + imgHeight + 24;
+    return y + imgHeight + 35; // Returns next element coordinate space + spacing padding
   }
 
   // --------------------------------------------------------------------
-  // 4. Button
+  // 4. Button Setup
   // --------------------------------------------------------------------
   function injectButton() {
     if (document.getElementById("generate-report-btn")) return;
