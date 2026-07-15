@@ -89,11 +89,10 @@
     return entries[0];
   }
 
-  // Helper to extract CSS font-family
+  // Detect live webpage font to ensure styling coherence
   function getWebpageFontFamily() {
     try {
       const bodyFont = window.getComputedStyle(document.body).fontFamily;
-      // Parse out clean font name (e.g., "Inter, Arial, sans-serif" -> "Helvetica/Arial" or custom for PDF)
       if (bodyFont.toLowerCase().includes("sans-serif")) return "helvetica";
       return "helvetica";
     } catch (e) {
@@ -102,9 +101,8 @@
   }
 
   // ------------------------------------------------------------------
-  // Hides native canvas labels on ChartJS and extracts chart properties.
-  // This leaves a clean graphic canvas, which is captured and paired with 
-  // native, searchable PDF vector text.
+  // High-Fidelity Capture: Hides native chart text, extracts exact 
+  // coordinate positions, and captures a clean shapes-only graphic.
   // ------------------------------------------------------------------
   async function captureChartDataAndCleanGraphic(canvasEl, heightPx) {
     if (!canvasEl) return null;
@@ -116,45 +114,69 @@
     const container = canvasEl.parentElement;
     const currentWidth = canvasEl.getBoundingClientRect().width;
 
-    // Save configuration states
     const original = {
-      maintainAspectRatio: chart.options.maintainAspectRatio,
+      aspectRatio: chart.options.maintainAspectRatio,
       containerHeight: container ? container.style.height : null,
       legendDisplay: chart.options.plugins?.legend?.display,
-      titleDisplay: chart.options.plugins?.title?.display,
-      xTicksDisplay: chart.options.scales?.x?.ticks?.display,
-      yTicksDisplay: chart.options.scales?.y?.ticks?.display,
-    };
-
-    // Extract raw label strings for jsPDF rendering
-    const metaData = {
-      labels: chart.data.labels || [],
-      datasets: chart.data.datasets.map(d => ({ label: d.label, data: d.data })),
-      legendLabels: chart.options.plugins?.legend?.display !== false ? chart.data.datasets.map(d => d.label) : []
+      xColor: chart.options.scales?.x?.ticks?.color,
+      yColor: chart.options.scales?.y?.ticks?.color,
     };
 
     try {
-      // Hide all texts on the chart canvas dynamically for export
-      if (chart.options.plugins) {
-        if (!chart.options.plugins.legend) chart.options.plugins.legend = {};
-        chart.options.plugins.legend.display = false;
-        if (!chart.options.plugins.title) chart.options.plugins.title = {};
-        chart.options.plugins.title.display = false;
-      }
-      if (chart.options.scales) {
-        if (chart.options.scales.x) {
-          if (!chart.options.scales.x.ticks) chart.options.scales.x.ticks = {};
-          chart.options.scales.x.ticks.display = false;
-        }
-        if (chart.options.scales.y) {
-          if (!chart.options.scales.y.ticks) chart.options.scales.y.ticks = {};
-          chart.options.scales.y.ticks.display = false;
+      // 1. Enforce size and suppress legend to free space up for graphic mapping
+      chart.options.maintainAspectRatio = false;
+      if (container && heightPx) container.style.height = `${heightPx}px`;
+      if (chart.options.plugins?.legend) chart.options.plugins.legend.display = false;
+      
+      chart.resize(currentWidth, heightPx || 220);
+      chart.update("none");
+
+      // 2. Extract Metadata mappings now that layout is frozen
+      const parseLabel = (l) => Array.isArray(l) ? l.join(" ") : (l !== undefined && l !== null ? String(l) : "");
+      
+      const metaData = {
+        type: chart.config.type,
+        labels: chart.data.labels || [],
+        legendLabels: [],
+        xTicks: [],
+        yTicks: [],
+        canvas: { width: chart.width, height: chart.height },
+        chartArea: chart.chartArea ? { ...chart.chartArea } : null
+      };
+
+      // Legend Extractor
+      if (original.legendDisplay !== false) {
+        if (chart.config.type === 'doughnut' || chart.config.type === 'pie') {
+           const bgColors = chart.data.datasets[0]?.backgroundColor || [];
+           metaData.legendLabels = (chart.data.labels || []).map((lbl, i) => ({
+               text: lbl,
+               fillStyle: Array.isArray(bgColors) ? bgColors[i] : bgColors
+           }));
+        } else {
+           metaData.legendLabels = chart.data.datasets.map(d => ({
+               text: d.label,
+               fillStyle: Array.isArray(d.backgroundColor) ? d.backgroundColor[0] : (d.backgroundColor || '#ccc')
+           }));
         }
       }
 
-      chart.options.maintainAspectRatio = false;
-      if (container && heightPx) container.style.height = `${heightPx}px`;
-      chart.resize(currentWidth, heightPx || 220);
+      // X/Y Ticks Extractor mapped to precise canvas pixels
+      if (chart.scales.x) {
+          metaData.xTicks = chart.scales.x.getTicks().map((t, index) => ({
+              label: parseLabel(t.label !== undefined ? t.label : t.value),
+              x: chart.scales.x.getPixelForTick(index)
+          }));
+      }
+      if (chart.scales.y) {
+          metaData.yTicks = chart.scales.y.getTicks().map((t, index) => ({
+              label: parseLabel(t.label !== undefined ? t.label : t.value),
+              y: chart.scales.y.getPixelForTick(index)
+          }));
+      }
+
+      // 3. Make text transparent to capture a clean chart graphic
+      if (chart.options.scales?.x?.ticks) chart.options.scales.x.ticks.color = 'transparent';
+      if (chart.options.scales?.y?.ticks) chart.options.scales.y.ticks.color = 'transparent';
       chart.update("none");
 
       const graphicDataUrl = canvasEl.toDataURL("image/png", 1.0);
@@ -164,16 +186,12 @@
       console.warn("Clean chart graphic extraction failed:", e);
       return null;
     } finally {
-      // Revert Chart.js options to keep responsive web view working 
-      if (chart.options.plugins) {
-        chart.options.plugins.legend.display = original.legendDisplay;
-        chart.options.plugins.title.display = original.titleDisplay;
-      }
-      if (chart.options.scales) {
-        if (chart.options.scales.x) chart.options.scales.x.ticks.display = original.xTicksDisplay;
-        if (chart.options.scales.y) chart.options.scales.y.ticks.display = original.yTicksDisplay;
-      }
-      chart.options.maintainAspectRatio = original.maintainAspectRatio;
+      // Restore live map cleanly
+      if (chart.options.plugins?.legend) chart.options.plugins.legend.display = original.legendDisplay;
+      if (chart.options.scales?.x?.ticks) chart.options.scales.x.ticks.color = original.xColor;
+      if (chart.options.scales?.y?.ticks) chart.options.scales.y.ticks.color = original.yColor;
+      
+      chart.options.maintainAspectRatio = original.aspectRatio;
       if (container) container.style.height = original.containerHeight || "";
       chart.resize();
       chart.update("none");
@@ -262,7 +280,6 @@
       doc.rect(0, 0, pageWidth, 8, "F");
       y += 15;
 
-      // Textual Headers as Vector text elements
       doc.setFont(font, "bold");
       doc.setFontSize(22);
       doc.setTextColor(26, 58, 92);
@@ -345,7 +362,7 @@
 
       y += statBoxHeight + 25;
 
-      // Add Map (Leaves map panel textual details vector-based)
+      // Add Map
       const mapEl = document.getElementById(IDS.mapContainer);
       const mapImg = await captureMap(mapEl);
       if (mapImg) {
@@ -373,7 +390,7 @@
       // Bottom Grid Column Charts Row
       const gridGap = 20;
       const colChartWidth = (pageWidth - margin * 2 - gridGap) / 2;
-      const smallChartHeight = 160;
+      const smallChartHeight = 220;
 
       const topRaionsCanvas = document.getElementById(IDS.charts.topRaions.id);
       const infraCanvas = document.getElementById(IDS.charts.infra.id);
@@ -428,64 +445,95 @@
   }
 
   // ------------------------------------------------------------------
-  // High-fidelity Hybrid Vector-Chart Renderer:
-  // Combines canvas data graphs with native PDF vector labels
+  // Native PDF Engine (Reconstructs Texts at Exact Pixel Coords)
   // ------------------------------------------------------------------
   function addVectorLabeledChart(doc, font, heading, chartPayload, y, margin, pageWidth, pageHeight, targetWidth, targetHeight, explicitX = null) {
     const xPos = explicitX !== null ? explicitX : margin;
-    const requiredTotalHeight = targetHeight + 50; // Headings + chart + legends
+    const requiredTotalHeight = targetHeight + 65; // Headings + chart + legends margin
 
     if (y + requiredTotalHeight > pageHeight - margin) {
       doc.addPage();
       y = margin + 15;
     }
 
-    // 1. Draw Heading as native vector text
+    // 1. Draw Heading Vector Text
     doc.setFont(font, "bold");
     doc.setFontSize(10);
     doc.setTextColor(26, 58, 92);
     doc.text(heading, xPos, y);
     y += 14;
 
-    // 2. Insert image layer (shapes and bars only, no graphics-baked text labels)
+    // 2. Plot Raw Blank Shape Graphic
     doc.addImage(chartPayload.img, "PNG", xPos, y, targetWidth, targetHeight);
 
-    // 3. Render Axis Texts dynamically as clean vector text labels
+    // 3. Render Precise Axis Texts dynamically as clean vector text labels
+    const FONT_SIZE = 9; // <--- Hard requirement for 9pt text implemented here
     doc.setFont(font, "normal");
-    doc.setFontSize(7.5);
+    doc.setFontSize(FONT_SIZE);
     doc.setTextColor(110, 110, 110);
 
-    const labels = chartPayload.meta.labels;
-    const itemsCount = labels.length;
+    const meta = chartPayload.meta;
+    const ratioX = targetWidth / meta.canvas.width;
+    const ratioY = targetHeight / meta.canvas.height;
 
-    if (itemsCount > 0) {
-      const stepX = targetWidth / itemsCount;
-      // Draw X-Axis labels across bottom
-      labels.forEach((lbl, i) => {
-        const itemX = xPos + (stepX * i) + (stepX / 2);
-        const textWidth = doc.getTextWidth(String(lbl));
-        doc.text(String(lbl), itemX - (textWidth / 2), y + targetHeight + 10, { angle: itemsCount > 6 ? 15 : 0 });
-      });
+    // X-Axis Vector Ticks
+    if (meta.xTicks && meta.xTicks.length > 0) {
+        // If data labels are dense, angle them
+        const angle = meta.xTicks.length > 8 ? -45 : 0; 
+        
+        meta.xTicks.forEach(tick => {
+            const tickX = xPos + (tick.x * ratioX);
+            const tickY = y + (meta.chartArea.bottom * ratioY) + 12; // Standard padding beneath axis
+            
+            // Protect borders
+            if (tickX >= xPos && tickX <= xPos + targetWidth) {
+                if (angle !== 0) {
+                    doc.text(tick.label, tickX, tickY, { align: "right", angle: angle });
+                } else {
+                    doc.text(tick.label, tickX, tickY, { align: "center" });
+                }
+            }
+        });
     }
 
-    // 4. Draw legend indicators dynamically
-    const legends = chartPayload.meta.legendLabels;
-    if (legends && legends.length > 0) {
-      let legendX = xPos;
-      const legendY = y + targetHeight + 25;
-      doc.setFont(font, "bold");
-      doc.setFontSize(8);
-
-      legends.forEach((leg, idx) => {
-        doc.setFillColor(100, 120, 150); // Set indicator color block
-        doc.rect(legendX, legendY - 6, 8, 8, "F");
-        doc.setTextColor(60, 60, 60);
-        doc.text(String(leg), legendX + 12, legendY);
-        legendX += doc.getTextWidth(String(leg)) + 30;
-      });
+    // Y-Axis Vector Ticks
+    if (meta.yTicks && meta.yTicks.length > 0) {
+        meta.yTicks.forEach(tick => {
+            const tickY = y + (tick.y * ratioY) + 3; // +3 to align to vertical middle
+            const tickX = xPos + (meta.chartArea.left * ratioX) - 5; // offset slightly off the axis line
+            
+            if (tickY >= y && tickY <= y + targetHeight) {
+                doc.text(tick.label, tickX, tickY, { align: "right" });
+            }
+        });
     }
 
-    return y + targetHeight + 35;
+    // 4. Render Manual Interactive Legend
+    if (meta.legendLabels && meta.legendLabels.length > 0) {
+        let totalLegendWidth = 0;
+        meta.legendLabels.forEach(leg => {
+            totalLegendWidth += 12 + 6 + doc.getTextWidth(leg.text) + 15;
+        });
+        totalLegendWidth -= 15;
+        
+        let legendX = xPos + (targetWidth / 2) - (totalLegendWidth / 2);
+        if (legendX < xPos) legendX = xPos;
+        const legendY = y + targetHeight + 30;
+
+        meta.legendLabels.forEach(leg => {
+            const colorStr = typeof leg.fillStyle === 'string' ? leg.fillStyle : '#888888';
+            
+            doc.setFillColor(colorStr);
+            doc.rect(legendX, legendY - 7, 9, 9, "F");
+            
+            doc.setTextColor(80, 80, 80);
+            doc.text(leg.text, legendX + 13, legendY + 1);
+            
+            legendX += 13 + doc.getTextWidth(leg.text) + 15;
+        });
+    }
+
+    return y + targetHeight + 50;
   }
 
   function addImageWithHeading(doc, font, heading, imgDataUrl, y, margin, pageWidth, pageHeight, targetWidth, explicitX = null) {
