@@ -163,22 +163,26 @@
     const legendOpts = chart.options?.plugins?.legend;
     const currentWidth = canvasEl.getBoundingClientRect().width;
 
+    // IMPORTANT: only ever assign scalar leaf values below (position,
+    // align, size, maintainAspectRatio, style.height) - never replace a
+    // whole nested option object (e.g. `legendOpts.labels = {...}`).
+    // Chart.js v4's options are live merged proxies; overwriting a
+    // sub-object wholesale breaks that proxy's internal resolver and
+    // sends it into a get/set loop ("too much recursion").
     const original = {
       legendPosition: legendOpts ? legendOpts.position : undefined,
       legendAlign: legendOpts ? legendOpts.align : undefined,
-      legendLabelsFont: legendOpts?.labels?.font ? { ...legendOpts.labels.font } : undefined,
+      legendFontSize: legendOpts?.labels?.font?.size,
       maintainAspectRatio: chart.options.maintainAspectRatio,
       containerHeight: container ? container.style.height : null,
-      containerWidth: container ? container.style.width : null,
     };
 
     try {
       if (legendOpts) {
         legendOpts.position = "right";
         legendOpts.align = "center";
-        if (referenceFontSize) {
-          legendOpts.labels = legendOpts.labels || {};
-          legendOpts.labels.font = { ...(legendOpts.labels.font || {}), size: referenceFontSize };
+        if (referenceFontSize && legendOpts.labels && legendOpts.labels.font) {
+          legendOpts.labels.font.size = referenceFontSize;
         }
       }
 
@@ -211,14 +215,17 @@
       if (legendOpts) {
         legendOpts.position = original.legendPosition;
         legendOpts.align = original.legendAlign;
-        if (legendOpts.labels) {
-          legendOpts.labels.font = original.legendLabelsFont;
+        if (
+          legendOpts.labels &&
+          legendOpts.labels.font &&
+          original.legendFontSize !== undefined
+        ) {
+          legendOpts.labels.font.size = original.legendFontSize;
         }
       }
       chart.options.maintainAspectRatio = original.maintainAspectRatio;
       if (container) {
         container.style.height = original.containerHeight || "";
-        container.style.width = original.containerWidth || "";
       }
       chart.resize();
       chart.update("none");
