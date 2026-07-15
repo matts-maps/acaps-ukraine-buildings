@@ -226,6 +226,11 @@
   box-shadow: 0 1px 4px rgba(0,0,0,0.08);
 }
 
+/* Let the timeline card span full width for optimal data granularity */
+.map-chart-card.timeline-card {
+  flex: 1 1 100%;
+}
+
 .map-chart-card h3 {
   font-size: 14px;
   font-weight: 600;
@@ -244,4 +249,16 @@
   color: #888;
   margin: 0;
   text-align: center;
+}
+
+/* Responsive adjustments for smaller displays */
+@media (max-width: 768px) {
+  .map-dashboard-container {
+    flex-direction: column;
+  }
+  
+  #map-controls {
+    width: 100%;
+    min-width: 100%;
+  }
 }
