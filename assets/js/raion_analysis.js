@@ -6,12 +6,12 @@ let mapInstance = null;
 let topRaionsChartInstance = null;
 let infraTypeChartInstance = null;
 let extentChartInstance = null;
-let timelineChartInstance = null; // 1. Added timeline chart instance
+let timelineChartInstance = null; 
 
 // The single cross-filter selection currently active, set by clicking a
-// raion on the map, a bar/segment in one of the charts, or a point on the timeline.
-// When set, every visual (map + all charts + total) is recomputed against only the rows
-// matching this selection, on top of the year/range filters.
+// raion on the map, a bar/segment in one of the charts, or a timeline bar. 
+// When set, every visual (map + all charts + total) is recomputed against 
+// only the rows matching this selection, on top of the year/range filters.
 let activeFilter = null; // { dimension: 'raion' | 'infra' | 'extent' | 'period', value: string | number }
 
 const CHART_PALETTE = ['#1a3a5c', '#2c5f8a', '#4a90c4', '#7cb4dd', '#a8d0e8', '#d94801', '#f16913', '#fdae6b', '#fdd0a2', '#999999'];
@@ -287,7 +287,6 @@ function processMapVisualisations() {
     const breaks = computeDynamicBreaks(counts);
     updateLegend(breaks);
 
-    // Refresh charts including our new timeline graph
     updateSummaryCharts(counts, infraCounts, extentCounts, timeCounts, labelsList);
 
     if (leafletGeoLayer) mapInstance.removeLayer(leafletGeoLayer);
@@ -356,9 +355,9 @@ function updateSummaryCharts(raionCounts, infraCounts, extentCounts, timeCounts,
         extentEntries.map(e => e[0]), extentEntries.map(e => e[1]), 'extent'
     );
 
-    // 4. Timeline Line Chart (Mapped directly to your elements)
+    // 4. Timeline Bar Chart (Configured without gridlines)
     const timelineValues = labelsList.map(lbl => timeCounts[lbl] || 0);
-    timelineChartInstance = renderLineChart(
+    timelineChartInstance = renderTimelineBarChart(
         'map-timeline-chart', timelineChartInstance, 
         labelsList, timelineValues, 'period'
     );
@@ -458,41 +457,32 @@ function renderDoughnutChart(canvasId, existingInstance, labels, data, dimension
     });
 }
 
-// 5. New rendering function for the Interactive Timeline Line Chart
-function renderLineChart(canvasId, existingInstance, labels, data, dimension) {
+// 5. Timeline Render Engine as a Gridless Bar Chart
+function renderTimelineBarChart(canvasId, existingInstance, labels, data, dimension) {
     const canvas = document.getElementById(canvasId);
     if (!canvas) return existingInstance;
 
-    const pointBackgroundColor = labels.map(l =>
+    const backgroundColor = labels.map(l =>
         (activeFilter && activeFilter.dimension === dimension && activeFilter.value === l)
             ? FILTER_HIGHLIGHT_COLOR : CHART_PALETTE[0]
-    );
-    const pointRadius = labels.map(l =>
-        (activeFilter && activeFilter.dimension === dimension && activeFilter.value === l) ? 7 : 4
     );
 
     if (existingInstance) {
         existingInstance.data.labels = labels;
         existingInstance.data.datasets[0].data = data;
-        existingInstance.data.datasets[0].pointBackgroundColor = pointBackgroundColor;
-        existingInstance.data.datasets[0].pointRadius = pointRadius;
+        existingInstance.data.datasets[0].backgroundColor = backgroundColor;
         existingInstance.update();
         return existingInstance;
     }
 
     return new Chart(canvas, {
-        type: 'line',
+        type: 'bar',
         data: {
             labels,
             datasets: [{
                 data,
-                borderColor: CHART_PALETTE[0],
-                borderWidth: 2.5,
-                fill: false,
-                tension: 0.1,
-                pointBackgroundColor,
-                pointRadius,
-                pointHoverRadius: 8
+                backgroundColor,
+                borderRadius: 4
             }]
         },
         options: {
@@ -501,12 +491,18 @@ function renderLineChart(canvasId, existingInstance, labels, data, dimension) {
             plugins: { legend: { display: false } },
             scales: {
                 x: {
-                    grid: { drawOnChartArea: false, drawTicks: true }
+                    grid: { 
+                        drawOnChartArea: false, // Removes background vertical grid lines
+                        drawTicks: true         // Keeps x-axis tick marks
+                    }
                 },
                 y: {
                     beginAtZero: true,
                     ticks: { precision: 0 },
-                    grid: { drawOnChartArea: true, drawTicks: true }
+                    grid: { 
+                        drawOnChartArea: false, // Removes background horizontal grid lines
+                        drawTicks: true         // Keeps y-axis tick marks
+                    }
                 }
             },
             onClick: (evt, elements, chart) => {
