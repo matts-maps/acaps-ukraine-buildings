@@ -1,7 +1,10 @@
-/* Layout Framework */
+/* ==========================================================================
+   Layout Framework
+   ========================================================================== */
 .map-dashboard-container {
   display: flex;
-  width: 1000px;
+  flex-direction: column; /* Stack controls vertically on top of map */
+  width: 1000px;          /* Increase this value (e.g. 1200px) if you want an even wider page footprint */
   max-width: 100%;
   margin: 32px auto;
   padding: 0 20px;
@@ -9,17 +12,21 @@
   gap: 20px;
 }
 
-/* Control Framework Panel */
+/* ==========================================================================
+   Control Framework Panel (Horizontal Layout)
+   ========================================================================== */
 #map-controls {
-  width: 280px;
-  min-width: 280px;
+  width: 100%;            /* Span full width of the container */
+  min-width: 100%;
   background: #fff;
   border-radius: 10px;
-  padding: 24px;
+  padding: 20px 24px;
   box-sizing: border-box;
   display: flex;
-  flex-direction: column;
-  gap: 16px;
+  flex-direction: row;    /* Lay filter groups out side-by-side */
+  flex-wrap: wrap;        /* Allow controls to wrap neatly on smaller viewports */
+  align-items: flex-end;  /* Aligns dropdown select inputs perfectly at the baseline */
+  gap: 20px;
   box-shadow: 0 1px 4px rgba(0,0,0,0.08);
 }
 
@@ -27,6 +34,8 @@
   display: flex;
   flex-direction: column;
   gap: 8px;
+  flex: 1 1 180px;        /* Distributes space evenly with a minimum basis */
+  min-width: 140px;
 }
 
 .map-range-row {
@@ -63,9 +72,12 @@
   width: 100%;
 }
 
-/* Map Screen Bounds */
+/* ==========================================================================
+   Map Screen Bounds
+   ========================================================================== */
 #map-wrapper-card {
-  flex: 1;
+  width: 100%;            /* Force map block to fill the entire horizontal width */
+  box-sizing: border-box;
   background: #fff;
   border-radius: 10px;
   padding: 20px;
@@ -88,11 +100,13 @@
 
 #map-container {
   width: 100%;
-  height: 500px; /* Explicit height prevents layout jumps */
+  height: 500px;          /* Explicit height prevents layout jumps */
   display: block;
 }
 
-/* Leaflet UI Overlays & Floating Map Panels */
+/* ==========================================================================
+   Leaflet UI Overlays & Floating Map Panels
+   ========================================================================== */
 .map-info-panel {
   padding: 12px 16px;
   font-family: inherit;
@@ -130,13 +144,18 @@
   border-radius: 3px;
 }
 
-/* Metrics summary box */
+/* ==========================================================================
+   Metrics Summary Box
+   ========================================================================== */
 .map-summary-box {
-  margin-top: auto;
+  margin-top: 0;          /* Reset vertical pushing */
+  margin-left: auto;      /* Pushes totalizer to the rightmost spot of horizontal panel */
   background: #f0f4f8;
   border-radius: 8px;
-  padding: 14px;
+  padding: 10px 16px;
   border-left: 4px solid #1a3a5c;
+  flex: 0 1 auto;
+  min-width: 160px;
 }
 
 .map-summary-box .label {
@@ -161,7 +180,9 @@
   display: none;
 }
 
-/* Cross-filter: active selection badge */
+/* ==========================================================================
+   Cross-Filter Components & Helpers
+   ========================================================================== */
 #map-active-filter-group {
   align-items: center;
   justify-content: space-between;
@@ -195,18 +216,21 @@
 }
 
 .map-hint {
+  flex-basis: 100%;       /* Break line to span full width under the horizontal controls */
   font-size: 11px;
   color: #888;
   line-height: 1.4;
-  margin: 0;
+  margin: 4px 0 0 0;
 }
 
-/* Cross-filter: clickable oblast polygons */
+/* Clickable oblast polygons */
 .leaflet-interactive {
   cursor: pointer;
 }
 
-/* Summary Charts Section */
+/* ==========================================================================
+   Summary Charts Section
+   ========================================================================== */
 #map-charts-section {
   display: flex;
   flex-wrap: wrap;
@@ -251,14 +275,27 @@
   text-align: center;
 }
 
-/* Responsive adjustments for smaller displays */
+/* ==========================================================================
+   Responsive adjustments for smaller displays
+   ========================================================================== */
 @media (max-width: 768px) {
   .map-dashboard-container {
     flex-direction: column;
   }
   
   #map-controls {
+    flex-direction: column; /* Reverts to stacked layout on mobile screens */
+    align-items: stretch;
+    gap: 16px;
+  }
+
+  .map-control-group {
+    flex: 1 1 auto;
+  }
+
+  .map-summary-box {
+    margin-left: 0;       /* Align cleanly in stacked layout */
     width: 100%;
-    min-width: 100%;
+    box-sizing: border-box;
   }
 }
