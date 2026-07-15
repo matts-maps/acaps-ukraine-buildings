@@ -121,6 +121,74 @@
   }
 
   // ------------------------------------------------------------------
+  // The "Level of Damage" donut's canvas normally renders with its
+  // legend in a row underneath the ring, which eats vertical space and
+  // leaves the ring itself much smaller than the bar-chart canvases
+  // beside it — simply scaling that (mostly whitespace) canvas up in
+  // the PDF doesn't make the ring bigger, since the ring only occupies
+  // a small portion of the canvas to begin with.
+  //
+  // Fix: use Chart.js's public Chart.getChart(canvas) API to grab the
+  // live chart instance, temporarily resize its container to match the
+  // on-page height of the bar charts and move its legend to the right
+  // (freeing up the vertical space the bottom legend used to occupy),
+  // force a synchronous redraw, and capture that. Everything is
+  // restored afterward so the live page is unaffected.
+  // ------------------------------------------------------------------
+  async function captureExtentChart(canvasEl, referenceHeightPx) {
+    if (!canvasEl) return null;
+
+    if (typeof Chart === "undefined" || typeof Chart.getChart !== "function") {
+      // Chart.js not exposed globally as expected - fall back to a plain
+      // capture rather than failing the whole report.
+      return captureCanvas(canvasEl);
+    }
+
+    const chart = Chart.getChart(canvasEl);
+    if (!chart) return captureCanvas(canvasEl);
+
+    const container = canvasEl.parentElement;
+    const legendOpts = chart.options?.plugins?.legend;
+
+    const original = {
+      legendPosition: legendOpts ? legendOpts.position : undefined,
+      legendAlign: legendOpts ? legendOpts.align : undefined,
+      containerHeight: container ? container.style.height : null,
+      containerWidth: container ? container.style.width : null,
+    };
+
+    try {
+      if (legendOpts) {
+        legendOpts.position = "right";
+        legendOpts.align = "center";
+      }
+
+      if (container && referenceHeightPx) {
+        container.style.height = `${referenceHeightPx}px`;
+      }
+
+      chart.resize();
+      chart.update("none");
+
+      return canvasEl.toDataURL("image/png", 1.0);
+    } catch (e) {
+      console.warn("Extent chart capture failed:", e);
+      return null;
+    } finally {
+      if (legendOpts) {
+        legendOpts.position = original.legendPosition;
+        legendOpts.align = original.legendAlign;
+      }
+      if (container) {
+        container.style.height = original.containerHeight || "";
+        container.style.width = original.containerWidth || "";
+      }
+      chart.resize();
+      chart.update("none");
+    }
+  }
+
+  // ------------------------------------------------------------------
   // Leaflet's SVG renderer positions the overlay <svg> with a CSS
   // transform of translate3d(vx, vy, 0), and sets its viewBox to
   // "vx vy width height" so the two offsets cancel out and vector
@@ -438,7 +506,15 @@
       const extentCanvas = document.getElementById(IDS.charts.extent.id);
       const topRaionsImg = await captureCanvas(topRaionsCanvas);
       const infraImg = await captureCanvas(infraCanvas);
-      const extentImg = await captureCanvas(extentCanvas);
+
+      // Use the bar charts' actual on-page rendered height as the target
+      // for the donut, so it's redrawn at a genuinely larger size rather
+      // than just being scaled up as an image afterward.
+      const referenceHeightPx =
+        (topRaionsCanvas && topRaionsCanvas.getBoundingClientRect().height) ||
+        (infraCanvas && infraCanvas.getBoundingClientRect().height) ||
+        null;
+      const extentImg = await captureExtentChart(extentCanvas, referenceHeightPx);
 
       // Top Raions, Infra Type, and Level of Damage are all "summary"
       // charts and should read as the same size in the PDF. Their source
