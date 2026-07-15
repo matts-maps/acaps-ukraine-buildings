@@ -3,6 +3,10 @@ let chartInstance = null;
 let uniqueYearsList = [];
 let lastChartSVG = '';
 
+// Store selected baseline years for each target year in a global map
+// e.g., comparisonBaselineOverrides.get(2024) = 2022
+const comparisonBaselineOverrides = new Map();
+
 const calendarMonths = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 const YEAR_COLORS = ['#1a3a5c', '#e07b39', '#2c8f7a', '#c0392b', '#8e44ad', '#2c5f8a', '#d4a017', '#555555'];
@@ -323,17 +327,17 @@ function updateChartAndStats() {
             callback: function(val) { return calendarMonths[val] || ''; }
           },
           grid: { 
-            display: true,          // Keeps the axis structure
-            drawOnChartArea: false, // Removes grid lines inside chart area
-            drawTicks: true         // Keeps tick marks visible
+            display: true,
+            drawOnChartArea: false,
+            drawTicks: true
           }
         },
         y: { 
           beginAtZero: true, 
           title: { display: true, text: 'Recorded Structural Damages' },
           grid: { 
-            drawOnChartArea: false, // Removes horizontal grid lines inside chart area
-            drawTicks: true         // Keeps tick marks visible
+            drawOnChartArea: false,
+            drawTicks: true
           }
         }
       }
@@ -341,11 +345,35 @@ function updateChartAndStats() {
     plugins: [highlightPlugin]
   });
 
+  // Calculate totals for all loaded years so dropdowns have complete baseline datasets
   const totalsByYear = new Map();
-  selectedYears.forEach(yr => {
+  uniqueYearsList.forEach(yr => {
     const yearCounts = countsByYear.get(yr);
     let total = 0;
-    for (let i = idxStart; i <= idxEnd; i++) total += yearCounts[i] || 0;
+    if (yearCounts) {
+      for (let i = idxStart; i <= idxEnd; i++) total += yearCounts[i] || 0;
+    } else {
+      // If a year in our full list is currently unchecked on the graph, 
+      // compute its total from scratch to allow reliable background reference
+      const fullYrCounts = new Array(totalPeriods).fill(0);
+      rawCSVData.forEach(row => {
+        const dateStr = (row.date_of_event || '').trim();
+        if (!dateStr) return;
+        const d = new Date(dateStr);
+        if (isNaN(d) || d.getFullYear() !== yr) return;
+        
+        let pIdx = 0;
+        if (stepDays === 30) {
+          pIdx = d.getMonth();
+        } else {
+          const dayNum = calculateDayOfYear(d);
+          pIdx = Math.floor((dayNum - 1) / stepDays);
+          if (pIdx >= totalPeriods) pIdx = totalPeriods - 1;
+        }
+        fullYrCounts[pIdx]++;
+      });
+      for (let i = idxStart; i <= idxEnd; i++) total += fullYrCounts[i] || 0;
+    }
     totalsByYear.set(yr, total);
   });
 
@@ -369,33 +397,74 @@ function renderStatsBoxes(selectedYears, totalsByYear, rangeDisplay) {
   statsEl.innerHTML = sortedYears.map(yr => {
     const total = totalsByYear.get(yr);
     const color = colorForYear(yr);
+    
+    // Get all years that are chronological ancestors of the target year
+    const historicalYears = uniqueYearsList.filter(y => y < yr);
+    
+    // Retrieve the active override selection, otherwise default to the closest previous year (yr - 1)
+    let selectedBaseline = comparisonBaselineOverrides.get(yr);
+    if (!selectedBaseline || !uniqueYearsList.includes(selectedBaseline)) {
+      selectedBaseline = yr - 1;
+    }
+
     let deltaHTML = '';
 
-    const prevYear = yr - 1;
-    
-    if (totalsByYear.has(prevYear)) {
-      const prevTotal = totalsByYear.get(prevYear);
-      
-      if (prevTotal === 0) {
-        deltaHTML = `<div class="change neutral">N/A vs ${prevYear} (zero base)</div>`;
+    if (historicalYears.length > 0) {
+      // Build interactive selector options
+      const dropdownOptions = historicalYears.map(histYr => {
+        const isSel = histYr === selectedBaseline ? 'selected' : '';
+        return `<option value="${histYr}" ${isSel}>vs ${histYr}</option>`;
+      }).join('');
+
+      const baseTotal = totalsByYear.get(selectedBaseline) || 0;
+      let pctHTML = '';
+
+      if (totalsByYear.has(selectedBaseline)) {
+        if (baseTotal === 0) {
+          pctHTML = `<span class="neutral">N/A (zero base)</span>`;
+        } else {
+          const pct = Math.round((total - baseTotal) / baseTotal * 100);
+          const sign = pct > 0 ? '+' : '';
+          const cls = pct > 0 ? 'up' : pct < 0 ? 'down' : 'neutral';
+          pctHTML = `<span class="${cls}">${sign}${pct}%</span>`;
+        }
       } else {
-        const pct = Math.round((total - prevTotal) / prevTotal * 100);
-        const sign = pct > 0 ? '+' : '';
-        const cls = pct > 0 ? 'up' : pct < 0 ? 'down' : 'neutral';
-        deltaHTML = `<div class="change ${cls}">${sign}${pct}% vs ${prevYear}</div>`;
+        pctHTML = `<span class="neutral">No Data</span>`;
       }
+
+      deltaHTML = `
+        <div class="change font-size-small" style="margin-top: 8px; display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+          ${pctHTML}
+          <select class="baseline-select" data-target-year="${yr}" style="font-size: 11px; padding: 2px 4px; border-radius: 4px; border: 1px solid #ccc; cursor: pointer;">
+            ${dropdownOptions}
+          </select>
+        </div>`;
     } else {
-      deltaHTML = `<div class="change neutral">No historical data for ${prevYear}</div>`;
+      deltaHTML = `<div class="change neutral">No historical years to compare</div>`;
     }
 
     return `
-      <div class="stat-box" style="border-left-color:${color};">
-        <div class="label">${yr}</div>
-        <div class="value" style="color:${color};">${total.toLocaleString()}</div>
-        <div class="sub">Totaled over custom frame (${rangeDisplay})</div>
+      <div class="stat-box" style="border-left-color:${color}; display: flex; flex-direction: column; justify-content: space-between;">
+        <div>
+          <div class="label">${yr}</div>
+          <div class="value" style="color:${color};">${total.toLocaleString()}</div>
+          <div class="sub">Totaled over custom frame (${rangeDisplay})</div>
+        </div>
         ${deltaHTML}
       </div>`;
   }).join('');
+
+  // Attach dynamic event listeners to update the specific baseline override and trigger re-render
+  statsEl.querySelectorAll('.baseline-select').forEach(selectEl => {
+    selectEl.addEventListener('change', (e) => {
+      const targetYear = parseInt(e.target.dataset.targetYear);
+      const chosenBaseline = parseInt(e.target.value);
+      comparisonBaselineOverrides.set(targetYear, chosenBaseline);
+      
+      // Instantly refresh calculations/views
+      updateChartAndStats();
+    });
+  });
 
   statsEl.style.display = 'flex';
 }
