@@ -24,10 +24,10 @@
   const IDS = {
     mapContainer: "map-container",
     charts: {
-      timeline: { id: "map-timeline-chart", label: "Damage Timeline Over Selected Window" },
-      topRaions: { id: "map-top-oblasts-chart", label: "Top Raions by Reported Damage" },
-      infra: { id: "map-infra-type-chart", label: "Damage by Infrastructure Type" },
-      extent: { id: "map-extent-chart", label: "Extent of Damage" }
+      timeline: { id: "map-timeline-chart", label: "Timeline of damaged buildings" },
+      topRaions: { id: "map-top-oblasts-chart", label: "Most damaged Raions" },
+      infra: { id: "map-infra-type-chart", label: "Damage by infrastructure type" },
+      extent: { id: "map-extent-chart", label: "Level of damage" }
     },
     yearSelect: "map-year-select",
     aggSelect: "map-aggregation-select",
@@ -120,6 +120,55 @@
     }
   }
 
+  // ------------------------------------------------------------------
+  // Leaflet's SVG renderer positions the overlay <svg> with a CSS
+  // transform of translate3d(vx, vy, 0), and sets its viewBox to
+  // "vx vy width height" so the two offsets cancel out and vector
+  // paths (e.g. the raion polygons) land at the correct absolute
+  // pixel position on top of the raster tiles.
+  //
+  // html2canvas honours the CSS transform but does NOT apply the
+  // viewBox origin offset, so the compensating shift is dropped and
+  // the vector layer renders shifted by (vx, vy) relative to the
+  // tiles underneath it. See:
+  //   https://github.com/Leaflet/Leaflet/issues/4754
+  //   https://github.com/niklasvh/html2canvas/issues/661
+  //
+  // Fix: right before capture, zero out both the transform and the
+  // viewBox origin on every Leaflet overlay <svg>, so there is no
+  // offset left for html2canvas to mishandle. Restore both afterward
+  // so the live, interactive map is unaffected.
+  // ------------------------------------------------------------------
+  function neutralizeLeafletSvgOffsets(mapEl) {
+    const svgs = mapEl.querySelectorAll(".leaflet-overlay-pane svg");
+    const restoreFns = [];
+
+    svgs.forEach((svg) => {
+      const viewBoxAttr = svg.getAttribute("viewBox");
+      if (!viewBoxAttr) return;
+
+      const parts = viewBoxAttr.trim().split(/[\s,]+/).map(Number);
+      if (parts.length !== 4 || parts.some(Number.isNaN)) return;
+      const [vx, vy, vw, vh] = parts;
+      if (!vx && !vy) return; // already at origin, nothing to neutralize
+
+      const originalViewBox = viewBoxAttr;
+      const originalTransform = svg.style.transform;
+
+      svg.setAttribute("viewBox", `0 0 ${vw} ${vh}`);
+      svg.style.transform = "translate3d(0px, 0px, 0px)";
+
+      restoreFns.push(() => {
+        svg.setAttribute("viewBox", originalViewBox);
+        svg.style.transform = originalTransform;
+      });
+    });
+
+    return function restoreAll() {
+      restoreFns.forEach((fn) => fn());
+    };
+  }
+
   async function captureMap(mapEl) {
     if (!mapEl) return null;
     if (typeof html2canvas === "undefined") {
@@ -159,6 +208,13 @@
       }
     }
 
+    // Neutralize the Leaflet SVG transform/viewBox offset that html2canvas
+    // mishandles (see notes above) — must be done AFTER the view has
+    // settled (fitBounds/moveend above) so we read the final offsets, and
+    // must always be reverted, success or failure, so the live map isn't
+    // left broken for the user.
+    const restoreSvgOffsets = neutralizeLeafletSvgOffsets(mapEl);
+
     try {
       const canvas = await html2canvas(mapEl, {
         useCORS: true,
@@ -193,6 +249,10 @@
         mapInstance.setView(originalCenter, originalZoom, { animate: false });
       }
       return null;
+    } finally {
+      // Always put the live map's SVG overlay back exactly as it was,
+      // regardless of whether the capture succeeded or failed.
+      restoreSvgOffsets();
     }
   }
 
@@ -278,8 +338,8 @@
 
       const rightRaw = [
         topRaion ? `Most affected: ${topRaion[0]} (${topRaion[1].toLocaleString()})` : "Most affected: N/A",
-        topInfra ? `Top Infra category: ${topInfra[0]} (${topInfra[1].toLocaleString()})` : "Top Infra: N/A",
-        topExtent ? `Top Damage Severity: ${topExtent[0]} (${topExtent[1].toLocaleString()})` : "Top Severity: N/A"
+        topInfra ? `Most damaged infrastructure: ${topInfra[0]} (${topInfra[1].toLocaleString()})` : "Most damaged infrastructure: N/A",
+        topExtent ? `Most common level of damage: ${topExtent[0]} (${topExtent[1].toLocaleString()})` : "Most common level of damage: N/A"
       ];
 
       const leftWrapped = leftRaw.map(str => doc.splitTextToSize(str, colWidth));
