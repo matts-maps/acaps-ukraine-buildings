@@ -4,9 +4,8 @@
 
    INSTALL
    -------
-   1. Add the hook in raion_analysis.js (see the patch notes provided
-      alongside this file) so window.__mapReportState is populated with the
-      real numbers behind the current view.
+   1. Add the hook in raion_analysis.js so window.__mapReportState is populated 
+      with the real numbers behind the current view.
 
    2. Add these two CDN libraries to raion_analysis.html, then this file,
       all AFTER the existing Leaflet / Chart.js / raion_analysis.js scripts:
@@ -24,12 +23,12 @@
 
   const IDS = {
     mapContainer: "map-container",
-    charts: [
-      { id: "map-timeline-chart", label: "Damage Timeline Over Selected Window", dimension: "period" },
-      { id: "map-top-oblasts-chart", label: "Top Raions by Reported Damage", dimension: "raion" },
-      { id: "map-infra-type-chart", label: "Damage by Infrastructure Type", dimension: "infra" },
-      { id: "map-extent-chart", label: "Extent of Damage", dimension: "extent" },
-    ],
+    charts: {
+      timeline: { id: "map-timeline-chart", label: "Damage Timeline Over Selected Window" },
+      topRaions: { id: "map-top-oblasts-chart", label: "Top Raions by Reported Damage" },
+      infra: { id: "map-infra-type-chart", label: "Damage by Infrastructure Type" },
+      extent: { id: "map-extent-chart", label: "Extent of Damage" }
+    },
     yearSelect: "map-year-select",
     aggSelect: "map-aggregation-select",
     startSelect: "map-period-start-select",
@@ -43,8 +42,6 @@
 
   // --------------------------------------------------------------------
   // 1. Read current filter state - prefer the window.__mapReportState hook
-  //    (real numbers), fall back to scraping visible DOM text if it's
-  //    missing (e.g. before the patch to raion_analysis.js is applied).
   // --------------------------------------------------------------------
   function getReportState() {
     const state = window.__mapReportState;
@@ -80,7 +77,7 @@
       };
     }
 
-    // Fallback: scrape the DOM directly (fewer derived stats available)
+    // Fallback directly scraping the DOM
     return {
       year: yearEl ? yearEl.value : "N/A",
       aggregationLabel: aggEl ? aggEl.options[aggEl.selectedIndex]?.text : "N/A",
@@ -108,7 +105,7 @@
     const entries = Object.entries(counts || {});
     if (!entries.length) return null;
     entries.sort((a, b) => b[1] - a[1]);
-    return entries[0]; // [label, value]
+    return entries[0];
   }
 
   // --------------------------------------------------------------------
@@ -127,7 +124,7 @@
   async function captureMap(mapEl) {
     if (!mapEl) return null;
     if (typeof html2canvas === "undefined") {
-      console.error("html2canvas is not loaded - check the CDN script tag.");
+      console.error("html2canvas is not loaded.");
       return null;
     }
     try {
@@ -136,21 +133,30 @@
         backgroundColor: "#ffffff",
         scale: 2,
         logging: false,
+        onclone: (clonedDoc) => {
+          // CSS-targeted UI removal for clean map exports
+          const selectorsToHide = [
+            ".leaflet-control-zoom", 
+            ".map-info-panel", 
+            ".leaflet-control-attribution"
+          ];
+          selectorsToHide.forEach(selector => {
+            const element = clonedDoc.querySelector(selector);
+            if (element) {
+              element.style.setProperty("display", "none", "important");
+            }
+          });
+        }
       });
       return canvas.toDataURL("image/png", 1.0);
     } catch (e) {
-      // Most likely cause: the basemap tile server didn't send CORS
-      // headers, which taints the canvas and blocks toDataURL().
-      console.error(
-        "Map capture failed (likely a CORS-tainted canvas from the basemap tiles):",
-        e
-      );
+      console.error("Map capture failed due to CORS or rendering issues:", e);
       return null;
     }
   }
 
   // --------------------------------------------------------------------
-  // 3. Build the PDF (STYLED WITH RAION_ANALYSIS.CSS THEME)
+  // 3. Build the PDF
   // --------------------------------------------------------------------
   async function generateReport() {
     const btn = document.getElementById("generate-report-btn");
@@ -162,7 +168,7 @@
 
     try {
       if (typeof window.jspdf === "undefined") {
-        alert("jsPDF failed to load. Check your network/CDN script tags.");
+        alert("jsPDF failed to load.");
         return;
       }
       const { jsPDF } = window.jspdf;
@@ -178,13 +184,12 @@
         timeStyle: "short",
       });
 
-      // --- BRAND HEADER BAND ---
-      // Adds a top layout bar using the primary color #1a3a5c
+      // Top brand accent header line (#1a3a5c)
       doc.setFillColor(26, 58, 92); 
       doc.rect(0, 0, pageWidth, 8, "F");
       y += 15;
 
-      // Title (#1a3a5c primary color)
+      // Report Header
       doc.setFont("helvetica", "bold");
       doc.setFontSize(22);
       doc.setTextColor(26, 58, 92);
@@ -197,62 +202,93 @@
       doc.text("Raion Damage Analysis Report", margin, y);
       y += 25;
 
-      // Metadata details line (#888)
+      // Meta Line
       doc.setFontSize(9);
-      doc.setTextColor(136, 136, 136); 
+      doc.setTextColor(136, 136, 136); // #888
       doc.text(`Period: ${formatPeriod(state)}`, margin, y);
       doc.text(`Generated: ${generatedAt}`, pageWidth - margin - 150, y);
       
       y += 12;
-      doc.setDrawColor(224, 224, 224); // Subtle horizontal rule
+      doc.setDrawColor(224, 224, 224); 
       doc.setLineWidth(1);
       doc.line(margin, y, pageWidth - margin, y);
       y += 25;
 
-      // --- SUMMARY STATISTICS (Styled like .map-summary-box) ---
+      // --- SUMMARY STATISTICS (Dynamic Auto-Wrap Structure) ---
       doc.setFont("helvetica", "bold");
       doc.setFontSize(13);
       doc.setTextColor(26, 58, 92);
       doc.text("Summary Statistics", margin, y);
       y += 12;
 
-      // Background card block for statistics (using #f0f4f8 background)
-      const statBoxHeight = 110;
-      doc.setFillColor(240, 244, 248); 
-      doc.roundedRect(margin, y, pageWidth - (margin * 2), statBoxHeight, 6, 6, "F");
-      
-      // Accent vertical bar on the left (matches border-left: 4px solid #1a3a5c)
-      doc.setFillColor(26, 58, 92);
-      doc.rect(margin, y, 4, statBoxHeight, "F");
-
-      // Text elements inside the card styled matching #444 body text
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(10);
-      doc.setTextColor(68, 68, 68); 
-
-      const leftColX = margin + 20;
-      const rightColX = pageWidth / 2 + 10;
-      let cardY = y + 22;
-
-      // Left column values
-      doc.text(`Oblast coverage: ${state.oblastLabel}`, leftColX, cardY);
-      doc.text(`Raion coverage: ${state.raionLabel}`, leftColX, cardY + 18);
-      doc.text(`Affected Raions: ${Object.keys(state.raionCounts).length || "N/A"}`, leftColX, cardY + 36);
-
-      // Right column values
       const topRaion = topEntry(state.raionCounts);
       const topInfra = topEntry(state.infraCounts);
       const topExtent = topEntry(state.extentCounts);
 
-      doc.text(topRaion ? `Most affected: ${topRaion[0]} (${topRaion[1].toLocaleString()})` : "Most affected: N/A", rightColX, cardY);
-      doc.text(topInfra ? `Top Infra category: ${topInfra[0]} (${topInfra[1].toLocaleString()})` : "Top Infra: N/A", rightColX, cardY + 18);
-      doc.text(topExtent ? `Top Damage Severity: ${topExtent[0]} (${topExtent[1].toLocaleString()})` : "Top Severity: N/A", rightColX, cardY + 36);
+      // Define columns & target text wraps
+      const colWidth = (pageWidth - (margin * 2) - 40) / 2; 
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9.5);
 
-      // Total count highlight - styled like the dynamic .map-summary-box .value
+      const leftRaw = [
+        `Oblast coverage: ${state.oblastLabel}`,
+        `Raion coverage: ${state.raionLabel}`,
+        `Affected Raions: ${Object.keys(state.raionCounts).length || "N/A"}`
+      ];
+
+      const rightRaw = [
+        topRaion ? `Most affected: ${topRaion[0]} (${topRaion[1].toLocaleString()})` : "Most affected: N/A",
+        topInfra ? `Top Infra category: ${topInfra[0]} (${topInfra[1].toLocaleString()})` : "Top Infra: N/A",
+        topExtent ? `Top Damage Severity: ${topExtent[0]} (${topExtent[1].toLocaleString()})` : "Top Severity: N/A"
+      ];
+
+      // Convert raw texts to safe-wrapped line arrays
+      const leftWrapped = leftRaw.map(str => doc.splitTextToSize(str, colWidth));
+      const rightWrapped = rightRaw.map(str => doc.splitTextToSize(str, colWidth));
+
+      // Compute dynamic box sizes based on line wrapping
+      const getColHeight = (wrappedArray) => {
+        return wrappedArray.reduce((acc, lines) => acc + (lines.length * 13) + 6, 0);
+      };
+      
+      const leftColHeight = getColHeight(leftWrapped);
+      const rightColHeight = getColHeight(rightWrapped);
+      const contentHeight = Math.max(leftColHeight, rightColHeight);
+      
+      const statBoxHeight = contentHeight + 45; // Include padding for overall layout
+
+      // Background summary panel block (#f0f4f8) with accent vertical border
+      doc.setFillColor(240, 244, 248); 
+      doc.roundedRect(margin, y, pageWidth - (margin * 2), statBoxHeight, 6, 6, "F");
+      doc.setFillColor(26, 58, 92);
+      doc.rect(margin, y, 4, statBoxHeight, "F");
+
+      // Draw wrapped statistics text
+      doc.setTextColor(68, 68, 68); // #444
+      let currentLeftY = y + 20;
+      leftWrapped.forEach(lines => {
+        lines.forEach(line => {
+          doc.text(line, margin + 20, currentLeftY);
+          currentLeftY += 13;
+        });
+        currentLeftY += 6;
+      });
+
+      let currentRightY = y + 20;
+      const rightColX = pageWidth / 2 + 10;
+      rightWrapped.forEach(lines => {
+        lines.forEach(line => {
+          doc.text(line, rightColX, currentRightY);
+          currentRightY += 13;
+        });
+        currentRightY += 6;
+      });
+
+      // Total count highlighted layout block at base
       doc.setFont("helvetica", "bold");
       doc.setFontSize(11);
       doc.setTextColor(26, 58, 92);
-      doc.text(`Total Buildings Impacted: ${state.nationalTotal}`, leftColX, cardY + 65);
+      doc.text(`Total Buildings Impacted: ${state.nationalTotal}`, margin + 20, y + statBoxHeight - 15);
 
       y += statBoxHeight + 25;
 
@@ -267,34 +303,99 @@
           y,
           margin,
           pageWidth,
-          pageHeight
+          pageHeight,
+          pageWidth - margin * 2
         );
       } else {
         doc.setFont("helvetica", "italic");
         doc.setFontSize(10);
-        doc.setTextColor(192, 57, 43); // Matches error text colors #c0392b
-        doc.text(
-          "(Map image unavailable - likely a basemap CORS issue)",
-          margin,
-          y
-        );
-        y += 20;
+        doc.setTextColor(192, 57, 43); // Error accent color #c0392b
+        doc.text("(Map image unavailable - likely a basemap CORS issue)", margin, y);
+        y += 25;
       }
 
-      // --- CHARTS ATTACHMENT ---
-      for (const chartDef of IDS.charts) {
-        const canvasEl = document.getElementById(chartDef.id);
-        const img = await captureCanvas(canvasEl);
-        if (!img) {
-          doc.addPage();
-          y = margin + 15;
-          doc.setFontSize(11);
-          doc.setTextColor(136, 136, 136);
-          doc.text(`(Chart "${chartDef.label}" could not be captured)`, margin, y);
-          y += 20;
-          continue;
-        }
-        y = addImageWithHeading(doc, chartDef.label, img, y, margin, pageWidth, pageHeight);
+      // --- WEB-ALIGNED GRID CHARTS ATTACHMENT ---
+      // Page Break before Charts section to keep layouts clean and readable
+      doc.addPage();
+      y = margin + 15;
+
+      // 1. Timeline (Full Width)
+      const timelineCanvas = document.getElementById(IDS.charts.timeline.id);
+      const timelineImg = await captureCanvas(timelineCanvas);
+      if (timelineImg) {
+        y = addImageWithHeading(
+          doc,
+          IDS.charts.timeline.label,
+          timelineImg,
+          y,
+          margin,
+          pageWidth,
+          pageHeight,
+          pageWidth - margin * 2 // Spans 100% of writable width
+        );
+      }
+
+      // Grid System Constants for secondary charts (Side-by-Side)
+      const gridGap = 16;
+      const colChartWidth = (pageWidth - margin * 2 - gridGap) / 2;
+
+      // 2. Top Raions & 3. Infra Type (Rendered side-by-side in grid row)
+      const topRaionsCanvas = document.getElementById(IDS.charts.topRaions.id);
+      const infraCanvas = document.getElementById(IDS.charts.infra.id);
+      const topRaionsImg = await captureCanvas(topRaionsCanvas);
+      const infraImg = await captureCanvas(infraCanvas);
+
+      let rowYStart = y;
+      let maxRowHeight = 0;
+
+      if (topRaionsImg) {
+        const nextY = addImageWithHeading(
+          doc,
+          IDS.charts.topRaions.label,
+          topRaionsImg,
+          rowYStart,
+          margin,
+          pageWidth,
+          pageHeight,
+          colChartWidth,
+          margin // Left col alignment
+        );
+        maxRowHeight = Math.max(maxRowHeight, nextY - rowYStart);
+      }
+
+      if (infraImg) {
+        const nextY = addImageWithHeading(
+          doc,
+          IDS.charts.infra.label,
+          infraImg,
+          rowYStart,
+          margin,
+          pageWidth,
+          pageHeight,
+          colChartWidth,
+          margin + colChartWidth + gridGap // Right col alignment
+        );
+        maxRowHeight = Math.max(maxRowHeight, nextY - rowYStart);
+      }
+
+      // Advance layout baseline past the side-by-side row
+      y = rowYStart + (maxRowHeight > 0 ? maxRowHeight : 0);
+
+      // 4. Extent of Damage (Rendered half-width on its own row matching grid structure)
+      const extentCanvas = document.getElementById(IDS.charts.extent.id);
+      const extentImg = await captureCanvas(extentCanvas);
+      if (extentImg) {
+        y = addImageWithHeading(
+          doc,
+          IDS.charts.extent.label,
+          extentImg,
+          y,
+          margin,
+          pageWidth,
+          pageHeight,
+          colChartWidth,
+          margin
+        );
       }
 
       // --- FOOTER AND PAGE NUMBERING ---
@@ -302,7 +403,7 @@
       for (let i = 1; i <= pageCount; i++) {
         doc.setPage(i);
         doc.setFontSize(8);
-        doc.setTextColor(136, 136, 136); // #888 muted color
+        doc.setTextColor(136, 136, 136); // #888
         doc.text(
           "E-PACC Ukraine Project - Created by MapAction and ACAPS. Data sourced from ACAPS.",
           margin,
@@ -324,40 +425,29 @@
     }
   }
 
-  // Helper utility styled similarly to CSS's ".map-chart-card" borders
-  function addImageWithHeading(doc, heading, imgDataUrl, y, margin, pageWidth, pageHeight) {
-    const maxImgWidth = pageWidth - margin * 2;
+  // Helper utility styled to lay elements out without card borders (bounding boxes)
+  function addImageWithHeading(doc, heading, imgDataUrl, y, margin, pageWidth, pageHeight, targetWidth, explicitX = null) {
+    const xPos = explicitX !== null ? explicitX : margin;
     const props = doc.getImageProperties(imgDataUrl);
-    let imgWidth = maxImgWidth;
-    let imgHeight = (props.height * imgWidth) / props.width;
+    const imgWidth = targetWidth;
+    const imgHeight = (props.height * imgWidth) / props.width;
 
-    const maxImgHeight = pageHeight - margin * 2 - 60;
-    if (imgHeight > maxImgHeight) {
-      imgHeight = maxImgHeight;
-      imgWidth = (props.width * imgHeight) / props.height;
-    }
-
-    // Check if both heading and image can fit on this page. If not, add page.
-    if (y + imgHeight + 50 > pageHeight - margin) {
+    // Page overflow checking before printing titles/images
+    if (y + imgHeight + 40 > pageHeight - margin) {
       doc.addPage();
-      y = margin + 15; // Set page padding
+      y = margin + 15;
     }
 
-    // Render Heading styled like .map-chart-card h3 / #map-wrapper-card h2
+    // Render Heading styled matching Web h2/h3 styles (#1a3a5c)
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(13);
-    doc.setTextColor(26, 58, 92); // #1a3a5c
-    doc.text(heading, margin, y);
-    y += 12;
+    doc.setFontSize(11);
+    doc.setTextColor(26, 58, 92);
+    doc.text(heading, xPos, y);
+    y += 14;
 
-    // Outer card border layout box similar to .map-chart-card border/shadow rules
-    doc.setDrawColor(235, 240, 245); 
-    doc.setLineWidth(1);
-    doc.roundedRect(margin - 8, y - 4, imgWidth + 16, imgHeight + 10, 6, 6, "D");
-
-    // Embed Image
-    doc.addImage(imgDataUrl, "PNG", margin, y, imgWidth, imgHeight);
-    return y + imgHeight + 35; // Returns next element coordinate space + spacing padding
+    // Draw raw visual assets directly without bounding boxes
+    doc.addImage(imgDataUrl, "PNG", xPos, y, imgWidth, imgHeight);
+    return y + imgHeight + 30; // Returns calculated spacing placement
   }
 
   // --------------------------------------------------------------------
@@ -387,8 +477,7 @@
     injectButton();
     if (!document.getElementById("generate-report-btn")) {
       console.warn(
-        "report-generator.js: could not find '.map-hint' to attach the button near. " +
-          "Add <button id=\"generate-report-btn\">Generate PDF Report</button> manually and it will still work."
+        "report-generator.js: could not find '.map-hint' to attach the button near."
       );
     }
   }
