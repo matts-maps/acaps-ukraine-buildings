@@ -1,5 +1,5 @@
 /* ============================================================================
-   E-PACC UKRAINE — "Generate PDF Report" for raion_analysis.html
+   E-PACC UKRAINE - "Generate PDF Report" for raion_analysis.html
    ============================================================================
 
    INSTALL
@@ -42,7 +42,7 @@
   const BUTTON_INSERT_AFTER_SELECTOR = ".map-hint";
 
   // --------------------------------------------------------------------
-  // 1. Read current filter state — prefer the window.__mapReportState hook
+  // 1. Read current filter state - prefer the window.__mapReportState hook
   //    (real numbers), fall back to scraping visible DOM text if it's
   //    missing (e.g. before the patch to raion_analysis.js is applied).
   // --------------------------------------------------------------------
@@ -101,7 +101,7 @@
       state.startLabel === state.endLabel
         ? state.startLabel
         : `${state.startLabel} to ${state.endLabel}`;
-    return `${state.year} — ${state.aggregationLabel} — ${range}`;
+    return `${state.year} - ${state.aggregationLabel} - ${range}`;
   }
 
   function topEntry(counts) {
@@ -127,7 +127,7 @@
   async function captureMap(mapEl) {
     if (!mapEl) return null;
     if (typeof html2canvas === "undefined") {
-      console.error("html2canvas is not loaded — check the CDN script tag.");
+      console.error("html2canvas is not loaded - check the CDN script tag.");
       return null;
     }
     try {
@@ -181,7 +181,7 @@
       // Title
       doc.setFont("helvetica", "bold");
       doc.setFontSize(20);
-      doc.text("E-PACC Ukraine — Raion Analysis Report", margin, y);
+      doc.text("E-PACC Ukraine - Raion Analysis Report", margin, y);
       y += 26;
 
       // Period covered
@@ -206,14 +206,14 @@
       const raionsAffected = Object.keys(state.raionCounts).length;
 
       const lines = [
-        `Oblast filter: ${state.oblastLabel}`,
-        `Raion filter: ${state.raionLabel}`,
-        `Active selection filter: ${state.activeFilterText}`,
-        `National frame total: ${state.nationalTotal}`,
-        `Raions with recorded damage in this window: ${raionsAffected || "N/A"}`,
-        topRaion ? `Most-affected raion: ${topRaion[0]} (${topRaion[1].toLocaleString()})` : null,
-        topInfra ? `Most-reported infrastructure type: ${topInfra[0]} (${topInfra[1].toLocaleString()})` : null,
-        topExtent ? `Most common extent of damage: ${topExtent[0]} (${topExtent[1].toLocaleString()})` : null,
+        `Oblast coverage: ${state.oblastLabel}`,
+        `Raion coverage: ${state.raionLabel}`,
+       // `Active selection filter: ${state.activeFilterText}`,
+        `Total damaged buildings: ${state.nationalTotal}`,
+        `Raions with recorded damage: ${raionsAffected || "N/A"}`,
+        topRaion ? `Most affected raion: ${topRaion[0]} (${topRaion[1].toLocaleString()})` : null,
+        topInfra ? `Most reported damage infrastructure: ${topInfra[0]} (${topInfra[1].toLocaleString()})` : null,
+        topExtent ? `Most common level of damage: ${topExtent[0]} (${topExtent[1].toLocaleString()})` : null,
       ].filter(Boolean);
 
       lines.forEach((line) => {
@@ -228,7 +228,7 @@
       if (mapImg) {
         y = addImageWithHeading(
           doc,
-          "Spatial Damage Assessment Mapping Profile — Raion Level",
+          "Damage buildings per Raion",
           mapImg,
           y,
           margin,
@@ -237,7 +237,7 @@
         );
       } else {
         doc.text(
-          "(Map image unavailable — see console for details, likely a basemap CORS issue)",
+          "(Map image unavailable - see console for details, likely a basemap CORS issue)",
           margin,
           y
         );
@@ -266,7 +266,7 @@
         doc.setFontSize(8);
         doc.setTextColor(120);
         doc.text(
-          "E-PACC Ukraine Project — Created by MapAction and ACAPS. Data sourced from ACAPS.",
+          "E-PACC Ukraine Project - Created by MapAction and ACAPS. Data sourced from ACAPS.",
           margin,
           pageHeight - 20
         );
