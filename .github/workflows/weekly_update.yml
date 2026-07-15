@@ -52,5 +52,9 @@ jobs:
             echo "No changes detected in raw data, summaries, plots, or dashboard."
           else
             git commit -m "Weekly ACAPS updates, analytical summaries, and interactive dashboard update"
-            git push
+            
+            # Pull any remote changes and rebase our automated commit on top of them
+            git pull --rebase origin main
+            
+            git push origin main
           fi
