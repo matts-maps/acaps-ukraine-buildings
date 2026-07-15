@@ -3,10 +3,12 @@
 <div class="map-dashboard-container">
   <aside id="map-controls">
     <div id="map-error-msg"></div>
+
     <div class="map-control-group">
       <label for="map-year-select">Target Assessment Year:</label>
       <select id="map-year-select" onchange="processMapVisualisations()"></select>
     </div>
+
     <div class="map-control-group">
       <label for="map-aggregation-select">Time Frame Filter Type:</label>
       <select id="map-aggregation-select" onchange="buildMapPeriodDropdowns()">
@@ -15,6 +17,7 @@
         <option value="30" selected>Monthly Granularity</option>
       </select>
     </div>
+
     <div class="map-control-group">
       <label for="map-period-start-select">Select Window Frame Range:</label>
       <div class="map-range-row">
@@ -23,16 +26,20 @@
         <select id="map-period-end-select" onchange="processMapVisualisations()"></select>
       </div>
     </div>
-    <div id="map-active-filter-group" style="display:none;">
-      <span id="map-active-filter-label"></span>
-      <button type="button" id="map-clear-filter-btn" onclick="clearMapFilter()">Clear</button>
-    </div>
-    <p class="map-hint">Click a raion on the map, or a bar/segment/point in the charts below, to filter everything to that selection.</p>
+
     <div class="map-summary-box">
       <div class="label">National Frame Total</div>
       <div class="value" id="map-total-value">0</div>
     </div>
+
+    <div id="map-active-filter-group" style="display:none;">
+      <span id="map-active-filter-label"></span>
+      <button type="button" id="map-clear-filter-btn" onclick="clearMapFilter()">Clear</button>
+    </div>
+
+    <p class="map-hint">Click a raion on the map, or a bar/segment/point in the charts below, to filter everything to that selection.</p>
   </aside>
+
   <main id="map-wrapper-card">
     <h2 id="map-view-title">Spatial Damage Assessment Mapping Profile — Raion Level</h2>
     <div id="map-container"></div>

@@ -1,7 +1,10 @@
-/* Layout Framework */
+/* ==========================================================================
+   Layout Framework
+   ========================================================================== */
 .map-dashboard-container {
   display: flex;
-  width: 1000px;
+  flex-direction: column; /* Stacks controls above the map */
+  width: 1000px;          
   max-width: 100%;
   margin: 32px auto;
   padding: 0 20px;
@@ -9,24 +12,31 @@
   gap: 20px;
 }
 
-/* Control Framework Panel */
+/* ==========================================================================
+   Control Framework Panel (Horizontal Row Layout)
+   ========================================================================== */
 #map-controls {
-  width: 280px;
-  min-width: 280px;
+  width: 100%;
+  min-width: 100%;
   background: #fff;
   border-radius: 10px;
-  padding: 24px;
+  padding: 20px 24px;
   box-sizing: border-box;
   display: flex;
-  flex-direction: column;
-  gap: 16px;
+  flex-direction: row;
+  flex-wrap: wrap;        /* Safely wraps elements on smaller screens */
+  align-items: flex-end;  /* Aligns all dropdown inputs and labels on the same baseline */
+  gap: 20px;
   box-shadow: 0 1px 4px rgba(0,0,0,0.08);
 }
 
+/* Three horizontal filter groups sharing 3/4 (75%) space of the row */
 .map-control-group {
   display: flex;
   flex-direction: column;
   gap: 8px;
+  flex: 1 1 calc(24% - 14px); 
+  min-width: 150px;
 }
 
 .map-range-row {
@@ -63,9 +73,43 @@
   width: 100%;
 }
 
-/* Map Screen Bounds */
+/* ==========================================================================
+   Metrics Summary Box (Occupies the last 1/4 of the width)
+   ========================================================================== */
+.map-summary-box {
+  margin-top: 0;
+  background: #f0f4f8;
+  border-radius: 8px;
+  padding: 10px 16px;
+  border-left: 4px solid #1a3a5c;
+  
+  /* Strictly allocates 1/4 (25%) of the parent width minus the gap */
+  flex: 0 0 calc(25% - 20px);
+  box-sizing: border-box;
+  min-width: 180px;
+}
+
+.map-summary-box .label {
+  font-size: 11px;
+  color: #666;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+}
+
+.map-summary-box .value {
+  font-size: 22px;
+  font-weight: 700;
+  color: #1a3a5c;
+  margin-top: 2px;
+}
+
+/* ==========================================================================
+   Full Width Map Card
+   ========================================================================== */
 #map-wrapper-card {
-  flex: 1;
+  width: 100%;            /* Force card to span 100% of the horizontal layout container */
+  box-sizing: border-box;
   background: #fff;
   border-radius: 10px;
   padding: 20px;
@@ -88,11 +132,13 @@
 
 #map-container {
   width: 100%;
-  height: 500px; /* Explicit height prevents layout jumps */
+  height: 500px;          /* Explicit height prevents layout jumps */
   display: block;
 }
 
-/* Leaflet UI Overlays & Floating Map Panels */
+/* ==========================================================================
+   Leaflet UI Overlays & Floating Map Panels
+   ========================================================================== */
 .map-info-panel {
   padding: 12px 16px;
   font-family: inherit;
@@ -130,39 +176,20 @@
   border-radius: 3px;
 }
 
-/* Metrics summary box */
-.map-summary-box {
-  margin-top: auto;
-  background: #f0f4f8;
-  border-radius: 8px;
-  padding: 14px;
-  border-left: 4px solid #1a3a5c;
-}
-
-.map-summary-box .label {
-  font-size: 11px;
-  color: #666;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  font-weight: 600;
-}
-
-.map-summary-box .value {
-  font-size: 22px;
-  font-weight: 700;
-  color: #1a3a5c;
-  margin-top: 2px;
-}
-
 #map-error-msg {
+  flex-basis: 100%;       /* Spans full width above filters if visible */
   color: #c0392b;
   font-size: 13px;
   margin-bottom: 12px;
   display: none;
 }
 
-/* Cross-filter: active selection badge */
+/* ==========================================================================
+   Cross-Filter Components & Helpers
+   ========================================================================== */
 #map-active-filter-group {
+  flex-basis: 100%;       /* Places active selection details on its own line below filters */
+  display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
@@ -171,6 +198,7 @@
   border-radius: 8px;
   padding: 8px 10px;
   font-size: 12px;
+  margin-top: 10px;
 }
 
 #map-active-filter-label {
@@ -195,18 +223,21 @@
 }
 
 .map-hint {
+  flex-basis: 100%;       /* Pushes instructions below the filters and totalizer box */
   font-size: 11px;
   color: #888;
   line-height: 1.4;
-  margin: 0;
+  margin: 4px 0 0 0;
 }
 
-/* Cross-filter: clickable oblast polygons */
+/* Clickable map shapes */
 .leaflet-interactive {
   cursor: pointer;
 }
 
-/* Summary Charts Section */
+/* ==========================================================================
+   Summary Charts Section
+   ========================================================================== */
 #map-charts-section {
   display: flex;
   flex-wrap: wrap;
@@ -224,6 +255,10 @@
   padding: 20px;
   box-sizing: border-box;
   box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+}
+
+.map-chart-card.timeline-card {
+  flex: 1 1 100%;
 }
 
 .map-chart-card h3 {
@@ -246,14 +281,23 @@
   text-align: center;
 }
 
-#map-charts-section {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-  gap: 20px;
-}
+/* ==========================================================================
+   Responsive Adjustments (Mobile and Tablet Viewports)
+   ========================================================================== */
+@media (max-width: 768px) {
+  #map-controls {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 16px;
+  }
 
-/* Forces the timeline card to span full width across the grid rows */
-.map-chart-card.timeline-card {
-  grid-column: 1 / -1; 
-  height: 250px; /* Gives the timeline line-series generous horizontal drawing space */
+  .map-control-group {
+    flex: 1 1 auto;
+    width: 100%;
+  }
+
+  .map-summary-box {
+    flex: 1 1 auto;
+    width: 100%;
+  }
 }
