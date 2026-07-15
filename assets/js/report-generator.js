@@ -161,19 +161,29 @@
       }
 
       if (fontSizePx) {
-        // Ensure the font object nested configuration exists before trying to modify the size leaf property
+        // Safe navigation: only initialize undefined objects, never re-assign active proxies
         if (legendOpts) {
-          legendOpts.labels = legendOpts.labels || {};
-          legendOpts.labels.font = legendOpts.labels.font || {};
-          legendOpts.labels.font.size = fontSizePx;
+          if (legendOpts.labels === undefined) {
+            legendOpts.labels = { font: { size: fontSizePx } };
+          } else if (legendOpts.labels.font === undefined) {
+            legendOpts.labels.font = { size: fontSizePx };
+          } else {
+            legendOpts.labels.font.size = fontSizePx;
+          }
         }
         if (xTicks) {
-          xTicks.font = xTicks.font || {};
-          xTicks.font.size = fontSizePx;
+          if (xTicks.font === undefined) {
+            xTicks.font = { size: fontSizePx };
+          } else {
+            xTicks.font.size = fontSizePx;
+          }
         }
         if (yTicks) {
-          yTicks.font = yTicks.font || {};
-          yTicks.font.size = fontSizePx;
+          if (yTicks.font === undefined) {
+            yTicks.font = { size: fontSizePx };
+          } else {
+            yTicks.font.size = fontSizePx;
+          }
         }
       }
 
@@ -195,13 +205,17 @@
       console.warn("Chart capture failed:", e);
       return null;
     } finally {
+      // Revert modifications cleanly without disrupting Chart.js proxies
       if (legendOpts) {
         legendOpts.position = original.legendPosition;
         legendOpts.align = original.legendAlign;
         if (legendOpts.labels) {
           if (original.legendFontSize !== undefined) {
-            legendOpts.labels.font = legendOpts.labels.font || {};
-            legendOpts.labels.font.size = original.legendFontSize;
+            if (legendOpts.labels.font === undefined) {
+              legendOpts.labels.font = { size: original.legendFontSize };
+            } else {
+              legendOpts.labels.font.size = original.legendFontSize;
+            }
           } else if (legendOpts.labels.font) {
             delete legendOpts.labels.font.size;
           }
@@ -209,16 +223,22 @@
       }
       if (xTicks) {
         if (original.xTickFontSize !== undefined) {
-          xTicks.font = xTicks.font || {};
-          xTicks.font.size = original.xTickFontSize;
+          if (xTicks.font === undefined) {
+            xTicks.font = { size: original.xTickFontSize };
+          } else {
+            xTicks.font.size = original.xTickFontSize;
+          }
         } else if (xTicks.font) {
           delete xTicks.font.size;
         }
       }
       if (yTicks) {
         if (original.yTickFontSize !== undefined) {
-          yTicks.font = yTicks.font || {};
-          yTicks.font.size = original.yTickFontSize;
+          if (yTicks.font === undefined) {
+            yTicks.font = { size: original.yTickFontSize };
+          } else {
+            yTicks.font.size = original.yTickFontSize;
+          }
         } else if (yTicks.font) {
           delete yTicks.font.size;
         }
