@@ -1,21 +1,5 @@
 /* ============================================================================
    E-PACC UKRAINE - "Generate PDF Report" for raion_analysis.html
-   ============================================================================
-
-   INSTALL
-   -------
-   1. Add the hook in raion_analysis.js so window.__mapReportState is populated 
-      with the real numbers behind the current view.
-
-   2. Add these two CDN libraries to raion_analysis.html, then this file,
-      all AFTER the existing Leaflet / Chart.js / raion_analysis.js scripts:
-
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" defer></script>
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
-        <script src="{{ '/assets/js/report-generator.js' | relative_url }}" defer></script>
-
-   3. The button is injected automatically into #map-controls, right after
-      the ".map-hint" paragraph. No HTML edits required.
    ========================================================================== */
 
 (function () {
@@ -40,9 +24,7 @@
 
   const BUTTON_INSERT_AFTER_SELECTOR = ".map-hint";
 
-  // --------------------------------------------------------------------
-  // 1. Read current filter state - prefer the window.__mapReportState hook
-  // --------------------------------------------------------------------
+  // 1. Read current filter state
   function getReportState() {
     const state = window.__mapReportState;
     const yearEl = document.getElementById(IDS.yearSelect);
@@ -107,291 +89,123 @@
     return entries[0];
   }
 
-  // --------------------------------------------------------------------
-  // 2. Capture helpers (Includes Synchronized Alignment for Overlays)
-  // --------------------------------------------------------------------
-  async function captureCanvas(canvasEl) {
-    if (!canvasEl) return null;
-    try {
-      return canvasEl.toDataURL("image/png", 1.0);
-    } catch (e) {
-      console.warn("Chart canvas capture failed:", e);
-      return null;
-    }
-  }
-
-  // Helper to extract the computed font-family from the live webpage DOM 
-  // (falls back to a standard sans-serif system stack if inaccessible)
+  // Helper to extract CSS font-family
   function getWebpageFontFamily() {
     try {
       const bodyFont = window.getComputedStyle(document.body).fontFamily;
-      return bodyFont || "sans-serif";
+      // Parse out clean font name (e.g., "Inter, Arial, sans-serif" -> "Helvetica/Arial" or custom for PDF)
+      if (bodyFont.toLowerCase().includes("sans-serif")) return "helvetica";
+      return "helvetica";
     } catch (e) {
-      return "sans-serif";
+      return "helvetica";
     }
   }
 
   // ------------------------------------------------------------------
-  // Forces a live Chart.js chart to redraw at an exact pixel height,
-  // forces ALL textual elements to a strict font size (9.5px) and 
-  // matches their font families to the current CSS styling of the webpage.
+  // Hides native canvas labels on ChartJS and extracts chart properties.
+  // This leaves a clean graphic canvas, which is captured and paired with 
+  // native, searchable PDF vector text.
   // ------------------------------------------------------------------
-  async function captureChartAtSize(canvasEl, heightPx, fontSizePx, extraOptions = {}) {
+  async function captureChartDataAndCleanGraphic(canvasEl, heightPx) {
     if (!canvasEl) return null;
-
-    if (typeof Chart === "undefined" || typeof Chart.getChart !== "function") {
-      return captureCanvas(canvasEl);
-    }
+    if (typeof Chart === "undefined" || typeof Chart.getChart !== "function") return null;
 
     const chart = Chart.getChart(canvasEl);
-    if (!chart) return captureCanvas(canvasEl);
+    if (!chart) return null;
 
     const container = canvasEl.parentElement;
     const currentWidth = canvasEl.getBoundingClientRect().width;
-    const webFontFamily = getWebpageFontFamily();
-    
-    const legendOpts = chart.options?.plugins?.legend;
-    const titleOpts = chart.options?.plugins?.title;
-    const subtitleOpts = chart.options?.plugins?.subtitle;
-    const scales = chart.options?.scales || {};
 
-    // Save all original configurations to restore later
+    // Save configuration states
     const original = {
       maintainAspectRatio: chart.options.maintainAspectRatio,
       containerHeight: container ? container.style.height : null,
-      legendPosition: legendOpts ? legendOpts.position : undefined,
-      legendAlign: legendOpts ? legendOpts.align : undefined,
-      legendFont: legendOpts?.labels?.font ? { ...legendOpts.labels.font } : undefined,
-      titleFont: titleOpts?.font ? { ...titleOpts.font } : undefined,
-      subtitleFont: subtitleOpts?.font ? { ...subtitleOpts.font } : undefined,
-      scales: {}
+      legendDisplay: chart.options.plugins?.legend?.display,
+      titleDisplay: chart.options.plugins?.title?.display,
+      xTicksDisplay: chart.options.scales?.x?.ticks?.display,
+      yTicksDisplay: chart.options.scales?.y?.ticks?.display,
     };
 
-    // Save individual scale configurations
-    Object.keys(scales).forEach(key => {
-      original.scales[key] = {
-        tickFont: scales[key]?.ticks?.font ? { ...scales[key].ticks.font } : undefined,
-        titleFont: scales[key]?.title?.font ? { ...scales[key].title.font } : undefined
-      };
-    });
+    // Extract raw label strings for jsPDF rendering
+    const metaData = {
+      labels: chart.data.labels || [],
+      datasets: chart.data.datasets.map(d => ({ label: d.label, data: d.data })),
+      legendLabels: chart.options.plugins?.legend?.display !== false ? chart.data.datasets.map(d => d.label) : []
+    };
 
     try {
-      if (extraOptions.legendPosition && legendOpts) {
-        legendOpts.position = extraOptions.legendPosition;
-        legendOpts.align = extraOptions.legendAlign || "center";
+      // Hide all texts on the chart canvas dynamically for export
+      if (chart.options.plugins) {
+        if (!chart.options.plugins.legend) chart.options.plugins.legend = {};
+        chart.options.plugins.legend.display = false;
+        if (!chart.options.plugins.title) chart.options.plugins.title = {};
+        chart.options.plugins.title.display = false;
       }
-
-      if (fontSizePx) {
-        // 1. Override Legend Fonts
-        if (legendOpts) {
-          if (legendOpts.labels === undefined) {
-            legendOpts.labels = { font: { size: fontSizePx, family: webFontFamily } };
-          } else if (legendOpts.labels.font === undefined) {
-            legendOpts.labels.font = { size: fontSizePx, family: webFontFamily };
-          } else {
-            legendOpts.labels.font.size = fontSizePx;
-            legendOpts.labels.font.family = webFontFamily;
-          }
+      if (chart.options.scales) {
+        if (chart.options.scales.x) {
+          if (!chart.options.scales.x.ticks) chart.options.scales.x.ticks = {};
+          chart.options.scales.x.ticks.display = false;
         }
-
-        // 2. Override Chart Title Fonts
-        if (titleOpts) {
-          if (titleOpts.font === undefined) {
-            titleOpts.font = { size: fontSizePx, family: webFontFamily };
-          } else {
-            titleOpts.font.size = fontSizePx;
-            titleOpts.font.family = webFontFamily;
-          }
+        if (chart.options.scales.y) {
+          if (!chart.options.scales.y.ticks) chart.options.scales.y.ticks = {};
+          chart.options.scales.y.ticks.display = false;
         }
-
-        // 3. Override Chart Subtitle Fonts
-        if (subtitleOpts) {
-          if (subtitleOpts.font === undefined) {
-            subtitleOpts.font = { size: fontSizePx, family: webFontFamily };
-          } else {
-            subtitleOpts.font.size = fontSizePx;
-            subtitleOpts.font.family = webFontFamily;
-          }
-        }
-
-        // 4. Override Axis Scales and Titles Fonts
-        Object.keys(scales).forEach(key => {
-          const axis = scales[key];
-          if (axis) {
-            // Ticks (labels along the axis line)
-            if (axis.ticks === undefined) {
-              axis.ticks = { font: { size: fontSizePx, family: webFontFamily } };
-            } else if (axis.ticks.font === undefined) {
-              axis.ticks.font = { size: fontSizePx, family: webFontFamily };
-            } else {
-              axis.ticks.font.size = fontSizePx;
-              axis.ticks.font.family = webFontFamily;
-            }
-
-            // Title (the main label for the entire axis)
-            if (axis.title === undefined) {
-              axis.title = { font: { size: fontSizePx, family: webFontFamily } };
-            } else if (axis.title.font === undefined) {
-              axis.title.font = { size: fontSizePx, family: webFontFamily };
-            } else {
-              axis.title.font.size = fontSizePx;
-              axis.title.font.family = webFontFamily;
-            }
-          }
-        });
       }
 
       chart.options.maintainAspectRatio = false;
-
-      if (container && heightPx) {
-        container.style.height = `${heightPx}px`;
-      }
-
-      if (heightPx && currentWidth) {
-        chart.resize(currentWidth, heightPx);
-      } else {
-        chart.resize();
-      }
+      if (container && heightPx) container.style.height = `${heightPx}px`;
+      chart.resize(currentWidth, heightPx || 220);
       chart.update("none");
 
-      return canvasEl.toDataURL("image/png", 1.0);
+      const graphicDataUrl = canvasEl.toDataURL("image/png", 1.0);
+
+      return { img: graphicDataUrl, meta: metaData };
     } catch (e) {
-      console.warn("Chart capture failed:", e);
+      console.warn("Clean chart graphic extraction failed:", e);
       return null;
     } finally {
-      // Revert Legend config
-      if (legendOpts) {
-        legendOpts.position = original.legendPosition;
-        legendOpts.align = original.legendAlign;
-        if (legendOpts.labels) {
-          if (original.legendFont !== undefined) {
-            legendOpts.labels.font = original.legendFont;
-          } else if (legendOpts.labels.font) {
-            delete legendOpts.labels.font.size;
-            delete legendOpts.labels.font.family;
-          }
-        }
+      // Revert Chart.js options to keep responsive web view working 
+      if (chart.options.plugins) {
+        chart.options.plugins.legend.display = original.legendDisplay;
+        chart.options.plugins.title.display = original.titleDisplay;
       }
-
-      // Revert Title config
-      if (titleOpts) {
-        if (original.titleFont !== undefined) {
-          titleOpts.font = original.titleFont;
-        } else if (titleOpts.font) {
-          delete titleOpts.font.size;
-          delete titleOpts.font.family;
-        }
+      if (chart.options.scales) {
+        if (chart.options.scales.x) chart.options.scales.x.ticks.display = original.xTicksDisplay;
+        if (chart.options.scales.y) chart.options.scales.y.ticks.display = original.yTicksDisplay;
       }
-
-      // Revert Subtitle config
-      if (subtitleOpts) {
-        if (original.subtitleFont !== undefined) {
-          subtitleOpts.font = original.subtitleFont;
-        } else if (subtitleOpts.font) {
-          delete subtitleOpts.font.size;
-          delete subtitleOpts.font.family;
-        }
-      }
-
-      // Revert Scale configurations
-      Object.keys(scales).forEach(key => {
-        const axis = scales[key];
-        const origAxis = original.scales[key];
-        if (axis && origAxis) {
-          // Restore ticks
-          if (origAxis.tickFont !== undefined) {
-            axis.ticks.font = origAxis.tickFont;
-          } else if (axis.ticks && axis.ticks.font) {
-            delete axis.ticks.font.size;
-            delete axis.ticks.font.family;
-          }
-
-          // Restore title
-          if (origAxis.titleFont !== undefined) {
-            axis.title.font = origAxis.titleFont;
-          } else if (axis.title && axis.title.font) {
-            delete axis.title.font.size;
-            delete axis.title.font.family;
-          }
-        }
-      });
-
       chart.options.maintainAspectRatio = original.maintainAspectRatio;
-      if (container) {
-        container.style.height = original.containerHeight || "";
-      }
+      if (container) container.style.height = original.containerHeight || "";
       chart.resize();
       chart.update("none");
     }
   }
 
-  function neutralizeLeafletSvgOffsets(mapEl) {
-    const svgs = mapEl.querySelectorAll(".leaflet-overlay-pane svg");
-    const restoreFns = [];
-
-    svgs.forEach((svg) => {
-      const viewBoxAttr = svg.getAttribute("viewBox");
-      if (!viewBoxAttr) return;
-
-      const parts = viewBoxAttr.trim().split(/[\s,]+/).map(Number);
-      if (parts.length !== 4 || parts.some(Number.isNaN)) return;
-      const [vx, vy, vw, vh] = parts;
-      if (!vx && !vy) return;
-
-      const originalViewBox = viewBoxAttr;
-      const originalTransform = svg.style.transform;
-
-      svg.setAttribute("viewBox", `0 0 ${vw} ${vh}`);
-      svg.style.transform = "translate3d(0px, 0px, 0px)";
-
-      restoreFns.push(() => {
-        svg.setAttribute("viewBox", originalViewBox);
-        svg.style.transform = originalTransform;
-      });
-    });
-
-    return function restoreAll() {
-      restoreFns.forEach((fn) => fn());
-    };
-  }
-
+  // --------------------------------------------------------------------
+  // Capture Map (html2canvas)
+  // --------------------------------------------------------------------
   async function captureMap(mapEl) {
     if (!mapEl) return null;
-    if (typeof html2canvas === "undefined") {
-      console.error("html2canvas is not loaded.");
-      return null;
-    }
+    if (typeof html2canvas === "undefined") return null;
 
     const mapInstance = window.__leafletMap || (window.map instanceof L.Map ? window.map : null);
-    let originalCenter = null;
-    let originalZoom = null;
+    let originalCenter = null, originalZoom = null;
 
     if (mapInstance) {
       originalCenter = mapInstance.getCenter();
       originalZoom = mapInstance.getZoom();
-
       let targetBounds = null;
       mapInstance.eachLayer((layer) => {
         if (layer.getBounds && typeof layer.getBounds === "function" && layer.feature) {
-          if (!targetBounds) {
-            targetBounds = layer.getBounds();
-          } else {
-            targetBounds.extend(layer.getBounds());
-          }
+          targetBounds = !targetBounds ? layer.getBounds() : targetBounds.extend(layer.getBounds());
         }
       });
-
       if (targetBounds && targetBounds.isValid()) {
         await new Promise((resolve) => {
-          mapInstance.once("moveend", () => {
-            setTimeout(resolve, 500);
-          });
+          mapInstance.once("moveend", () => setTimeout(resolve, 500));
           mapInstance.fitBounds(targetBounds, { padding: [20, 20], animate: false });
         });
       }
     }
-
-    const restoreSvgOffsets = neutralizeLeafletSvgOffsets(mapEl);
 
     try {
       const canvas = await html2canvas(mapEl, {
@@ -400,38 +214,24 @@
         scale: 2,
         logging: false,
         onclone: (clonedDoc) => {
-          const selectorsToHide = [
-            ".leaflet-control-zoom", 
-            ".map-info-panel", 
-            ".leaflet-control-attribution"
-          ];
-          selectorsToHide.forEach(selector => {
-            const element = clonedDoc.querySelector(selector);
-            if (element) {
-              element.style.setProperty("display", "none", "important");
-            }
+          const hidden = [".leaflet-control-zoom", ".map-info-panel", ".leaflet-control-attribution"];
+          hidden.forEach(s => {
+            const el = clonedDoc.querySelector(s);
+            if (el) el.style.setProperty("display", "none", "important");
           });
         }
       });
 
-      if (mapInstance && originalCenter !== null && originalZoom !== null) {
-        mapInstance.setView(originalCenter, originalZoom, { animate: false });
-      }
-
+      if (mapInstance && originalCenter) mapInstance.setView(originalCenter, originalZoom, { animate: false });
       return canvas.toDataURL("image/png", 1.0);
     } catch (e) {
-      console.error("Map capture failed due to CORS or rendering issues:", e);
-      if (mapInstance && originalCenter !== null && originalZoom !== null) {
-        mapInstance.setView(originalCenter, originalZoom, { animate: false });
-      }
+      if (mapInstance && originalCenter) mapInstance.setView(originalCenter, originalZoom, { animate: false });
       return null;
-    } finally {
-      restoreSvgOffsets();
     }
   }
 
   // --------------------------------------------------------------------
-  // 3. Build the PDF
+  // Main PDF Generation Pipeline
   // --------------------------------------------------------------------
   async function generateReport() {
     const btn = document.getElementById("generate-report-btn");
@@ -454,23 +254,23 @@
       let y = margin;
 
       const state = getReportState();
-      const generatedAt = new Date().toLocaleString("en-GB", {
-        dateStyle: "long",
-        timeStyle: "short",
-      });
+      const font = getWebpageFontFamily();
+      const generatedAt = new Date().toLocaleString("en-GB", { dateStyle: "long", timeStyle: "short" });
 
+      // Page Top Accent line
       doc.setFillColor(26, 58, 92); 
       doc.rect(0, 0, pageWidth, 8, "F");
       y += 15;
 
-      doc.setFont("helvetica", "bold");
+      // Textual Headers as Vector text elements
+      doc.setFont(font, "bold");
       doc.setFontSize(22);
       doc.setTextColor(26, 58, 92);
       doc.text("E-PACC Ukraine", margin, y);
       y += 22;
 
       doc.setFontSize(14);
-      doc.setFont("helvetica", "normal");
+      doc.setFont(font, "normal");
       doc.setTextColor(102, 102, 102);
       doc.text("Raion Damage Analysis Report", margin, y);
       y += 25;
@@ -486,7 +286,8 @@
       doc.line(margin, y, pageWidth - margin, y);
       y += 25;
 
-      doc.setFont("helvetica", "bold");
+      // Statistics Section
+      doc.setFont(font, "bold");
       doc.setFontSize(13);
       doc.setTextColor(26, 58, 92);
       doc.text("Summary Statistics", margin, y);
@@ -495,9 +296,9 @@
       const topRaion = topEntry(state.raionCounts);
       const topInfra = topEntry(state.infraCounts);
       const topExtent = topEntry(state.extentCounts);
-
       const colWidth = (pageWidth - (margin * 2) - 40) / 2; 
-      doc.setFont("helvetica", "normal");
+
+      doc.setFont(font, "normal");
       doc.setFontSize(9.5);
 
       const leftRaw = [
@@ -505,7 +306,6 @@
         `Raion coverage: ${state.raionLabel}`,
         `Affected Raions: ${Object.keys(state.raionCounts).length || "N/A"}`
       ];
-
       const rightRaw = [
         topRaion ? `Most affected: ${topRaion[0]} (${topRaion[1].toLocaleString()})` : "Most affected: N/A",
         topInfra ? `Most damaged infrastructure: ${topInfra[0]} (${topInfra[1].toLocaleString()})` : "Most damaged infrastructure: N/A",
@@ -514,17 +314,11 @@
 
       const leftWrapped = leftRaw.map(str => doc.splitTextToSize(str, colWidth));
       const rightWrapped = rightRaw.map(str => doc.splitTextToSize(str, colWidth));
+      const leftColHeight = leftWrapped.reduce((acc, lines) => acc + (lines.length * 13) + 6, 0);
+      const rightColHeight = rightWrapped.reduce((acc, lines) => acc + (lines.length * 13) + 6, 0);
+      const statBoxHeight = Math.max(leftColHeight, rightColHeight) + 45;
 
-      const getColHeight = (wrappedArray) => {
-        return wrappedArray.reduce((acc, lines) => acc + (lines.length * 13) + 6, 0);
-      };
-      
-      const leftColHeight = getColHeight(leftWrapped);
-      const rightColHeight = getColHeight(rightWrapped);
-      const contentHeight = Math.max(leftColHeight, rightColHeight);
-      
-      const statBoxHeight = contentHeight + 45;
-
+      // Draw Box Layout
       doc.setFillColor(240, 244, 248); 
       doc.roundedRect(margin, y, pageWidth - (margin * 2), statBoxHeight, 6, 6, "F");
       doc.setFillColor(26, 58, 92);
@@ -533,177 +327,90 @@
       doc.setTextColor(68, 68, 68);
       let currentLeftY = y + 20;
       leftWrapped.forEach(lines => {
-        lines.forEach(line => {
-          doc.text(line, margin + 20, currentLeftY);
-          currentLeftY += 13;
-        });
+        lines.forEach(line => { doc.text(line, margin + 20, currentLeftY); currentLeftY += 13; });
         currentLeftY += 6;
       });
 
       let currentRightY = y + 20;
       const rightColX = pageWidth / 2 + 10;
       rightWrapped.forEach(lines => {
-        lines.forEach(line => {
-          doc.text(line, rightColX, currentRightY);
-          currentRightY += 13;
-        });
+        lines.forEach(line => { doc.text(line, rightColX, currentRightY); currentRightY += 13; });
         currentRightY += 6;
       });
 
-      doc.setFont("helvetica", "bold");
+      doc.setFont(font, "bold");
       doc.setFontSize(11);
       doc.setTextColor(26, 58, 92);
       doc.text(`Total Buildings Impacted: ${state.nationalTotal}`, margin + 20, y + statBoxHeight - 15);
 
       y += statBoxHeight + 25;
 
+      // Add Map (Leaves map panel textual details vector-based)
       const mapEl = document.getElementById(IDS.mapContainer);
       const mapImg = await captureMap(mapEl);
       if (mapImg) {
-        y = addImageWithHeading(
-          doc,
-          "Damage Buildings per Raion",
-          mapImg,
-          y,
-          margin,
-          pageWidth,
-          pageHeight,
-          pageWidth - margin * 2
-        );
+        y = addImageWithHeading(doc, font, "Damage Buildings per Raion", mapImg, y, margin, pageWidth, pageHeight, pageWidth - margin * 2);
       } else {
-        doc.setFont("helvetica", "italic");
+        doc.setFont(font, "italic");
         doc.setFontSize(10);
         doc.setTextColor(192, 57, 43);
-        doc.text("(Map image unavailable - likely a basemap CORS issue)", margin, y);
+        doc.text("(Map image unavailable due to CORS settings)", margin, y);
         y += 25;
       }
 
+      // --- PAGE 2: CHARTS WITH NATIVE SELECTABLE PDF TEXTS ---
       doc.addPage();
       y = margin + 15;
 
+      // 1. Timeline Chart
       const timelineCanvas = document.getElementById(IDS.charts.timeline.id);
-      
-      // Override text elements in the Timeline chart with 9.5px size & match CSS
-      const CHART_TEXT_SIZE_PX = 9.5;
-      const timelineImg = await captureChartAtSize(
-        timelineCanvas,
-        null, // Keep natural height for timeline
-        CHART_TEXT_SIZE_PX
-      );
+      const timelineData = await captureChartDataAndCleanGraphic(timelineCanvas, 200);
 
-      if (timelineImg) {
-        y = addImageWithHeading(
-          doc,
-          IDS.charts.timeline.label,
-          timelineImg,
-          y,
-          margin,
-          pageWidth,
-          pageHeight,
-          pageWidth - margin * 2
-        );
+      if (timelineData) {
+        y = addVectorLabeledChart(doc, font, IDS.charts.timeline.label, timelineData, y, margin, pageWidth, pageHeight, pageWidth - margin * 2, 200);
       }
 
-      const gridGap = 16;
+      // Bottom Grid Column Charts Row
+      const gridGap = 20;
       const colChartWidth = (pageWidth - margin * 2 - gridGap) / 2;
+      const smallChartHeight = 160;
 
       const topRaionsCanvas = document.getElementById(IDS.charts.topRaions.id);
       const infraCanvas = document.getElementById(IDS.charts.infra.id);
       const extentCanvas = document.getElementById(IDS.charts.extent.id);
 
-      const SUMMARY_CHART_HEIGHT_PX = 300;
-
-      const topRaionsImg = await captureChartAtSize(
-        topRaionsCanvas,
-        SUMMARY_CHART_HEIGHT_PX,
-        CHART_TEXT_SIZE_PX
-      );
-      const infraImg = await captureChartAtSize(
-        infraCanvas,
-        SUMMARY_CHART_HEIGHT_PX,
-        CHART_TEXT_SIZE_PX
-      );
-      const extentImg = await captureChartAtSize(
-        extentCanvas,
-        SUMMARY_CHART_HEIGHT_PX,
-        CHART_TEXT_SIZE_PX,
-        { legendPosition: "right", legendAlign: "center" }
-      );
-
-      const naturalHeightAt = (imgDataUrl) => {
-        if (!imgDataUrl) return 0;
-        const props = doc.getImageProperties(imgDataUrl);
-        return (props.height * colChartWidth) / props.width;
-      };
-      const summaryChartHeight = Math.max(
-        naturalHeightAt(topRaionsImg),
-        naturalHeightAt(infraImg),
-        naturalHeightAt(extentImg)
-      ) || null;
+      const topRaionsData = await captureChartDataAndCleanGraphic(topRaionsCanvas, smallChartHeight);
+      const infraData = await captureChartDataAndCleanGraphic(infraCanvas, smallChartHeight);
+      const extentData = await captureChartDataAndCleanGraphic(extentCanvas, smallChartHeight);
 
       let rowYStart = y;
       let maxRowHeight = 0;
 
-      if (topRaionsImg) {
-        const nextY = addImageWithHeading(
-          doc,
-          IDS.charts.topRaions.label,
-          topRaionsImg,
-          rowYStart,
-          margin,
-          pageWidth,
-          pageHeight,
-          colChartWidth,
-          margin,
-          summaryChartHeight
-        );
+      if (topRaionsData) {
+        const nextY = addVectorLabeledChart(doc, font, IDS.charts.topRaions.label, topRaionsData, rowYStart, margin, pageWidth, pageHeight, colChartWidth, smallChartHeight, margin);
         maxRowHeight = Math.max(maxRowHeight, nextY - rowYStart);
       }
 
-      if (infraImg) {
-        const nextY = addImageWithHeading(
-          doc,
-          IDS.charts.infra.label,
-          infraImg,
-          rowYStart,
-          margin,
-          pageWidth,
-          pageHeight,
-          colChartWidth,
-          margin + colChartWidth + gridGap,
-          summaryChartHeight
-        );
+      if (infraData) {
+        const nextY = addVectorLabeledChart(doc, font, IDS.charts.infra.label, infraData, rowYStart, margin, pageWidth, pageHeight, colChartWidth, smallChartHeight, margin + colChartWidth + gridGap);
         maxRowHeight = Math.max(maxRowHeight, nextY - rowYStart);
       }
 
       y = rowYStart + (maxRowHeight > 0 ? maxRowHeight : 0);
 
-      if (extentImg) {
+      if (extentData) {
         const centerX = (pageWidth - colChartWidth) / 2;
-        y = addImageWithHeading(
-          doc,
-          IDS.charts.extent.label,
-          extentImg,
-          y,
-          margin,
-          pageWidth,
-          pageHeight,
-          colChartWidth,
-          centerX,
-          summaryChartHeight
-        );
+        y = addVectorLabeledChart(doc, font, IDS.charts.extent.label, extentData, y, margin, pageWidth, pageHeight, colChartWidth, smallChartHeight, centerX);
       }
 
+      // Footer stamp
       const pageCount = doc.internal.getNumberOfPages();
       for (let i = 1; i <= pageCount; i++) {
         doc.setPage(i);
+        doc.setFont(font, "normal");
         doc.setFontSize(8);
         doc.setTextColor(136, 136, 136);
-        doc.text(
-          "E-PACC Ukraine Project - Created by MapAction and ACAPS. Data sourced from ACAPS.",
-          margin,
-          pageHeight - 20
-        );
+        doc.text("E-PACC Ukraine Project - Sourced from ACAPS. Built using Vector PDF Text standards.", margin, pageHeight - 20);
         doc.text(`Page ${i} of ${pageCount}`, pageWidth - margin - 45, pageHeight - 20);
       }
 
@@ -711,7 +418,7 @@
       doc.save(`EPACC_Raion_Report_${safeYear}.pdf`);
     } catch (err) {
       console.error("Report generation failed:", err);
-      alert("Something went wrong generating the report. See console for details.");
+      alert("Error generating report. See browser debugger console for details.");
     } finally {
       if (btn) {
         btn.disabled = false;
@@ -720,36 +427,80 @@
     }
   }
 
-  function addImageWithHeading(doc, heading, imgDataUrl, y, margin, pageWidth, pageHeight, targetWidth, explicitX = null, maxHeight = null) {
+  // ------------------------------------------------------------------
+  // High-fidelity Hybrid Vector-Chart Renderer:
+  // Combines canvas data graphs with native PDF vector labels
+  // ------------------------------------------------------------------
+  function addVectorLabeledChart(doc, font, heading, chartPayload, y, margin, pageWidth, pageHeight, targetWidth, targetHeight, explicitX = null) {
     const xPos = explicitX !== null ? explicitX : margin;
-    const props = doc.getImageProperties(imgDataUrl);
-    const naturalAspect = props.width / props.height;
+    const requiredTotalHeight = targetHeight + 50; // Headings + chart + legends
 
-    let imgWidth = targetWidth;
-    let imgHeight = targetWidth / naturalAspect;
-
-    if (maxHeight) {
-      const boxAspect = targetWidth / maxHeight;
-      if (naturalAspect > boxAspect) {
-        imgWidth = targetWidth;
-        imgHeight = targetWidth / naturalAspect;
-      } else {
-        imgHeight = maxHeight;
-        imgWidth = maxHeight * naturalAspect;
-      }
+    if (y + requiredTotalHeight > pageHeight - margin) {
+      doc.addPage();
+      y = margin + 15;
     }
 
-    const drawX = xPos + (targetWidth - imgWidth) / 2;
-    const boxHeight = maxHeight || imgHeight;
+    // 1. Draw Heading as native vector text
+    doc.setFont(font, "bold");
+    doc.setFontSize(10);
+    doc.setTextColor(26, 58, 92);
+    doc.text(heading, xPos, y);
+    y += 14;
 
-    doc.setFont("helvetica", "bold");
+    // 2. Insert image layer (shapes and bars only, no graphics-baked text labels)
+    doc.addImage(chartPayload.img, "PNG", xPos, y, targetWidth, targetHeight);
+
+    // 3. Render Axis Texts dynamically as clean vector text labels
+    doc.setFont(font, "normal");
+    doc.setFontSize(7.5);
+    doc.setTextColor(110, 110, 110);
+
+    const labels = chartPayload.meta.labels;
+    const itemsCount = labels.length;
+
+    if (itemsCount > 0) {
+      const stepX = targetWidth / itemsCount;
+      // Draw X-Axis labels across bottom
+      labels.forEach((lbl, i) => {
+        const itemX = xPos + (stepX * i) + (stepX / 2);
+        const textWidth = doc.getTextWidth(String(lbl));
+        doc.text(String(lbl), itemX - (textWidth / 2), y + targetHeight + 10, { angle: itemsCount > 6 ? 15 : 0 });
+      });
+    }
+
+    // 4. Draw legend indicators dynamically
+    const legends = chartPayload.meta.legendLabels;
+    if (legends && legends.length > 0) {
+      let legendX = xPos;
+      const legendY = y + targetHeight + 25;
+      doc.setFont(font, "bold");
+      doc.setFontSize(8);
+
+      legends.forEach((leg, idx) => {
+        doc.setFillColor(100, 120, 150); // Set indicator color block
+        doc.rect(legendX, legendY - 6, 8, 8, "F");
+        doc.setTextColor(60, 60, 60);
+        doc.text(String(leg), legendX + 12, legendY);
+        legendX += doc.getTextWidth(String(leg)) + 30;
+      });
+    }
+
+    return y + targetHeight + 35;
+  }
+
+  function addImageWithHeading(doc, font, heading, imgDataUrl, y, margin, pageWidth, pageHeight, targetWidth, explicitX = null) {
+    const xPos = explicitX !== null ? explicitX : margin;
+    const props = doc.getImageProperties(imgDataUrl);
+    const imgHeight = targetWidth / (props.width / props.height);
+
+    doc.setFont(font, "bold");
     doc.setFontSize(10);
     doc.setTextColor(26, 58, 92);
 
     const headingLines = doc.splitTextToSize(heading, targetWidth);
     const headingHeight = headingLines.length * 13;
 
-    if (y + boxHeight + headingHeight + 20 > pageHeight - margin) {
+    if (y + imgHeight + headingHeight + 20 > pageHeight - margin) {
       doc.addPage();
       y = margin + 15;
     }
@@ -760,8 +511,8 @@
     });
     y += 6;
 
-    doc.addImage(imgDataUrl, "PNG", drawX, y, imgWidth, imgHeight);
-    return y + boxHeight + 30;
+    doc.addImage(imgDataUrl, "PNG", xPos, y, targetWidth, imgHeight);
+    return y + imgHeight + 30;
   }
 
   function injectButton() {
@@ -786,11 +537,6 @@
 
   function init() {
     injectButton();
-    if (!document.getElementById("generate-report-btn")) {
-      console.warn(
-        "report-generator.js: could not find '.map-hint' to attach the button near."
-      );
-    }
   }
 
   if (document.readyState === "loading") {
