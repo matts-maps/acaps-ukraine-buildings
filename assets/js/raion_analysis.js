@@ -6,12 +6,13 @@ let mapInstance = null;
 let topRaionsChartInstance = null;
 let infraTypeChartInstance = null;
 let extentChartInstance = null;
+let timelineChartInstance = null; // 1. Added timeline chart instance
 
 // The single cross-filter selection currently active, set by clicking a
-// raion on the map or a bar/segment in one of the charts. When set, every
-// visual (map + all charts + total) is recomputed against only the rows
+// raion on the map, a bar/segment in one of the charts, or a point on the timeline.
+// When set, every visual (map + all charts + total) is recomputed against only the rows
 // matching this selection, on top of the year/range filters.
-let activeFilter = null; // { dimension: 'raion' | 'infra' | 'extent', value: string }
+let activeFilter = null; // { dimension: 'raion' | 'infra' | 'extent' | 'period', value: string | number }
 
 const CHART_PALETTE = ['#1a3a5c', '#2c5f8a', '#4a90c4', '#7cb4dd', '#a8d0e8', '#d94801', '#f16913', '#fdae6b', '#fdd0a2', '#999999'];
 const FILTER_HIGHLIGHT_COLOR = '#d94801';
@@ -168,7 +169,12 @@ function updateActiveFilterUI() {
     if (!group || !label) return;
 
     if (activeFilter) {
-        const dimensionLabels = { raion: 'Raion', infra: 'Infrastructure Type', extent: 'Extent of Damage' };
+        const dimensionLabels = { 
+            raion: 'Raion', 
+            infra: 'Infrastructure Type', 
+            extent: 'Extent of Damage',
+            period: 'Time Period'
+        };
         label.textContent = (dimensionLabels[activeFilter.dimension] || activeFilter.dimension) + ': ' + activeFilter.value;
         group.style.display = 'flex';
     } else {
@@ -197,8 +203,7 @@ function buildMapPeriodDropdowns() {
     startSel.innerHTML = options;
     endSel.innerHTML = options;
 
-    // Default to a single-window range (behaves like a normal single-period
-    // selection until the user widens the "to" side).
+    // Default to a single-window range
     startSel.selectedIndex = 0;
     endSel.selectedIndex = 0;
 
@@ -225,6 +230,24 @@ function processMapVisualisations() {
     const counts = {};
     const infraCounts = {};
     const extentCounts = {};
+    
+    // Seed time series tracker keys within our active dashboard range
+    const timeCounts = {};
+    const labelsList = [];
+    if (step === 30) {
+        for (let i = startPeriod; i <= endPeriod; i++) {
+            timeCounts[monthsList[i]] = 0;
+            labelsList.push(monthsList[i]);
+        }
+    } else {
+        const prefix = step === 7 ? 'Week' : 'Fortnight';
+        for (let i = startPeriod; i <= endPeriod; i++) {
+            const key = `${prefix} ${i + 1}`;
+            timeCounts[key] = 0;
+            labelsList.push(key);
+        }
+    }
+
     rawDamageCSV.forEach(r => {
         const rawRaion = r.rayon?.trim();
         if (!rawRaion) return;
@@ -236,42 +259,39 @@ function processMapVisualisations() {
         const p = step === 30 ? d.getMonth() : Math.floor((day - 1) / step);
         if (p < startPeriod || p > endPeriod) return;
 
-        // The raw CSV value is used as the tally key directly; matching
-        // this up with the GeoJSON's adm2_name happens in the map layer
-        // below via the nameMap override table (a few raions were renamed
-        // after this boundary source was published).
         const name = rawRaion;
         const infraType = r.type_of_infrastructure?.trim() || 'Unspecified';
         const extent = r.extent_of_damage?.trim() || 'Unspecified';
 
-        // Cross-filter: if a selection is active (from clicking the map or
-        // a chart), only tally rows matching it - this is what makes every
-        // visual filter together off a single click.
+        const timeLabel = step === 30 ? monthsList[p] : `${step === 7 ? 'Week' : 'Fortnight'} ${p + 1}`;
+
+        // Cross-filter evaluation:
         if (activeFilter) {
             if (activeFilter.dimension === 'raion' && name !== activeFilter.value) return;
             if (activeFilter.dimension === 'infra' && infraType !== activeFilter.value) return;
             if (activeFilter.dimension === 'extent' && extent !== activeFilter.value) return;
+            if (activeFilter.dimension === 'period' && timeLabel !== activeFilter.value) return;
         }
 
         counts[name] = (counts[name] || 0) + 1;
         infraCounts[infraType] = (infraCounts[infraType] || 0) + 1;
         extentCounts[extent] = (extentCounts[extent] || 0) + 1;
+        
+        if (timeCounts[timeLabel] !== undefined) {
+            timeCounts[timeLabel] += 1;
+        }
     });
 
     if (totalEl) totalEl.textContent = Object.values(counts).reduce((a, b) => a + b, 0).toLocaleString();
 
-    // Recompute the colour scale from the data actually shown in this
-    // period, rather than a scale fixed for every view.
     const breaks = computeDynamicBreaks(counts);
     updateLegend(breaks);
 
-    updateSummaryCharts(counts, infraCounts, extentCounts);
+    // Refresh charts including our new timeline graph
+    updateSummaryCharts(counts, infraCounts, extentCounts, timeCounts, labelsList);
 
     if (leafletGeoLayer) mapInstance.removeLayer(leafletGeoLayer);
 
-    // A handful of raions were renamed after this boundary data was
-    // published (decommunization/derussification renames); map the
-    // boundary's name to the spelling actually used in the CSV.
     const nameMap = {
         'Kerchynskyi': 'Kerchenskyi',
         'Krasnoperekopskyi': 'Perekopskyi',
@@ -305,12 +325,10 @@ function processMapVisualisations() {
     }).addTo(mapInstance);
 }
 
-// Builds/refreshes the three summary charts (top raions, infrastructure
-// type breakdown, extent of damage) using the same filtered data currently
-// shown on the map, so they stay in sync with the year/range controls.
-function updateSummaryCharts(raionCounts, infraCounts, extentCounts) {
+function updateSummaryCharts(raionCounts, infraCounts, extentCounts, timeCounts, labelsList) {
     if (typeof Chart === 'undefined') return;
 
+    // 1. Top Raions Bar Chart
     const topRaions = Object.entries(raionCounts)
         .sort((a, b) => b[1] - a[1])
         .slice(0, 8);
@@ -319,8 +337,7 @@ function updateSummaryCharts(raionCounts, infraCounts, extentCounts) {
         topRaions.map(e => e[0]), topRaions.map(e => e[1]), 'raion'
     );
 
-    // Group anything past the top 7 infrastructure types into "Other" so the
-    // long tail of categories doesn't clutter the chart.
+    // 2. Infrastructure Breakdown Bar Chart
     const infraEntries = Object.entries(infraCounts).sort((a, b) => b[1] - a[1]);
     const topInfra = infraEntries.slice(0, 7);
     const otherInfraTotal = infraEntries.slice(7).reduce((sum, e) => sum + e[1], 0);
@@ -332,15 +349,21 @@ function updateSummaryCharts(raionCounts, infraCounts, extentCounts) {
     }
     infraTypeChartInstance = renderBarChart('map-infra-type-chart', infraTypeChartInstance, infraLabels, infraValues, 'infra');
 
+    // 3. Extent Doughnut Chart
     const extentEntries = Object.entries(extentCounts).sort((a, b) => b[1] - a[1]);
     extentChartInstance = renderDoughnutChart(
         'map-extent-chart', extentChartInstance,
         extentEntries.map(e => e[0]), extentEntries.map(e => e[1]), 'extent'
     );
+
+    // 4. Timeline Line Chart (Mapped directly to your elements)
+    const timelineValues = labelsList.map(lbl => timeCounts[lbl] || 0);
+    timelineChartInstance = renderLineChart(
+        'map-timeline-chart', timelineChartInstance, 
+        labelsList, timelineValues, 'period'
+    );
 }
 
-// "Other" is a grouped bucket (multiple real categories rolled together),
-// not a single filterable value, so clicking it is a no-op.
 function isFilterableLabel(label) {
     return label !== 'Other';
 }
@@ -377,16 +400,10 @@ function renderBarChart(canvasId, existingInstance, labels, data, dimension) {
                 x: { 
                     beginAtZero: true, 
                     ticks: { precision: 0 },
-                    grid: {
-                        drawOnChartArea: false, // Removes vertical grid lines inside plot area
-                        drawTicks: true         // Keeps x-axis tick marks
-                    }
+                    grid: { drawOnChartArea: false, drawTicks: true }
                 },
                 y: {
-                    grid: {
-                        drawOnChartArea: false, // Removes horizontal y-axis boundary line
-                        drawTicks: true         // Keeps y-axis tick marks
-                    }
+                    grid: { drawOnChartArea: false, drawTicks: true }
                 }
             },
             onClick: (evt, elements, chart) => {
@@ -432,6 +449,70 @@ function renderDoughnutChart(canvasId, existingInstance, labels, data, dimension
                 if (!elements.length) return;
                 const label = chart.data.labels[elements[0].index];
                 if (!isFilterableLabel(label)) return;
+                setActiveFilter(dimension, label);
+            },
+            onHover: (evt, elements) => {
+                evt.native.target.style.cursor = elements.length ? 'pointer' : 'default';
+            }
+        }
+    });
+}
+
+// 5. New rendering function for the Interactive Timeline Line Chart
+function renderLineChart(canvasId, existingInstance, labels, data, dimension) {
+    const canvas = document.getElementById(canvasId);
+    if (!canvas) return existingInstance;
+
+    const pointBackgroundColor = labels.map(l =>
+        (activeFilter && activeFilter.dimension === dimension && activeFilter.value === l)
+            ? FILTER_HIGHLIGHT_COLOR : CHART_PALETTE[0]
+    );
+    const pointRadius = labels.map(l =>
+        (activeFilter && activeFilter.dimension === dimension && activeFilter.value === l) ? 7 : 4
+    );
+
+    if (existingInstance) {
+        existingInstance.data.labels = labels;
+        existingInstance.data.datasets[0].data = data;
+        existingInstance.data.datasets[0].pointBackgroundColor = pointBackgroundColor;
+        existingInstance.data.datasets[0].pointRadius = pointRadius;
+        existingInstance.update();
+        return existingInstance;
+    }
+
+    return new Chart(canvas, {
+        type: 'line',
+        data: {
+            labels,
+            datasets: [{
+                data,
+                borderColor: CHART_PALETTE[0],
+                borderWidth: 2.5,
+                fill: false,
+                tension: 0.1,
+                pointBackgroundColor,
+                pointRadius,
+                pointHoverRadius: 8
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: { legend: { display: false } },
+            scales: {
+                x: {
+                    grid: { drawOnChartArea: false, drawTicks: true }
+                },
+                y: {
+                    beginAtZero: true,
+                    ticks: { precision: 0 },
+                    grid: { drawOnChartArea: true, drawTicks: true }
+                }
+            },
+            onClick: (evt, elements, chart) => {
+                if (!elements.length) return;
+                const index = elements[0].index;
+                const label = chart.data.labels[index];
                 setActiveFilter(dimension, label);
             },
             onHover: (evt, elements) => {
