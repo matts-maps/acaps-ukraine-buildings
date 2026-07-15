@@ -435,8 +435,29 @@
       // 2. Top Raions & 3. Infra Type (Side-by-Side)
       const topRaionsCanvas = document.getElementById(IDS.charts.topRaions.id);
       const infraCanvas = document.getElementById(IDS.charts.infra.id);
+      const extentCanvas = document.getElementById(IDS.charts.extent.id);
       const topRaionsImg = await captureCanvas(topRaionsCanvas);
       const infraImg = await captureCanvas(infraCanvas);
+      const extentImg = await captureCanvas(extentCanvas);
+
+      // Top Raions, Infra Type, and Level of Damage are all "summary"
+      // charts and should read as the same size in the PDF. Their source
+      // canvases can have different native aspect ratios (e.g. a square
+      // doughnut vs. a wider bar chart), so instead of letting each
+      // image's own aspect ratio dictate its box height independently,
+      // compute one shared height from whichever of the three would
+      // naturally be tallest at colChartWidth, then apply that same
+      // height to all three via addImageWithHeading's contain-fit sizing.
+      const naturalHeightAt = (imgDataUrl) => {
+        if (!imgDataUrl) return 0;
+        const props = doc.getImageProperties(imgDataUrl);
+        return (props.height * colChartWidth) / props.width;
+      };
+      const summaryChartHeight = Math.max(
+        naturalHeightAt(topRaionsImg),
+        naturalHeightAt(infraImg),
+        naturalHeightAt(extentImg)
+      ) || null;
 
       let rowYStart = y;
       let maxRowHeight = 0;
@@ -451,7 +472,8 @@
           pageWidth,
           pageHeight,
           colChartWidth,
-          margin
+          margin,
+          summaryChartHeight
         );
         maxRowHeight = Math.max(maxRowHeight, nextY - rowYStart);
       }
@@ -466,16 +488,15 @@
           pageWidth,
           pageHeight,
           colChartWidth,
-          margin + colChartWidth + gridGap
+          margin + colChartWidth + gridGap,
+          summaryChartHeight
         );
         maxRowHeight = Math.max(maxRowHeight, nextY - rowYStart);
       }
 
       y = rowYStart + (maxRowHeight > 0 ? maxRowHeight : 0);
 
-      // 4. Extent of Damage (Centered)
-      const extentCanvas = document.getElementById(IDS.charts.extent.id);
-      const extentImg = await captureCanvas(extentCanvas);
+      // 4. Level of Damage (Centered, same box size as the row above)
       if (extentImg) {
         const centerX = (pageWidth - colChartWidth) / 2;
         y = addImageWithHeading(
@@ -487,7 +508,8 @@
           pageWidth,
           pageHeight,
           colChartWidth,
-          centerX
+          centerX,
+          summaryChartHeight
         );
       }
 
@@ -518,11 +540,39 @@
     }
   }
 
-  function addImageWithHeading(doc, heading, imgDataUrl, y, margin, pageWidth, pageHeight, targetWidth, explicitX = null) {
+  // `maxHeight` (optional) locks the image into a shared box of size
+  // targetWidth x maxHeight using contain-fit scaling: the image is
+  // scaled to fit fully inside that box, preserving its own aspect
+  // ratio (never stretched/distorted), and centered horizontally. This
+  // is what keeps the Top Raions / Infra Type / Level of Damage charts
+  // at one consistent visual size in the PDF even though their source
+  // canvases may have different native aspect ratios. Without
+  // maxHeight, the image is simply sized to targetWidth and its height
+  // follows its own natural aspect ratio (used for the full-width
+  // timeline chart).
+  function addImageWithHeading(doc, heading, imgDataUrl, y, margin, pageWidth, pageHeight, targetWidth, explicitX = null, maxHeight = null) {
     const xPos = explicitX !== null ? explicitX : margin;
     const props = doc.getImageProperties(imgDataUrl);
-    const imgWidth = targetWidth;
-    const imgHeight = (props.height * imgWidth) / props.width;
+    const naturalAspect = props.width / props.height;
+
+    let imgWidth = targetWidth;
+    let imgHeight = targetWidth / naturalAspect;
+
+    if (maxHeight) {
+      const boxAspect = targetWidth / maxHeight;
+      if (naturalAspect > boxAspect) {
+        // Relatively wider than the box: width is the limiting dimension.
+        imgWidth = targetWidth;
+        imgHeight = targetWidth / naturalAspect;
+      } else {
+        // Relatively taller than the box: height is the limiting dimension.
+        imgHeight = maxHeight;
+        imgWidth = maxHeight * naturalAspect;
+      }
+    }
+
+    const drawX = xPos + (targetWidth - imgWidth) / 2;
+    const boxHeight = maxHeight || imgHeight;
 
     doc.setFont("helvetica", "bold");
     doc.setFontSize(10);
@@ -531,7 +581,7 @@
     const headingLines = doc.splitTextToSize(heading, targetWidth);
     const headingHeight = headingLines.length * 13;
 
-    if (y + imgHeight + headingHeight + 20 > pageHeight - margin) {
+    if (y + boxHeight + headingHeight + 20 > pageHeight - margin) {
       doc.addPage();
       y = margin + 15;
     }
@@ -542,8 +592,8 @@
     });
     y += 6;
 
-    doc.addImage(imgDataUrl, "PNG", xPos, y, imgWidth, imgHeight);
-    return y + imgHeight + 30;
+    doc.addImage(imgDataUrl, "PNG", drawX, y, imgWidth, imgHeight);
+    return y + boxHeight + 30;
   }
 
   // --------------------------------------------------------------------
