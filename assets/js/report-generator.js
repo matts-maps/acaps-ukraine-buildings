@@ -77,7 +77,6 @@
       };
     }
 
-    // Fallback directly scraping the DOM
     return {
       year: yearEl ? yearEl.value : "N/A",
       aggregationLabel: aggEl ? aggEl.options[aggEl.selectedIndex]?.text : "N/A",
@@ -109,7 +108,7 @@
   }
 
   // --------------------------------------------------------------------
-  // 2. Capture helpers (Includes Temporary Auto-Centering Bounds Adjustments)
+  // 2. Capture helpers (Includes Synchronized Alignment for Overlays)
   // --------------------------------------------------------------------
   async function captureCanvas(canvasEl) {
     if (!canvasEl) return null;
@@ -128,17 +127,14 @@
       return null;
     }
 
-    // Access Leaflet instance via window hook if defined, or look up global objects
     const mapInstance = window.__leafletMap || (window.map instanceof L.Map ? window.map : null);
     let originalCenter = null;
     let originalZoom = null;
 
     if (mapInstance) {
-      // Store current viewport coordinates so we can revert them later
       originalCenter = mapInstance.getCenter();
       originalZoom = mapInstance.getZoom();
 
-      // Find the area of interest based on the active geoJSON/vector features
       let targetBounds = null;
       mapInstance.eachLayer((layer) => {
         if (layer.getBounds && typeof layer.getBounds === "function" && layer.feature) {
@@ -150,9 +146,16 @@
         }
       });
 
-      // If active layers exist, dynamically fit them centrally in the viewport
       if (targetBounds && targetBounds.isValid()) {
-        mapInstance.fitBounds(targetBounds, { padding: [20, 20], animate: false });
+        // We use a Promise wrapper to halt execution until Leaflet fires 'moveend'.
+        // This ensures vectors and base tiles are locked in place before capturing.
+        await new Promise((resolve) => {
+          mapInstance.once("moveend", () => {
+            // Extra 500ms safety buffer to ensure raster basemap tiles are fully loaded and rendered
+            setTimeout(resolve, 500);
+          });
+          mapInstance.fitBounds(targetBounds, { padding: [20, 20], animate: false });
+        });
       }
     }
 
@@ -163,7 +166,6 @@
         scale: 2,
         logging: false,
         onclone: (clonedDoc) => {
-          // CSS-targeted UI removal for clean map exports (removes Zoom control and Info Panel)
           const selectorsToHide = [
             ".leaflet-control-zoom", 
             ".map-info-panel", 
@@ -178,7 +180,7 @@
         }
       });
 
-      // Restore user view coordinates immediately after capture
+      // Safely revert user view coordinates back to original state
       if (mapInstance && originalCenter !== null && originalZoom !== null) {
         mapInstance.setView(originalCenter, originalZoom, { animate: false });
       }
@@ -187,7 +189,6 @@
     } catch (e) {
       console.error("Map capture failed due to CORS or rendering issues:", e);
       
-      // Revert map view coordinates in the event of an execution error
       if (mapInstance && originalCenter !== null && originalZoom !== null) {
         mapInstance.setView(originalCenter, originalZoom, { animate: false });
       }
@@ -224,7 +225,7 @@
         timeStyle: "short",
       });
 
-      // Top brand accent header line (#1a3a5c)
+      // Accent border header
       doc.setFillColor(26, 58, 92); 
       doc.rect(0, 0, pageWidth, 8, "F");
       y += 15;
@@ -238,13 +239,13 @@
 
       doc.setFontSize(14);
       doc.setFont("helvetica", "normal");
-      doc.setTextColor(102, 102, 102); // #666
+      doc.setTextColor(102, 102, 102);
       doc.text("Raion Damage Analysis Report", margin, y);
       y += 25;
 
       // Meta Line
       doc.setFontSize(9);
-      doc.setTextColor(136, 136, 136); // #888
+      doc.setTextColor(136, 136, 136);
       doc.text(`Period: ${formatPeriod(state)}`, margin, y);
       doc.text(`Generated: ${generatedAt}`, pageWidth - margin - 150, y);
       
@@ -254,7 +255,7 @@
       doc.line(margin, y, pageWidth - margin, y);
       y += 25;
 
-      // --- SUMMARY STATISTICS ---
+      // Summary Statistics Panel
       doc.setFont("helvetica", "bold");
       doc.setFontSize(13);
       doc.setTextColor(26, 58, 92);
@@ -348,7 +349,7 @@
         y += 25;
       }
 
-      // --- WEB-ALIGNED GRID CHARTS ATTACHMENT ---
+      // --- GRID CHARTS ATTACHMENT ---
       doc.addPage();
       y = margin + 15;
 
@@ -412,7 +413,7 @@
 
       y = rowYStart + (maxRowHeight > 0 ? maxRowHeight : 0);
 
-      // 4. Extent of Damage (Centered horizontally)
+      // 4. Extent of Damage (Centered)
       const extentCanvas = document.getElementById(IDS.charts.extent.id);
       const extentImg = await captureCanvas(extentCanvas);
       if (extentImg) {
