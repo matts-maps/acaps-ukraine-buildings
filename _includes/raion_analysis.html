@@ -91,35 +91,20 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js" defer></script>
 <script src="{{ '/assets/js/raion_analysis.js' | relative_url }}" defer></script>
 
+<!-- PDF report generation -->
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" defer></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
 
+<!-- Explicit bridge script ensuring global namespace availability for UMD plugins -->
 <script>
   document.addEventListener("DOMContentLoaded", function() {
     if (window.jspdf && window.jspdf.jsPDF) {
       window.jsPDF = window.jspdf.jsPDF;
-      
-      // Safety patch: intercept unit width checks where arguments[0] might be undefined/null/non-string
-      const originalGetTextWidth = window.jsPDF.API.getTextWidth;
-      if (originalGetTextWidth) {
-        window.jsPDF.API.getTextWidth = function(text) {
-          const safeText = (text === undefined || text === null) ? "" : String(text);
-          return originalGetTextWidth.call(this, safeText);
-        };
-      }
-
-      // Safety patch: override processArabic if it exists on the API to prevent crashes on non-string inputs
-      const originalProcessArabic = window.jsPDF.API.processArabic;
-      if (originalProcessArabic) {
-        window.jsPDF.API.processArabic = function(text) {
-          const safeText = (text === undefined || text === null) ? "" : String(text);
-          return originalProcessArabic.call(this, safeText);
-        };
-      }
     }
   });
 </script>
 
+<!-- Corrected source for svg2pdf vector compilation -->
 <script src="https://cdn.jsdelivr.net/npm/svg2pdf.js@2.2.3/dist/svg2pdf.umd.min.js" defer></script>
 
 <script src="{{ '/assets/js/report-generator.js' | relative_url }}" defer></script>
