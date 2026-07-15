@@ -121,39 +121,17 @@
   }
 
   // ------------------------------------------------------------------
-  // The "Level of Damage" donut's canvas normally renders with its
-  // legend in a row underneath the ring, which eats vertical space and
-  // leaves the ring itself much smaller than the bar-chart canvases
-  // beside it — simply scaling that (mostly whitespace) canvas up in
-  // the PDF doesn't make the ring bigger, since the ring only occupies
-  // a small portion of the canvas to begin with.
-  //
-  // Fix: use Chart.js's public Chart.getChart(canvas) API to grab each
-  // live chart instance and force it to a fixed size (300px tall) and
-  // fixed label font size (9.5px), rather than trying to infer a size
-  // from another chart on the page. This is applied uniformly to Top
-  // Raions, Infra Type, and Level of Damage so all three always match.
-  // ------------------------------------------------------------------
   // Forces a live Chart.js chart to redraw at an exact pixel height and
   // label/legend font size, captures that frame, then puts everything
   // back exactly as it was. Used to make the Top Raions, Infra Type,
   // and Level of Damage charts all render at one consistent size in
   // the PDF (300px tall, 9.5px labels), regardless of how each is
   // configured on the live page.
-  //
-  // IMPORTANT: only ever assign scalar leaf values below (position,
-  // align, size, maintainAspectRatio, style.height) - never replace a
-  // whole nested option object (e.g. `legendOpts.labels = {...}`).
-  // Chart.js v4's options are live merged proxies; overwriting a
-  // sub-object wholesale breaks that proxy's internal resolver and
-  // sends it into a get/set loop ("too much recursion").
   // ------------------------------------------------------------------
   async function captureChartAtSize(canvasEl, heightPx, fontSizePx, extraOptions = {}) {
     if (!canvasEl) return null;
 
     if (typeof Chart === "undefined" || typeof Chart.getChart !== "function") {
-      // Chart.js not exposed globally as expected - fall back to a plain
-      // capture rather than failing the whole report.
       return captureCanvas(canvasEl);
     }
 
@@ -183,24 +161,28 @@
       }
 
       if (fontSizePx) {
-        if (legendOpts?.labels?.font) legendOpts.labels.font.size = fontSizePx;
-        if (xTicks?.font) xTicks.font.size = fontSizePx;
-        if (yTicks?.font) yTicks.font.size = fontSizePx;
+        // Ensure the font object nested configuration exists before trying to modify the size leaf property
+        if (legendOpts) {
+          legendOpts.labels = legendOpts.labels || {};
+          legendOpts.labels.font = legendOpts.labels.font || {};
+          legendOpts.labels.font.size = fontSizePx;
+        }
+        if (xTicks) {
+          xTicks.font = xTicks.font || {};
+          xTicks.font.size = fontSizePx;
+        }
+        if (yTicks) {
+          yTicks.font = yTicks.font || {};
+          yTicks.font.size = fontSizePx;
+        }
       }
 
-      // maintainAspectRatio (true by default) makes Chart.js clamp the
-      // canvas to a fixed width:height ratio regardless of how big its
-      // container actually is - disable it so the explicit resize below
-      // actually takes effect.
       chart.options.maintainAspectRatio = false;
 
       if (container && heightPx) {
         container.style.height = `${heightPx}px`;
       }
 
-      // Pass explicit pixel dimensions rather than relying on Chart.js
-      // to auto-detect the container size, so the chart is guaranteed
-      // to redraw at this exact height.
       if (heightPx && currentWidth) {
         chart.resize(currentWidth, heightPx);
       } else {
@@ -216,15 +198,30 @@
       if (legendOpts) {
         legendOpts.position = original.legendPosition;
         legendOpts.align = original.legendAlign;
-        if (legendOpts.labels?.font && original.legendFontSize !== undefined) {
-          legendOpts.labels.font.size = original.legendFontSize;
+        if (legendOpts.labels) {
+          if (original.legendFontSize !== undefined) {
+            legendOpts.labels.font = legendOpts.labels.font || {};
+            legendOpts.labels.font.size = original.legendFontSize;
+          } else if (legendOpts.labels.font) {
+            delete legendOpts.labels.font.size;
+          }
         }
       }
-      if (xTicks?.font && original.xTickFontSize !== undefined) {
-        xTicks.font.size = original.xTickFontSize;
+      if (xTicks) {
+        if (original.xTickFontSize !== undefined) {
+          xTicks.font = xTicks.font || {};
+          xTicks.font.size = original.xTickFontSize;
+        } else if (xTicks.font) {
+          delete xTicks.font.size;
+        }
       }
-      if (yTicks?.font && original.yTickFontSize !== undefined) {
-        yTicks.font.size = original.yTickFontSize;
+      if (yTicks) {
+        if (original.yTickFontSize !== undefined) {
+          yTicks.font = yTicks.font || {};
+          yTicks.font.size = original.yTickFontSize;
+        } else if (yTicks.font) {
+          delete yTicks.font.size;
+        }
       }
       chart.options.maintainAspectRatio = original.maintainAspectRatio;
       if (container) {
@@ -235,25 +232,6 @@
     }
   }
 
-  // ------------------------------------------------------------------
-  // Leaflet's SVG renderer positions the overlay <svg> with a CSS
-  // transform of translate3d(vx, vy, 0), and sets its viewBox to
-  // "vx vy width height" so the two offsets cancel out and vector
-  // paths (e.g. the raion polygons) land at the correct absolute
-  // pixel position on top of the raster tiles.
-  //
-  // html2canvas honours the CSS transform but does NOT apply the
-  // viewBox origin offset, so the compensating shift is dropped and
-  // the vector layer renders shifted by (vx, vy) relative to the
-  // tiles underneath it. See:
-  //   https://github.com/Leaflet/Leaflet/issues/4754
-  //   https://github.com/niklasvh/html2canvas/issues/661
-  //
-  // Fix: right before capture, zero out both the transform and the
-  // viewBox origin on every Leaflet overlay <svg>, so there is no
-  // offset left for html2canvas to mishandle. Restore both afterward
-  // so the live, interactive map is unaffected.
-  // ------------------------------------------------------------------
   function neutralizeLeafletSvgOffsets(mapEl) {
     const svgs = mapEl.querySelectorAll(".leaflet-overlay-pane svg");
     const restoreFns = [];
@@ -265,7 +243,7 @@
       const parts = viewBoxAttr.trim().split(/[\s,]+/).map(Number);
       if (parts.length !== 4 || parts.some(Number.isNaN)) return;
       const [vx, vy, vw, vh] = parts;
-      if (!vx && !vy) return; // already at origin, nothing to neutralize
+      if (!vx && !vy) return;
 
       const originalViewBox = viewBoxAttr;
       const originalTransform = svg.style.transform;
@@ -311,11 +289,8 @@
       });
 
       if (targetBounds && targetBounds.isValid()) {
-        // We use a Promise wrapper to halt execution until Leaflet fires 'moveend'.
-        // This ensures vectors and base tiles are locked in place before capturing.
         await new Promise((resolve) => {
           mapInstance.once("moveend", () => {
-            // Extra 500ms safety buffer to ensure raster basemap tiles are fully loaded and rendered
             setTimeout(resolve, 500);
           });
           mapInstance.fitBounds(targetBounds, { padding: [20, 20], animate: false });
@@ -323,11 +298,6 @@
       }
     }
 
-    // Neutralize the Leaflet SVG transform/viewBox offset that html2canvas
-    // mishandles (see notes above) — must be done AFTER the view has
-    // settled (fitBounds/moveend above) so we read the final offsets, and
-    // must always be reverted, success or failure, so the live map isn't
-    // left broken for the user.
     const restoreSvgOffsets = neutralizeLeafletSvgOffsets(mapEl);
 
     try {
@@ -351,7 +321,6 @@
         }
       });
 
-      // Safely revert user view coordinates back to original state
       if (mapInstance && originalCenter !== null && originalZoom !== null) {
         mapInstance.setView(originalCenter, originalZoom, { animate: false });
       }
@@ -359,14 +328,11 @@
       return canvas.toDataURL("image/png", 1.0);
     } catch (e) {
       console.error("Map capture failed due to CORS or rendering issues:", e);
-      
       if (mapInstance && originalCenter !== null && originalZoom !== null) {
         mapInstance.setView(originalCenter, originalZoom, { animate: false });
       }
       return null;
     } finally {
-      // Always put the live map's SVG overlay back exactly as it was,
-      // regardless of whether the capture succeeded or failed.
       restoreSvgOffsets();
     }
   }
@@ -400,12 +366,10 @@
         timeStyle: "short",
       });
 
-      // Accent border header
       doc.setFillColor(26, 58, 92); 
       doc.rect(0, 0, pageWidth, 8, "F");
       y += 15;
 
-      // Report Header
       doc.setFont("helvetica", "bold");
       doc.setFontSize(22);
       doc.setTextColor(26, 58, 92);
@@ -418,7 +382,6 @@
       doc.text("Raion Damage Analysis Report", margin, y);
       y += 25;
 
-      // Meta Line
       doc.setFontSize(9);
       doc.setTextColor(136, 136, 136);
       doc.text(`Period: ${formatPeriod(state)}`, margin, y);
@@ -430,7 +393,6 @@
       doc.line(margin, y, pageWidth - margin, y);
       y += 25;
 
-      // Summary Statistics Panel
       doc.setFont("helvetica", "bold");
       doc.setFontSize(13);
       doc.setTextColor(26, 58, 92);
@@ -502,7 +464,6 @@
 
       y += statBoxHeight + 25;
 
-      // --- MAP ATTACHMENT ---
       const mapEl = document.getElementById(IDS.mapContainer);
       const mapImg = await captureMap(mapEl);
       if (mapImg) {
@@ -524,11 +485,9 @@
         y += 25;
       }
 
-      // --- GRID CHARTS ATTACHMENT ---
       doc.addPage();
       y = margin + 15;
 
-      // 1. Timeline (Full Width)
       const timelineCanvas = document.getElementById(IDS.charts.timeline.id);
       const timelineImg = await captureCanvas(timelineCanvas);
       if (timelineImg) {
@@ -547,14 +506,10 @@
       const gridGap = 16;
       const colChartWidth = (pageWidth - margin * 2 - gridGap) / 2;
 
-      // 2. Top Raions & 3. Infra Type (Side-by-Side)
       const topRaionsCanvas = document.getElementById(IDS.charts.topRaions.id);
       const infraCanvas = document.getElementById(IDS.charts.infra.id);
       const extentCanvas = document.getElementById(IDS.charts.extent.id);
 
-      // All three summary charts are forced to the same fixed height and
-      // label/legend font size, so they always match regardless of each
-      // chart's own on-page configuration or aspect ratio.
       const SUMMARY_CHART_HEIGHT_PX = 300;
       const SUMMARY_CHART_FONT_PX = 9.5;
 
@@ -575,14 +530,6 @@
         { legendPosition: "right", legendAlign: "center" }
       );
 
-      // Top Raions, Infra Type, and Level of Damage are all "summary"
-      // charts and should read as the same size in the PDF. Their source
-      // canvases can have different native aspect ratios (e.g. a square
-      // doughnut vs. a wider bar chart), so instead of letting each
-      // image's own aspect ratio dictate its box height independently,
-      // compute one shared height from whichever of the three would
-      // naturally be tallest at colChartWidth, then apply that same
-      // height to all three via addImageWithHeading's contain-fit sizing.
       const naturalHeightAt = (imgDataUrl) => {
         if (!imgDataUrl) return 0;
         const props = doc.getImageProperties(imgDataUrl);
@@ -631,7 +578,6 @@
 
       y = rowYStart + (maxRowHeight > 0 ? maxRowHeight : 0);
 
-      // 4. Level of Damage (Centered, same box size as the row above)
       if (extentImg) {
         const centerX = (pageWidth - colChartWidth) / 2;
         y = addImageWithHeading(
@@ -648,7 +594,6 @@
         );
       }
 
-      // --- FOOTER AND PAGE NUMBERING ---
       const pageCount = doc.internal.getNumberOfPages();
       for (let i = 1; i <= pageCount; i++) {
         doc.setPage(i);
@@ -675,16 +620,6 @@
     }
   }
 
-  // `maxHeight` (optional) locks the image into a shared box of size
-  // targetWidth x maxHeight using contain-fit scaling: the image is
-  // scaled to fit fully inside that box, preserving its own aspect
-  // ratio (never stretched/distorted), and centered horizontally. This
-  // is what keeps the Top Raions / Infra Type / Level of Damage charts
-  // at one consistent visual size in the PDF even though their source
-  // canvases may have different native aspect ratios. Without
-  // maxHeight, the image is simply sized to targetWidth and its height
-  // follows its own natural aspect ratio (used for the full-width
-  // timeline chart).
   function addImageWithHeading(doc, heading, imgDataUrl, y, margin, pageWidth, pageHeight, targetWidth, explicitX = null, maxHeight = null) {
     const xPos = explicitX !== null ? explicitX : margin;
     const props = doc.getImageProperties(imgDataUrl);
@@ -696,11 +631,9 @@
     if (maxHeight) {
       const boxAspect = targetWidth / maxHeight;
       if (naturalAspect > boxAspect) {
-        // Relatively wider than the box: width is the limiting dimension.
         imgWidth = targetWidth;
         imgHeight = targetWidth / naturalAspect;
       } else {
-        // Relatively taller than the box: height is the limiting dimension.
         imgHeight = maxHeight;
         imgWidth = maxHeight * naturalAspect;
       }
@@ -731,9 +664,6 @@
     return y + boxHeight + 30;
   }
 
-  // --------------------------------------------------------------------
-  // 4. Button Setup
-  // --------------------------------------------------------------------
   function injectButton() {
     if (document.getElementById("generate-report-btn")) return;
     const anchor = document.querySelector(BUTTON_INSERT_AFTER_SELECTOR);
