@@ -544,9 +544,7 @@
     doc.setFont(font, "bold");
     doc.setFontSize(10);
     doc.setTextColor(26, 58, 92);
-    // Sanitize heading text to ensure it never throws
-    const safeHeading = (heading === undefined || heading === null) ? "" : String(heading);
-    doc.text(safeHeading, xPos, y);
+    doc.text(heading, xPos, y);
     y += 14;
 
     if (typeof doc.svg !== "function") {
@@ -566,45 +564,29 @@
     doc.setTextColor(110, 110, 110);
 
     const meta = chartPayload.meta;
-    const canvasWidth = (meta && meta.canvas && meta.canvas.width) ? meta.canvas.width : targetWidth;
-    const canvasHeight = (meta && meta.canvas && meta.canvas.height) ? meta.canvas.height : targetHeight;
-    
-    const ratioX = canvasWidth > 0 ? (targetWidth / canvasWidth) : 1;
-    const ratioY = canvasHeight > 0 ? (targetHeight / canvasHeight) : 1;
-
-    const chartBottom = (meta && meta.chartArea && typeof meta.chartArea.bottom === "number") ? meta.chartArea.bottom : targetHeight;
-    const chartLeft = (meta && meta.chartArea && typeof meta.chartArea.left === "number") ? meta.chartArea.left : 0;
+    const ratioX = targetWidth / meta.canvas.width;
+    const ratioY = targetHeight / meta.canvas.height;
 
     if (meta.xTicks && meta.xTicks.length > 0) {
         const angle = meta.xTicks.length > 8 ? -45 : 0; 
         
         meta.xTicks.forEach(tick => {
-            const parsedX = (tick && typeof tick.x === "number") ? tick.x : 0;
-            const tickX = xPos + (parsedX * ratioX);
-            const tickY = y + (chartBottom * ratioY) + 12; 
+            const tickX = xPos + (tick.x * ratioX);
+            const tickY = y + (meta.chartArea.bottom * ratioY) + 12; 
             
-            // Safety check: coordinates must not be NaN or Infinite before text plotting
-            if (!isNaN(tickX) && isFinite(tickX) && !isNaN(tickY) && isFinite(tickY)) {
-                if (tickX >= xPos - 5 && tickX <= xPos + targetWidth + 5) {
-                    const safeLabel = (tick && tick.label !== undefined && tick.label !== null) ? String(tick.label) : "";
-                    doc.text(safeLabel, tickX, tickY, { align: angle !== 0 ? "right" : "center", angle: angle });
-                }
+            if (tickX >= xPos - 5 && tickX <= xPos + targetWidth + 5) {
+                doc.text(tick.label, tickX, tickY, { align: angle !== 0 ? "right" : "center", angle: angle });
             }
         });
     }
 
     if (meta.yTicks && meta.yTicks.length > 0) {
         meta.yTicks.forEach(tick => {
-            const parsedY = (tick && typeof tick.y === "number") ? tick.y : 0;
-            const tickY = y + (parsedY * ratioY) + 3; 
-            const tickX = xPos + (chartLeft * ratioX) - 5; 
+            const tickY = y + (tick.y * ratioY) + 3; 
+            const tickX = xPos + (meta.chartArea.left * ratioX) - 5; 
             
-            // Safety check: coordinates must not be NaN or Infinite before text plotting
-            if (!isNaN(tickX) && isFinite(tickX) && !isNaN(tickY) && isFinite(tickY)) {
-                if (tickY >= y - 10 && tickY <= y + targetHeight + 10) {
-                    const safeLabel = (tick && tick.label !== undefined && tick.label !== null) ? String(tick.label) : "";
-                    doc.text(safeLabel, tickX, tickY, { align: "right" });
-                }
+            if (tickY >= y - 10 && tickY <= y + targetHeight + 10) {
+                doc.text(tick.label, tickX, tickY, { align: "right" });
             }
         });
     }
@@ -612,8 +594,7 @@
     if (meta.legendLabels && meta.legendLabels.length > 0) {
         let totalLegendWidth = 0;
         meta.legendLabels.forEach(leg => {
-            const safeText = (leg && leg.text !== undefined && leg.text !== null) ? String(leg.text) : "";
-            totalLegendWidth += 12 + 6 + doc.getTextWidth(safeText) + 15;
+            totalLegendWidth += 12 + 6 + doc.getTextWidth(leg.text) + 15;
         });
         totalLegendWidth -= 15;
         
@@ -622,18 +603,15 @@
         const legendY = y + targetHeight + 35;
 
         meta.legendLabels.forEach(leg => {
-            const colorStr = (leg && typeof leg.fillStyle === 'string') ? leg.fillStyle : '#888888';
-            const safeText = (leg && leg.text !== undefined && leg.text !== null) ? String(leg.text) : "";
+            const colorStr = typeof leg.fillStyle === 'string' ? leg.fillStyle : '#888888';
             
-            if (!isNaN(legendX) && isFinite(legendX) && !isNaN(legendY) && isFinite(legendY)) {
-                doc.setFillColor(colorStr);
-                doc.rect(legendX, legendY - 7, 9, 9, "F");
-                
-                doc.setTextColor(80, 80, 80);
-                doc.text(safeText, legendX + 13, legendY + 1);
-            }
+            doc.setFillColor(colorStr);
+            doc.rect(legendX, legendY - 7, 9, 9, "F");
             
-            legendX += 13 + doc.getTextWidth(safeText) + 15;
+            doc.setTextColor(80, 80, 80);
+            doc.text(leg.text, legendX + 13, legendY + 1);
+            
+            legendX += 13 + doc.getTextWidth(leg.text) + 15;
         });
     }
 
@@ -649,8 +627,7 @@
     doc.setFontSize(10);
     doc.setTextColor(26, 58, 92);
 
-    const safeHeading = (heading === undefined || heading === null) ? "" : String(heading);
-    const headingLines = doc.splitTextToSize(safeHeading, targetWidth);
+    const headingLines = doc.splitTextToSize(heading, targetWidth);
     const headingHeight = headingLines.length * 13;
 
     if (y + imgHeight + headingHeight + 20 > pageHeight - margin) {
