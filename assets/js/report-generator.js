@@ -134,7 +134,7 @@
         scale: 2,
         logging: false,
         onclone: (clonedDoc) => {
-          // CSS-targeted UI removal for clean map exports
+          // CSS-targeted UI removal for clean map exports (removes Zoom control and Info Panel)
           const selectorsToHide = [
             ".leaflet-control-zoom", 
             ".map-info-panel", 
@@ -381,10 +381,11 @@
       // Advance layout baseline past the side-by-side row
       y = rowYStart + (maxRowHeight > 0 ? maxRowHeight : 0);
 
-      // 4. Extent of Damage (Rendered half-width on its own row matching grid structure)
+      // 4. Extent of Damage (Positioned perfectly centered horizontally in its row)
       const extentCanvas = document.getElementById(IDS.charts.extent.id);
       const extentImg = await captureCanvas(extentCanvas);
       if (extentImg) {
+        const centerX = (pageWidth - colChartWidth) / 2;
         y = addImageWithHeading(
           doc,
           IDS.charts.extent.label,
@@ -394,7 +395,7 @@
           pageWidth,
           pageHeight,
           colChartWidth,
-          margin
+          centerX
         );
       }
 
@@ -432,18 +433,27 @@
     const imgWidth = targetWidth;
     const imgHeight = (props.height * imgWidth) / props.width;
 
+    // Set font size to 10 for all chart titles / labels
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.setTextColor(26, 58, 92); // #1a3a5c
+
+    // Split text automatically to allow clean heading wraps within the image width boundaries
+    const headingLines = doc.splitTextToSize(heading, targetWidth);
+    const headingHeight = headingLines.length * 13;
+
     // Page overflow checking before printing titles/images
-    if (y + imgHeight + 40 > pageHeight - margin) {
+    if (y + imgHeight + headingHeight + 20 > pageHeight - margin) {
       doc.addPage();
       y = margin + 15;
     }
 
-    // Render Heading styled matching Web h2/h3 styles (#1a3a5c)
-    doc.setFont("helvetica", "bold");
-    doc.setFontSize(11);
-    doc.setTextColor(26, 58, 92);
-    doc.text(heading, xPos, y);
-    y += 14;
+    // Render wrapped Heading
+    headingLines.forEach((line) => {
+      doc.text(line, xPos, y);
+      y += 13;
+    });
+    y += 6; // Spacing adjustment between wrapped heading text and canvas graphic
 
     // Draw raw visual assets directly without bounding boxes
     doc.addImage(imgDataUrl, "PNG", xPos, y, imgWidth, imgHeight);
