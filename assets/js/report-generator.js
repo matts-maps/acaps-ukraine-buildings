@@ -135,7 +135,19 @@
   // force a synchronous redraw, and capture that. Everything is
   // restored afterward so the live page is unaffected.
   // ------------------------------------------------------------------
-  async function captureExtentChart(canvasEl, referenceHeightPx) {
+  function getReferenceLabelFontSize(referenceChart) {
+    if (!referenceChart) return null;
+    const sizeFromScale =
+      referenceChart.options?.scales?.y?.ticks?.font?.size ||
+      referenceChart.options?.scales?.x?.ticks?.font?.size;
+    if (sizeFromScale) return sizeFromScale;
+    if (typeof Chart !== "undefined" && Chart.defaults?.font?.size) {
+      return Chart.defaults.font.size;
+    }
+    return null;
+  }
+
+  async function captureExtentChart(canvasEl, referenceHeightPx, referenceFontSize) {
     if (!canvasEl) return null;
 
     if (typeof Chart === "undefined" || typeof Chart.getChart !== "function") {
@@ -149,10 +161,13 @@
 
     const container = canvasEl.parentElement;
     const legendOpts = chart.options?.plugins?.legend;
+    const currentWidth = canvasEl.getBoundingClientRect().width;
 
     const original = {
       legendPosition: legendOpts ? legendOpts.position : undefined,
       legendAlign: legendOpts ? legendOpts.align : undefined,
+      legendLabelsFont: legendOpts?.labels?.font ? { ...legendOpts.labels.font } : undefined,
+      maintainAspectRatio: chart.options.maintainAspectRatio,
       containerHeight: container ? container.style.height : null,
       containerWidth: container ? container.style.width : null,
     };
@@ -161,13 +176,31 @@
       if (legendOpts) {
         legendOpts.position = "right";
         legendOpts.align = "center";
+        if (referenceFontSize) {
+          legendOpts.labels = legendOpts.labels || {};
+          legendOpts.labels.font = { ...(legendOpts.labels.font || {}), size: referenceFontSize };
+        }
       }
+
+      // maintainAspectRatio (true by default) makes Chart.js clamp the
+      // canvas to a fixed width:height ratio regardless of how big its
+      // container actually is - that's why just resizing the container
+      // didn't grow the ring. Disable it so the explicit resize below
+      // actually takes effect.
+      chart.options.maintainAspectRatio = false;
 
       if (container && referenceHeightPx) {
         container.style.height = `${referenceHeightPx}px`;
       }
 
-      chart.resize();
+      // Pass explicit pixel dimensions rather than relying on Chart.js
+      // to auto-detect the container size, so the donut is guaranteed
+      // to redraw at this exact height.
+      if (referenceHeightPx && currentWidth) {
+        chart.resize(currentWidth, referenceHeightPx);
+      } else {
+        chart.resize();
+      }
       chart.update("none");
 
       return canvasEl.toDataURL("image/png", 1.0);
@@ -178,7 +211,11 @@
       if (legendOpts) {
         legendOpts.position = original.legendPosition;
         legendOpts.align = original.legendAlign;
+        if (legendOpts.labels) {
+          legendOpts.labels.font = original.legendLabelsFont;
+        }
       }
+      chart.options.maintainAspectRatio = original.maintainAspectRatio;
       if (container) {
         container.style.height = original.containerHeight || "";
         container.style.width = original.containerWidth || "";
@@ -507,14 +544,20 @@
       const topRaionsImg = await captureCanvas(topRaionsCanvas);
       const infraImg = await captureCanvas(infraCanvas);
 
-      // Use the bar charts' actual on-page rendered height as the target
-      // for the donut, so it's redrawn at a genuinely larger size rather
-      // than just being scaled up as an image afterward.
+      // Use the bar charts' actual on-page rendered height and axis-label
+      // font size as the target for the donut, so it's redrawn at a
+      // genuinely larger size (with a matching legend font) rather than
+      // just being scaled up as an image afterward.
       const referenceHeightPx =
         (topRaionsCanvas && topRaionsCanvas.getBoundingClientRect().height) ||
         (infraCanvas && infraCanvas.getBoundingClientRect().height) ||
         null;
-      const extentImg = await captureExtentChart(extentCanvas, referenceHeightPx);
+      const referenceChart =
+        typeof Chart !== "undefined" && typeof Chart.getChart === "function"
+          ? Chart.getChart(topRaionsCanvas) || Chart.getChart(infraCanvas)
+          : null;
+      const referenceFontSize = getReferenceLabelFontSize(referenceChart);
+      const extentImg = await captureExtentChart(extentCanvas, referenceHeightPx, referenceFontSize);
 
       // Top Raions, Infra Type, and Level of Damage are all "summary"
       // charts and should read as the same size in the PDF. Their source
