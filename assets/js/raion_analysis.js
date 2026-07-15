@@ -289,6 +289,22 @@ function processMapVisualisations() {
 
     updateSummaryCharts(counts, infraCounts, extentCounts, timeCounts, labelsList);
 
+    // Expose the current filter state + underlying numbers for anything
+    // outside this module that needs them (e.g. the PDF report generator).
+    window.__mapReportState = {
+        year: targetYear,
+        aggregationLabel: aggEl.options[aggEl.selectedIndex]?.text || '',
+        startLabel: startEl.options[startEl.selectedIndex]?.text || '',
+        endLabel: endEl.options[endEl.selectedIndex]?.text || '',
+        activeFilter: activeFilter ? { ...activeFilter } : null,
+        nationalTotal: Object.values(counts).reduce((a, b) => a + b, 0),
+        raionCounts: { ...counts },
+        infraCounts: { ...infraCounts },
+        extentCounts: { ...extentCounts },
+        timeCounts: { ...timeCounts },
+        labelsList: [...labelsList]
+    };
+
     if (leafletGeoLayer) mapInstance.removeLayer(leafletGeoLayer);
 
     const nameMap = {
