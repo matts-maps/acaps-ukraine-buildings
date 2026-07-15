@@ -5,13 +5,6 @@
 (function () {
   "use strict";
 
-  // Self-healing namespace bridge for jsPDF + svg2pdf compatibility
-  function bridgeNamespaces() {
-    if (window.jspdf && window.jspdf.jsPDF && !window.jsPDF) {
-      window.jsPDF = window.jspdf.jsPDF;
-    }
-  }
-
   const IDS = {
     mapContainer: "map-container",
     charts: {
@@ -106,7 +99,9 @@
     }
   }
 
+  // ------------------------------------------------------------------
   // Math Helpers for pure SVG Arc formulation
+  // ------------------------------------------------------------------
   function arcToSVGPath(cx, cy, ir, or, startA, endA) {
     if (Math.abs(endA - startA) >= Math.PI * 2 - 0.001) {
       return `M ${cx} ${cy - or} A ${or} ${or} 0 1 1 ${cx} ${cy + or} A ${or} ${or} 0 1 1 ${cx} ${cy - or} M ${cx} ${cy - ir} A ${ir} ${ir} 0 1 0 ${cx} ${cy + ir} A ${ir} ${ir} 0 1 0 ${cx} ${cy - ir}`;
@@ -127,11 +122,15 @@
     ].join(" ");
   }
 
-  // Disassembles Chart.js canvas elements and rebuilds them natively as raw SVGs
+  // ------------------------------------------------------------------
+  // Disassembles Chart.js canvas elements and rebuilds them natively
+  // as raw SVG DOM Nodes while extracting coordinates for PDF text labels.
+  // ------------------------------------------------------------------
   function chartToSVGElement(chart) {
     const ns = "http://www.w3.org/2000/svg";
     const svg = document.createElementNS(ns, "svg");
     
+    // Configure coordinate bounds identically to the source canvas
     svg.setAttribute("width", chart.width);
     svg.setAttribute("height", chart.height);
     svg.setAttribute("viewBox", `0 0 ${chart.width} ${chart.height}`);
@@ -142,6 +141,7 @@
     bg.setAttribute("fill", "#ffffff");
     svg.appendChild(bg);
 
+    // Plot Grid Lines natively
     if (chart.scales.x && chart.scales.y) {
       const isHorizontal = chart.options.indexAxis === 'y';
       const scaleToTick = isHorizontal ? chart.scales.x : chart.scales.y;
@@ -161,6 +161,7 @@
         svg.appendChild(line);
       });
 
+      // Baselines
       const baseLine = document.createElementNS(ns, "line");
       baseLine.setAttribute("stroke", "#666666");
       baseLine.setAttribute("stroke-width", "1.5");
@@ -174,6 +175,7 @@
       svg.appendChild(baseLine);
     }
 
+    // Process shapes from dataset metadata
     const meta = chart.getDatasetMeta(0);
     if (!meta || !meta.data) return svg;
 
@@ -206,7 +208,7 @@
     } else if (meta.type === 'doughnut' || meta.type === 'pie') {
       meta.data.forEach((el, i) => {
         const props = el.getProps(['x', 'y', 'startAngle', 'endAngle', 'innerRadius', 'outerRadius']);
-        if (Math.abs(props.endAngle - props.startAngle) < 0.01) return;
+        if (Math.abs(props.endAngle - props.startAngle) < 0.01) return; // Ignore invisible slivers
         
         const pathData = arcToSVGPath(props.x, props.y, props.innerRadius, props.outerRadius, props.startAngle, props.endAngle);
         const path = document.createElementNS(ns, "path");
@@ -256,6 +258,7 @@
         chartArea: chart.chartArea ? { ...chart.chartArea } : null
       };
 
+      // Extract Legends logic
       if (chart.config.type === 'doughnut' || chart.config.type === 'pie') {
         const bgColors = chart.data.datasets[0]?.backgroundColor || [];
         metaData.legendLabels = (chart.data.labels || []).map((lbl, i) => ({
@@ -269,6 +272,7 @@
         }));
       }
 
+      // Extract precise pixel mapping for Text Elements
       const parseLabel = (l) => Array.isArray(l) ? l.join(" ") : (l !== undefined && l !== null ? String(l) : "");
       if (chart.scales.x) {
         metaData.xTicks = chart.scales.x.getTicks().map((t, index) => ({
@@ -283,6 +287,7 @@
         }));
       }
 
+      // Generate the raw structural SVG elements
       const svgElement = chartToSVGElement(chart);
 
       return { svg: svgElement, meta: metaData };
@@ -297,6 +302,9 @@
     }
   }
 
+  // --------------------------------------------------------------------
+  // Capture Map (html2canvas remains for geographic basemaps)
+  // --------------------------------------------------------------------
   async function captureMap(mapEl) {
     if (!mapEl) return null;
     if (typeof html2canvas === "undefined") return null;
@@ -341,11 +349,10 @@
     }
   }
 
-  // Main Report Generation Pipeline
+  // --------------------------------------------------------------------
+  // Main PDF Generation Pipeline
+  // --------------------------------------------------------------------
   async function generateReport() {
-    // Dynamically bridge namespaces right before starting generation
-    bridgeNamespaces();
-
     const btn = document.getElementById("generate-report-btn");
     const originalLabel = btn ? btn.textContent : null;
     if (btn) {
@@ -354,12 +361,12 @@
     }
 
     try {
-      if (typeof window.jsPDF === "undefined") {
-        alert("jsPDF library fails to load or configure properly. Verify script scripts imports inside your header.");
+      if (typeof window.jspdf === "undefined") {
+        alert("jsPDF failed to load.");
         return;
       }
-      
-      const doc = new window.jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
+      const { jsPDF } = window.jspdf;
+      const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
       const pageWidth = doc.internal.pageSize.getWidth();
       const pageHeight = doc.internal.pageSize.getHeight();
       const margin = 40;
@@ -465,7 +472,7 @@
         y += 25;
       }
 
-      // --- PAGE 2: VECTOR CHARTS ---
+      // --- PAGE 2: CHARTS WITH NATIVE SELECTABLE PDF TEXTS ---
       doc.addPage();
       y = margin + 15;
 
@@ -522,7 +529,7 @@
       doc.save(`EPACC_Raion_Report_${safeYear}.pdf`);
     } catch (err) {
       console.error("Report generation failed:", err);
-      alert("Error generating report. Check console diagnostics.");
+      alert("Error generating report. Ensure svg2pdf.js is included in your HTML.");
     } finally {
       if (btn) {
         btn.disabled = false;
@@ -531,7 +538,9 @@
     }
   }
 
-  // Render vector shapes then plot native selectable text
+  // ------------------------------------------------------------------
+  // Advanced Renderer: Stamps the SVG shapes, then plots the PDF text
+  // ------------------------------------------------------------------
   async function addVectorLabeledChart(doc, font, heading, chartPayload, y, margin, pageWidth, pageHeight, targetWidth, targetHeight, explicitX = null) {
     const xPos = explicitX !== null ? explicitX : margin;
     const requiredTotalHeight = targetHeight + 65; 
@@ -541,6 +550,7 @@
       y = margin + 15;
     }
 
+    // Header Vectors
     doc.setFont(font, "bold");
     doc.setFontSize(10);
     doc.setTextColor(26, 58, 92);
@@ -548,9 +558,10 @@
     y += 14;
 
     if (typeof doc.svg !== "function") {
-      throw new Error("svg2pdf.js plugin failed to register on jsPDF. Ensure dependencies load in correct order.");
+      throw new Error("svg2pdf.js plugin is missing from document headers!");
     }
 
+    // Embed the precise SVG elements
     await doc.svg(chartPayload.svg, {
         x: xPos,
         y: y,
@@ -558,6 +569,7 @@
         height: targetHeight
     });
 
+    // Enforce pure 9pt Native PDF Text for labels
     const FONT_SIZE = 9; 
     doc.setFont(font, "normal");
     doc.setFontSize(FONT_SIZE);
@@ -567,6 +579,7 @@
     const ratioX = targetWidth / meta.canvas.width;
     const ratioY = targetHeight / meta.canvas.height;
 
+    // X-Axis Text Alignment Engine
     if (meta.xTicks && meta.xTicks.length > 0) {
         const angle = meta.xTicks.length > 8 ? -45 : 0; 
         
@@ -580,6 +593,7 @@
         });
     }
 
+    // Y-Axis Text Alignment Engine
     if (meta.yTicks && meta.yTicks.length > 0) {
         meta.yTicks.forEach(tick => {
             const tickY = y + (tick.y * ratioY) + 3; 
@@ -591,6 +605,7 @@
         });
     }
 
+    // Reconstruct the interactive legend as vector objects
     if (meta.legendLabels && meta.legendLabels.length > 0) {
         let totalLegendWidth = 0;
         meta.legendLabels.forEach(leg => {
@@ -666,8 +681,6 @@
   }
 
   function init() {
-    // Run an initial namespace check-and-bridge
-    bridgeNamespaces();
     injectButton();
   }
 
