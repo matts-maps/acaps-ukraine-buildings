@@ -373,7 +373,22 @@ function renderBarChart(canvasId, existingInstance, labels, data, dimension) {
             responsive: true,
             maintainAspectRatio: false,
             plugins: { legend: { display: false } },
-            scales: { x: { beginAtZero: true, ticks: { precision: 0 } } },
+            scales: { 
+                x: { 
+                    beginAtZero: true, 
+                    ticks: { precision: 0 },
+                    grid: {
+                        drawOnChartArea: false, // Removes vertical grid lines inside plot area
+                        drawTicks: true         // Keeps x-axis tick marks
+                    }
+                },
+                y: {
+                    grid: {
+                        drawOnChartArea: false, // Removes horizontal y-axis boundary line
+                        drawTicks: true         // Keeps y-axis tick marks
+                    }
+                }
+            },
             onClick: (evt, elements, chart) => {
                 if (!elements.length) return;
                 const label = chart.data.labels[elements[0].index];
