@@ -322,9 +322,20 @@ function updateChartAndStats() {
             maxRotation: 0,
             callback: function(val) { return calendarMonths[val] || ''; }
           },
-          grid: { display: false }
+          grid: { 
+            display: true,          // Keeps the axis structure
+            drawOnChartArea: false, // Removes grid lines inside chart area
+            drawTicks: true         // Keeps tick marks visible
+          }
         },
-        y: { beginAtZero: true, title: { display: true, text: 'Recorded Structural Damages' } }
+        y: { 
+          beginAtZero: true, 
+          title: { display: true, text: 'Recorded Structural Damages' },
+          grid: { 
+            drawOnChartArea: false, // Removes horizontal grid lines inside chart area
+            drawTicks: true         // Keeps tick marks visible
+          }
+        }
       }
     },
     plugins: [highlightPlugin]
@@ -462,10 +473,14 @@ function buildChartSVG({ selectedYears, pointsByYear, periodLabels, stepDays, id
 
   const tickCount = 5;
   let gridSVG = '';
+  // Left Vertical Boundary Y-Axis Line
+  gridSVG += `<line x1="${marginLeft}" y1="${marginTop}" x2="${marginLeft}" y2="${marginTop + plotHeight}" stroke="#999" stroke-width="1" />`;
+  
   for (let i = 0; i <= tickCount; i++) {
     const val = (yMax / tickCount) * i;
     const py = yToPx(val).toFixed(1);
-    gridSVG += `<line x1="${marginLeft}" y1="${py}" x2="${marginLeft + plotWidth}" y2="${py}" stroke="#e5e5e5" stroke-width="1" />`;
+    // Draw only a 5px tick mark outside the chart instead of a full line across the chart width
+    gridSVG += `<line x1="${marginLeft - 5}" y1="${py}" x2="${marginLeft}" y2="${py}" stroke="#999" stroke-width="1" />`;
     gridSVG += `<text x="${marginLeft - 10}" y="${parseFloat(py) + 4}" font-size="11" fill="#666" text-anchor="end" font-family="Arial, sans-serif">${Math.round(val).toLocaleString()}</text>`;
   }
 
@@ -473,6 +488,8 @@ function buildChartSVG({ selectedYears, pointsByYear, periodLabels, stepDays, id
   let xAxisSVG = `<line x1="${marginLeft}" y1="${marginTop + plotHeight}" x2="${marginLeft + plotWidth}" y2="${marginTop + plotHeight}" stroke="#999" stroke-width="1" />`;
   for (let m = 0; m < 12; m++) {
     const px = xToPx(m + 0.5).toFixed(1);
+    // X-axis ticks (5px downward ticks under each label center)
+    xAxisSVG += `<line x1="${px}" y1="${marginTop + plotHeight}" x2="${px}" y2="${marginTop + plotHeight + 5}" stroke="#999" stroke-width="1" />`;
     xAxisSVG += `<text x="${px}" y="${marginTop + plotHeight + 18}" font-size="11" fill="#666" text-anchor="middle" font-family="Arial, sans-serif">${monthAbbrev[m]}</text>`;
   }
 
