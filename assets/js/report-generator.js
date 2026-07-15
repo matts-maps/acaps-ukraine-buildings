@@ -120,10 +120,21 @@
     }
   }
 
+  // Helper to extract the computed font-family from the live webpage DOM 
+  // (falls back to a standard sans-serif system stack if inaccessible)
+  function getWebpageFontFamily() {
+    try {
+      const bodyFont = window.getComputedStyle(document.body).fontFamily;
+      return bodyFont || "sans-serif";
+    } catch (e) {
+      return "sans-serif";
+    }
+  }
+
   // ------------------------------------------------------------------
-  // Forces a live Chart.js chart to redraw at an exact pixel height and
-  // forces ALL textual elements to a strict font size (9.5px),
-  // captures that frame, then puts everything back exactly as it was.
+  // Forces a live Chart.js chart to redraw at an exact pixel height,
+  // forces ALL textual elements to a strict font size (9.5px) and 
+  // matches their font families to the current CSS styling of the webpage.
   // ------------------------------------------------------------------
   async function captureChartAtSize(canvasEl, heightPx, fontSizePx, extraOptions = {}) {
     if (!canvasEl) return null;
@@ -137,29 +148,30 @@
 
     const container = canvasEl.parentElement;
     const currentWidth = canvasEl.getBoundingClientRect().width;
+    const webFontFamily = getWebpageFontFamily();
     
     const legendOpts = chart.options?.plugins?.legend;
     const titleOpts = chart.options?.plugins?.title;
     const subtitleOpts = chart.options?.plugins?.subtitle;
     const scales = chart.options?.scales || {};
 
-    // Save all original states to restore later
+    // Save all original configurations to restore later
     const original = {
       maintainAspectRatio: chart.options.maintainAspectRatio,
       containerHeight: container ? container.style.height : null,
       legendPosition: legendOpts ? legendOpts.position : undefined,
       legendAlign: legendOpts ? legendOpts.align : undefined,
-      legendFontSize: legendOpts?.labels?.font?.size,
-      titleFontSize: titleOpts?.font?.size,
-      subtitleFontSize: subtitleOpts?.font?.size,
+      legendFont: legendOpts?.labels?.font ? { ...legendOpts.labels.font } : undefined,
+      titleFont: titleOpts?.font ? { ...titleOpts.font } : undefined,
+      subtitleFont: subtitleOpts?.font ? { ...subtitleOpts.font } : undefined,
       scales: {}
     };
 
     // Save individual scale configurations
     Object.keys(scales).forEach(key => {
       original.scales[key] = {
-        tickFontSize: scales[key]?.ticks?.font?.size,
-        titleFontSize: scales[key]?.title?.font?.size
+        tickFont: scales[key]?.ticks?.font ? { ...scales[key].ticks.font } : undefined,
+        titleFont: scales[key]?.title?.font ? { ...scales[key].title.font } : undefined
       };
     });
 
@@ -170,55 +182,60 @@
       }
 
       if (fontSizePx) {
-        // 1. Override Legend Font Size
+        // 1. Override Legend Fonts
         if (legendOpts) {
           if (legendOpts.labels === undefined) {
-            legendOpts.labels = { font: { size: fontSizePx } };
+            legendOpts.labels = { font: { size: fontSizePx, family: webFontFamily } };
           } else if (legendOpts.labels.font === undefined) {
-            legendOpts.labels.font = { size: fontSizePx };
+            legendOpts.labels.font = { size: fontSizePx, family: webFontFamily };
           } else {
             legendOpts.labels.font.size = fontSizePx;
+            legendOpts.labels.font.family = webFontFamily;
           }
         }
 
-        // 2. Override Chart Title Font Size
+        // 2. Override Chart Title Fonts
         if (titleOpts) {
           if (titleOpts.font === undefined) {
-            titleOpts.font = { size: fontSizePx };
+            titleOpts.font = { size: fontSizePx, family: webFontFamily };
           } else {
             titleOpts.font.size = fontSizePx;
+            titleOpts.font.family = webFontFamily;
           }
         }
 
-        // 3. Override Chart Subtitle Font Size
+        // 3. Override Chart Subtitle Fonts
         if (subtitleOpts) {
           if (subtitleOpts.font === undefined) {
-            subtitleOpts.font = { size: fontSizePx };
+            subtitleOpts.font = { size: fontSizePx, family: webFontFamily };
           } else {
             subtitleOpts.font.size = fontSizePx;
+            subtitleOpts.font.family = webFontFamily;
           }
         }
 
-        // 4. Override Scales (Axis Labels & Axis Titles) Font Size
+        // 4. Override Axis Scales and Titles Fonts
         Object.keys(scales).forEach(key => {
           const axis = scales[key];
           if (axis) {
             // Ticks (labels along the axis line)
             if (axis.ticks === undefined) {
-              axis.ticks = { font: { size: fontSizePx } };
+              axis.ticks = { font: { size: fontSizePx, family: webFontFamily } };
             } else if (axis.ticks.font === undefined) {
-              axis.ticks.font = { size: fontSizePx };
+              axis.ticks.font = { size: fontSizePx, family: webFontFamily };
             } else {
               axis.ticks.font.size = fontSizePx;
+              axis.ticks.font.family = webFontFamily;
             }
 
             // Title (the main label for the entire axis)
             if (axis.title === undefined) {
-              axis.title = { font: { size: fontSizePx } };
+              axis.title = { font: { size: fontSizePx, family: webFontFamily } };
             } else if (axis.title.font === undefined) {
-              axis.title.font = { size: fontSizePx };
+              axis.title.font = { size: fontSizePx, family: webFontFamily };
             } else {
               axis.title.font.size = fontSizePx;
+              axis.title.font.family = webFontFamily;
             }
           }
         });
@@ -247,41 +264,32 @@
         legendOpts.position = original.legendPosition;
         legendOpts.align = original.legendAlign;
         if (legendOpts.labels) {
-          if (original.legendFontSize !== undefined) {
-            if (legendOpts.labels.font === undefined) {
-              legendOpts.labels.font = { size: original.legendFontSize };
-            } else {
-              legendOpts.labels.font.size = original.legendFontSize;
-            }
+          if (original.legendFont !== undefined) {
+            legendOpts.labels.font = original.legendFont;
           } else if (legendOpts.labels.font) {
             delete legendOpts.labels.font.size;
+            delete legendOpts.labels.font.family;
           }
         }
       }
 
       // Revert Title config
       if (titleOpts) {
-        if (original.titleFontSize !== undefined) {
-          if (titleOpts.font === undefined) {
-            titleOpts.font = { size: original.titleFontSize };
-          } else {
-            titleOpts.font.size = original.titleFontSize;
-          }
+        if (original.titleFont !== undefined) {
+          titleOpts.font = original.titleFont;
         } else if (titleOpts.font) {
           delete titleOpts.font.size;
+          delete titleOpts.font.family;
         }
       }
 
       // Revert Subtitle config
       if (subtitleOpts) {
-        if (original.subtitleFontSize !== undefined) {
-          if (subtitleOpts.font === undefined) {
-            subtitleOpts.font = { size: original.subtitleFontSize };
-          } else {
-            subtitleOpts.font.size = original.subtitleFontSize;
-          }
+        if (original.subtitleFont !== undefined) {
+          subtitleOpts.font = original.subtitleFont;
         } else if (subtitleOpts.font) {
           delete subtitleOpts.font.size;
+          delete subtitleOpts.font.family;
         }
       }
 
@@ -291,29 +299,19 @@
         const origAxis = original.scales[key];
         if (axis && origAxis) {
           // Restore ticks
-          if (origAxis.tickFontSize !== undefined) {
-            if (axis.ticks === undefined) {
-              axis.ticks = { font: { size: origAxis.tickFontSize } };
-            } else if (axis.ticks.font === undefined) {
-              axis.ticks.font = { size: origAxis.tickFontSize };
-            } else {
-              axis.ticks.font.size = origAxis.tickFontSize;
-            }
+          if (origAxis.tickFont !== undefined) {
+            axis.ticks.font = origAxis.tickFont;
           } else if (axis.ticks && axis.ticks.font) {
             delete axis.ticks.font.size;
+            delete axis.ticks.font.family;
           }
 
           // Restore title
-          if (origAxis.titleFontSize !== undefined) {
-            if (axis.title === undefined) {
-              axis.title = { font: { size: origAxis.titleFontSize } };
-            } else if (axis.title.font === undefined) {
-              axis.title.font = { size: origAxis.titleFontSize };
-            } else {
-              axis.title.font.size = origAxis.titleFontSize;
-            }
+          if (origAxis.titleFont !== undefined) {
+            axis.title.font = origAxis.titleFont;
           } else if (axis.title && axis.title.font) {
             delete axis.title.font.size;
+            delete axis.title.font.family;
           }
         }
       });
@@ -585,7 +583,7 @@
 
       const timelineCanvas = document.getElementById(IDS.charts.timeline.id);
       
-      // Override text elements in the Timeline chart as well
+      // Override text elements in the Timeline chart with 9.5px size & match CSS
       const CHART_TEXT_SIZE_PX = 9.5;
       const timelineImg = await captureChartAtSize(
         timelineCanvas,
