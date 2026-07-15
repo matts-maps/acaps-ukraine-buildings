@@ -3,8 +3,8 @@
    ========================================================================== */
 .map-dashboard-container {
   display: flex;
-  flex-direction: column; /* Stack controls vertically on top of map */
-  width: 1000px;          /* Increase this value (e.g. 1200px) if you want an even wider page footprint */
+  flex-direction: column; /* Stacks controls above the map */
+  width: 1000px;          /* Feel free to increase this (e.g., 1200px) for an even wider layout */
   max-width: 100%;
   margin: 32px auto;
   padding: 0 20px;
@@ -13,29 +13,32 @@
 }
 
 /* ==========================================================================
-   Control Framework Panel (Horizontal Layout)
+   Control Framework Panel (Horizontal Row Layout)
    ========================================================================== */
 #map-controls {
-  width: 100%;            /* Span full width of the container */
+  width: 100%;
   min-width: 100%;
   background: #fff;
   border-radius: 10px;
   padding: 20px 24px;
   box-sizing: border-box;
   display: flex;
-  flex-direction: row;    /* Lay filter groups out side-by-side */
-  flex-wrap: wrap;        /* Allow controls to wrap neatly on smaller viewports */
-  align-items: flex-end;  /* Aligns dropdown select inputs perfectly at the baseline */
+  flex-direction: row;
+  flex-wrap: wrap;        /* Safely wraps elements on smaller screens */
+  align-items: flex-end;  /* Aligns all dropdown inputs and labels on the same baseline */
   gap: 20px;
   box-shadow: 0 1px 4px rgba(0,0,0,0.08);
 }
 
+/* We have 3 filter groups. To fit them within 3/4 (75%) of the horizontal line, 
+   we assign each a base flex width of roughly 24% (accounting for gaps).
+*/
 .map-control-group {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  flex: 1 1 180px;        /* Distributes space evenly with a minimum basis */
-  min-width: 140px;
+  flex: 1 1 calc(24% - 14px); 
+  min-width: 150px;
 }
 
 .map-range-row {
@@ -73,10 +76,41 @@
 }
 
 /* ==========================================================================
-   Map Screen Bounds
+   Metrics Summary Box (Occupies the last 1/4 of the width)
+   ========================================================================== */
+.map-summary-box {
+  margin-top: 0;
+  background: #f0f4f8;
+  border-radius: 8px;
+  padding: 10px 16px;
+  border-left: 4px solid #1a3a5c;
+  
+  /* Strictly allocates 1/4 (25%) of the parent width minus the gap */
+  flex: 0 0 calc(25% - 20px);
+  box-sizing: border-box;
+  min-width: 180px;
+}
+
+.map-summary-box .label {
+  font-size: 11px;
+  color: #666;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+  font-weight: 600;
+}
+
+.map-summary-box .value {
+  font-size: 22px;
+  font-weight: 700;
+  color: #1a3a5c;
+  margin-top: 2px;
+}
+
+/* ==========================================================================
+   Full Width Map Card
    ========================================================================== */
 #map-wrapper-card {
-  width: 100%;            /* Force map block to fill the entire horizontal width */
+  width: 100%;            /* Force card to span 100% of the horizontal layout container */
   box-sizing: border-box;
   background: #fff;
   border-radius: 10px;
@@ -144,36 +178,8 @@
   border-radius: 3px;
 }
 
-/* ==========================================================================
-   Metrics Summary Box
-   ========================================================================== */
-.map-summary-box {
-  margin-top: 0;          /* Reset vertical pushing */
-  margin-left: auto;      /* Pushes totalizer to the rightmost spot of horizontal panel */
-  background: #f0f4f8;
-  border-radius: 8px;
-  padding: 10px 16px;
-  border-left: 4px solid #1a3a5c;
-  flex: 0 1 auto;
-  min-width: 160px;
-}
-
-.map-summary-box .label {
-  font-size: 11px;
-  color: #666;
-  text-transform: uppercase;
-  letter-spacing: 0.5px;
-  font-weight: 600;
-}
-
-.map-summary-box .value {
-  font-size: 22px;
-  font-weight: 700;
-  color: #1a3a5c;
-  margin-top: 2px;
-}
-
 #map-error-msg {
+  flex-basis: 100%;       /* Spans full width above filters if visible */
   color: #c0392b;
   font-size: 13px;
   margin-bottom: 12px;
@@ -184,6 +190,8 @@
    Cross-Filter Components & Helpers
    ========================================================================== */
 #map-active-filter-group {
+  flex-basis: 100%;       /* Places active selection details on its own line below filters */
+  display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
@@ -192,6 +200,7 @@
   border-radius: 8px;
   padding: 8px 10px;
   font-size: 12px;
+  margin-top: 10px;
 }
 
 #map-active-filter-label {
@@ -216,14 +225,14 @@
 }
 
 .map-hint {
-  flex-basis: 100%;       /* Break line to span full width under the horizontal controls */
+  flex-basis: 100%;       /* Pushes instructions below the filters and totalizer box */
   font-size: 11px;
   color: #888;
   line-height: 1.4;
   margin: 4px 0 0 0;
 }
 
-/* Clickable oblast polygons */
+/* Clickable map shapes */
 .leaflet-interactive {
   cursor: pointer;
 }
@@ -250,7 +259,6 @@
   box-shadow: 0 1px 4px rgba(0,0,0,0.08);
 }
 
-/* Let the timeline card span full width for optimal data granularity */
 .map-chart-card.timeline-card {
   flex: 1 1 100%;
 }
@@ -276,26 +284,22 @@
 }
 
 /* ==========================================================================
-   Responsive adjustments for smaller displays
+   Responsive Adjustments (Mobile and Tablet Viewports)
    ========================================================================== */
 @media (max-width: 768px) {
-  .map-dashboard-container {
-    flex-direction: column;
-  }
-  
   #map-controls {
-    flex-direction: column; /* Reverts to stacked layout on mobile screens */
+    flex-direction: column;
     align-items: stretch;
     gap: 16px;
   }
 
   .map-control-group {
     flex: 1 1 auto;
+    width: 100%;
   }
 
   .map-summary-box {
-    margin-left: 0;       /* Align cleanly in stacked layout */
+    flex: 1 1 auto;
     width: 100%;
-    box-sizing: border-box;
   }
 }
