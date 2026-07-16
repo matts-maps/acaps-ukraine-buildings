@@ -106,3 +106,21 @@ main.site-content {
   color: #888;
   margin-top: 10px;
 }
+
+.map-report-btn {
+    margin-top: 12px;
+    padding: 10px 16px;
+    background-color: #1a3a5c;
+    color: #ffffff;
+    border: none;
+    border-radius: 4px;
+    font-size: 13px;
+    font-weight: 600;
+    cursor: pointer;
+    width: 100%;
+    transition: background-color 0.2s;
+}
+
+.map-report-btn:hover {
+    background-color: #12283f;
+}

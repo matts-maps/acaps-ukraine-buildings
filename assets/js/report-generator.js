@@ -96,7 +96,12 @@
   async function captureMap(mapEl) {
     if (!mapEl || typeof html2canvas === "undefined") return null;
     try {
-      const canvas = await html2canvas(mapEl, { useCORS: true, backgroundColor: "#ffffff", scale: 2, logging: false });
+      const canvas = await html2canvas(mapEl, { 
+        useCORS: true, 
+        backgroundColor: "#ffffff", 
+        scale: 2, 
+        logging: false 
+      });
       return canvas.toDataURL("image/png", 1.0);
     } catch (e) { return null; }
   }
@@ -119,8 +124,7 @@
       const state = getReportState();
       const generatedAt = new Date().toLocaleString("en-GB", { dateStyle: "long", timeStyle: "short" });
 
-      // Theme Colors
-      const primaryColor = [26, 58, 92]; // #1a3a5c
+      const primaryColor = [26, 58, 92]; // Site brand blue
       const textColor = [50, 50, 50];
 
       // Title
@@ -154,12 +158,13 @@
       const topInfra = topEntry(state.infraCounts);
       const raionsAffected = Object.keys(state.raionCounts).length;
 
+      // Updated Matrix: Using "Type" instead of "Theme(s)", Location removed.
       const stats = [
         { label: "Active Filter", val: state.activeFilterText },
         { label: "National Frame Total", val: state.nationalTotal },
         { label: "Raions with Damage", val: raionsAffected || "N/A" },
         topRaion ? { label: "Most-affected Raion", val: `${topRaion[0]} (${topRaion[1].toLocaleString()})` } : null,
-        topInfra ? { label: "Most-reported Infra Type", val: `${topInfra[0]} (${topInfra[1].toLocaleString()})` } : null
+        topInfra ? { label: "Most-reported Type", val: `${topInfra[0]} (${topInfra[1].toLocaleString()})` } : null
       ].filter(Boolean);
 
       stats.forEach((item) => {
@@ -182,6 +187,12 @@
         if (img) y = addImageWithHeading(doc, chartDef.label, img, y, margin, pageWidth, pageHeight);
       }
 
+      // Footer with correct spelling
+      const footerText = "E-PACC Ukraine Project — Created by MapAction and ACAPS. Data sourced from ACAPS. Visualisations by MapAction.";
+      doc.setFontSize(8);
+      doc.setTextColor(150);
+      doc.text(footerText, margin, pageHeight - 20);
+
       doc.save(`EPACC_Raion_Report_${state.year || 'data'}.pdf`);
     } catch (err) { console.error(err); alert("Report generation failed."); }
     finally { if (btn) btn.disabled = false; }
@@ -200,9 +211,6 @@
     return y + imgHeight + 40;
   }
 
-  // --------------------------------------------------------------------
-  // Injection
-  // --------------------------------------------------------------------
   function injectButton() {
     const anchor = document.querySelector(BUTTON_INSERT_AFTER_SELECTOR);
     if (!anchor || document.getElementById("generate-report-btn")) return;
