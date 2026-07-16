@@ -619,7 +619,7 @@ function renderBarChart(canvasId, existingInstance, labels, data, dimension) {
                     align: 'end',
                     clip: false,
                     color: '#1a3a5c',
-                    font: { size: 11, weight: '600' },
+                    font: { size: 10, weight: '600' },
                     formatter: value => value.toLocaleString()
                 }
             },
@@ -733,7 +733,7 @@ function renderTimelineBarChart(canvasId, existingInstance, labels, data, dimens
                     align: 'end',
                     clip: false,
                     color: '#1a3a5c',
-                    font: { size: 10, weight: '600' },
+                    font: { size: 8, weight: '600' },
                     formatter: value => value.toLocaleString(),
                     // Skip empty periods entirely rather than stamping a
                     // "0" above every zero-value column.
