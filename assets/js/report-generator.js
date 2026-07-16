@@ -1,12 +1,11 @@
 /* ============================================================================
-   E-PACC UKRAINE — "Generate PDF Report" for raion_analysis.html
+   E-PACC UKRAINE - "Generate PDF Report" for raion_analysis.html
    ============================================================================
 
    INSTALL
    -------
-   1. Add the hook in raion_analysis.js (see the patch notes provided
-      alongside this file) so window.__mapReportState is populated with the
-      real numbers behind the current view.
+   1. Add the hook in raion_analysis.js so window.__mapReportState is populated 
+      with the real numbers behind the current view.
 
    2. Add these two CDN libraries to raion_analysis.html, then this file,
       all AFTER the existing Leaflet / Chart.js / raion_analysis.js scripts:
@@ -24,12 +23,12 @@
 
   const IDS = {
     mapContainer: "map-container",
-    charts: [
-      { id: "map-timeline-chart", label: "Damage Timeline Over Selected Window", dimension: "period" },
-      { id: "map-top-oblasts-chart", label: "Top Raions by Reported Damage", dimension: "raion" },
-      { id: "map-infra-type-chart", label: "Damage by Infrastructure Type", dimension: "infra" },
-      { id: "map-extent-chart", label: "Extent of Damage", dimension: "extent" },
-    ],
+    charts: {
+      timeline: { id: "map-timeline-chart", label: "Timeline of damaged buildings" },
+      topRaions: { id: "map-top-oblasts-chart", label: "Most damaged Raions" },
+      infra: { id: "map-infra-type-chart", label: "Damage by infrastructure type" },
+      extent: { id: "map-extent-chart", label: "Level of damage" }
+    },
     yearSelect: "map-year-select",
     aggSelect: "map-aggregation-select",
     startSelect: "map-period-start-select",
@@ -42,9 +41,7 @@
   const BUTTON_INSERT_AFTER_SELECTOR = ".map-hint";
 
   // --------------------------------------------------------------------
-  // 1. Read current filter state — prefer the window.__mapReportState hook
-  //    (real numbers), fall back to scraping visible DOM text if it's
-  //    missing (e.g. before the patch to raion_analysis.js is applied).
+  // 1. Read current filter state - prefer the window.__mapReportState hook
   // --------------------------------------------------------------------
   function getReportState() {
     const state = window.__mapReportState;
@@ -61,12 +58,17 @@
         ? filterLabel.textContent.trim()
         : "None (national view)";
 
+    const oblastEl = document.getElementById("map-oblast-select");
+    const raionEl = document.getElementById("map-raion-select");
+
     if (state) {
       return {
         year: state.year,
         aggregationLabel: state.aggregationLabel,
         startLabel: state.startLabel,
         endLabel: state.endLabel,
+        oblastLabel: state.oblastFilter || "All Oblasts",
+        raionLabel: state.raionFilter || "All Raions",
         nationalTotal: state.nationalTotal.toLocaleString(),
         activeFilterText,
         raionCounts: state.raionCounts || {},
@@ -75,12 +77,13 @@
       };
     }
 
-    // Fallback: scrape the DOM directly (fewer derived stats available)
     return {
       year: yearEl ? yearEl.value : "N/A",
       aggregationLabel: aggEl ? aggEl.options[aggEl.selectedIndex]?.text : "N/A",
       startLabel: startEl ? startEl.options[startEl.selectedIndex]?.text : "N/A",
       endLabel: endEl ? endEl.options[endEl.selectedIndex]?.text : "N/A",
+      oblastLabel: oblastEl && oblastEl.value ? oblastEl.value : "All Oblasts",
+      raionLabel: raionEl && raionEl.value ? raionEl.value : "All Raions",
       nationalTotal: totalEl ? totalEl.textContent.trim() : "0",
       activeFilterText,
       raionCounts: {},
@@ -94,18 +97,18 @@
       state.startLabel === state.endLabel
         ? state.startLabel
         : `${state.startLabel} to ${state.endLabel}`;
-    return `${state.year} — ${state.aggregationLabel} — ${range}`;
+    return `${state.year} - ${state.aggregationLabel} - ${range}`;
   }
 
   function topEntry(counts) {
     const entries = Object.entries(counts || {});
     if (!entries.length) return null;
     entries.sort((a, b) => b[1] - a[1]);
-    return entries[0]; // [label, value]
+    return entries[0];
   }
 
   // --------------------------------------------------------------------
-  // 2. Capture helpers
+  // 2. Capture helpers (Includes Synchronized Alignment for Overlays)
   // --------------------------------------------------------------------
   async function captureCanvas(canvasEl) {
     if (!canvasEl) return null;
@@ -117,28 +120,296 @@
     }
   }
 
+  // ------------------------------------------------------------------
+  // The "Level of Damage" donut's canvas normally renders with its
+  // legend in a row underneath the ring, which eats vertical space and
+  // leaves the ring itself much smaller than the bar-chart canvases
+  // beside it — simply scaling that (mostly whitespace) canvas up in
+  // the PDF doesn't make the ring bigger, since the ring only occupies
+  // a small portion of the canvas to begin with.
+  //
+  // Fix: use Chart.js's public Chart.getChart(canvas) API to grab each
+  // live chart instance and force it to a fixed size (300px tall) and
+  // fixed label font size (9.5px), rather than trying to infer a size
+  // from another chart on the page. This is applied uniformly to Top
+  // Raions, Infra Type, and Level of Damage so all three always match.
+  // ------------------------------------------------------------------
+  // Forces a live Chart.js chart to redraw at an exact pixel height and
+  // label/legend font size, captures that frame, then puts everything
+  // back exactly as it was. Used to make the Top Raions, Infra Type,
+  // and Level of Damage charts all render at one consistent size in
+  // the PDF (300px tall, 9.5px labels), regardless of how each is
+  // configured on the live page.
+  //
+  // IMPORTANT: only ever assign scalar leaf values below (position,
+  // align, size, maintainAspectRatio, style.height) - never replace a
+  // whole nested option object (e.g. `legendOpts.labels = {...}`).
+  // Chart.js v4's options are live merged proxies; overwriting a
+  // sub-object wholesale breaks that proxy's internal resolver and
+  // sends it into a get/set loop ("too much recursion").
+  // ------------------------------------------------------------------
+  async function captureChartAtSize(canvasEl, heightPx, fontSizePx, extraOptions = {}) {
+    if (!canvasEl) return null;
+
+    if (typeof Chart === "undefined" || typeof Chart.getChart !== "function") {
+      // Chart.js not exposed globally as expected - fall back to a plain
+      // capture rather than failing the whole report.
+      return captureCanvas(canvasEl);
+    }
+
+    const chart = Chart.getChart(canvasEl);
+    if (!chart) return captureCanvas(canvasEl);
+
+    const container = canvasEl.parentElement;
+    const currentWidth = canvasEl.getBoundingClientRect().width;
+    const legendOpts = chart.options?.plugins?.legend;
+    const xTicks = chart.options?.scales?.x?.ticks;
+    const yTicks = chart.options?.scales?.y?.ticks;
+
+    const original = {
+      maintainAspectRatio: chart.options.maintainAspectRatio,
+      containerHeight: container ? container.style.height : null,
+      legendPosition: legendOpts ? legendOpts.position : undefined,
+      legendAlign: legendOpts ? legendOpts.align : undefined,
+      legendFontSize: legendOpts?.labels?.font?.size,
+      legendFontExisted: Boolean(legendOpts?.labels?.font),
+      legendBoxWidth: legendOpts?.labels?.boxWidth,
+      legendBoxHeight: legendOpts?.labels?.boxHeight,
+      xTickFontSize: xTicks?.font?.size,
+      xTickFontExisted: Boolean(xTicks?.font),
+      yTickFontSize: yTicks?.font?.size,
+      yTickFontExisted: Boolean(yTicks?.font),
+    };
+
+    // Sets `.size` on holder.font, creating a plain `{ size }` object only
+    // when holder.font is genuinely missing. This is safe because we're
+    // initializing an empty slot, not reassigning an object that Chart.js
+    // already manages internally - THAT (e.g. `legendOpts.labels = {...}`)
+    // is what caused the earlier "too much recursion" bug.
+    function setFontSize(holder, size) {
+      if (!holder) return;
+      if (holder.font && typeof holder.font === "object") {
+        holder.font.size = size;
+      } else {
+        holder.font = { size };
+      }
+    }
+
+    try {
+      if (extraOptions.legendPosition && legendOpts) {
+        legendOpts.position = extraOptions.legendPosition;
+        legendOpts.align = extraOptions.legendAlign || "center";
+      }
+
+      if (fontSizePx) {
+        if (legendOpts?.labels) {
+          setFontSize(legendOpts.labels, fontSizePx);
+          // Scale the legend's color swatch to match the text size too,
+          // so the whole legend row reads at a consistent size rather
+          // than just the label text changing.
+          legendOpts.labels.boxWidth = fontSizePx;
+          legendOpts.labels.boxHeight = fontSizePx;
+        }
+        setFontSize(xTicks, fontSizePx);
+        setFontSize(yTicks, fontSizePx);
+      }
+
+      // maintainAspectRatio (true by default) makes Chart.js clamp the
+      // canvas to a fixed width:height ratio regardless of how big its
+      // container actually is - disable it so the explicit resize below
+      // actually takes effect.
+      chart.options.maintainAspectRatio = false;
+
+      if (container && heightPx) {
+        container.style.height = `${heightPx}px`;
+      }
+
+      // Pass explicit pixel dimensions rather than relying on Chart.js
+      // to auto-detect the container size, so the chart is guaranteed
+      // to redraw at this exact height.
+      if (heightPx && currentWidth) {
+        chart.resize(currentWidth, heightPx);
+      } else {
+        chart.resize();
+      }
+      chart.update("none");
+
+      return canvasEl.toDataURL("image/png", 1.0);
+    } catch (e) {
+      console.warn("Chart capture failed:", e);
+      return null;
+    } finally {
+      if (legendOpts) {
+        legendOpts.position = original.legendPosition;
+        legendOpts.align = original.legendAlign;
+        if (legendOpts.labels?.font) {
+          if (original.legendFontExisted) {
+            legendOpts.labels.font.size = original.legendFontSize;
+          } else {
+            delete legendOpts.labels.font;
+          }
+        }
+        if (legendOpts.labels) {
+          legendOpts.labels.boxWidth = original.legendBoxWidth;
+          legendOpts.labels.boxHeight = original.legendBoxHeight;
+        }
+      }
+      if (xTicks?.font) {
+        if (original.xTickFontExisted) {
+          xTicks.font.size = original.xTickFontSize;
+        } else {
+          delete xTicks.font;
+        }
+      }
+      if (yTicks?.font) {
+        if (original.yTickFontExisted) {
+          yTicks.font.size = original.yTickFontSize;
+        } else {
+          delete yTicks.font;
+        }
+      }
+      chart.options.maintainAspectRatio = original.maintainAspectRatio;
+      if (container) {
+        container.style.height = original.containerHeight || "";
+      }
+      chart.resize();
+      chart.update("none");
+    }
+  }
+
+  // ------------------------------------------------------------------
+  // Leaflet's SVG renderer positions the overlay <svg> with a CSS
+  // transform of translate3d(vx, vy, 0), and sets its viewBox to
+  // "vx vy width height" so the two offsets cancel out and vector
+  // paths (e.g. the raion polygons) land at the correct absolute
+  // pixel position on top of the raster tiles.
+  //
+  // html2canvas honours the CSS transform but does NOT apply the
+  // viewBox origin offset, so the compensating shift is dropped and
+  // the vector layer renders shifted by (vx, vy) relative to the
+  // tiles underneath it. See:
+  //   https://github.com/Leaflet/Leaflet/issues/4754
+  //   https://github.com/niklasvh/html2canvas/issues/661
+  //
+  // Fix: right before capture, zero out both the transform and the
+  // viewBox origin on every Leaflet overlay <svg>, so there is no
+  // offset left for html2canvas to mishandle. Restore both afterward
+  // so the live, interactive map is unaffected.
+  // ------------------------------------------------------------------
+  function neutralizeLeafletSvgOffsets(mapEl) {
+    const svgs = mapEl.querySelectorAll(".leaflet-overlay-pane svg");
+    const restoreFns = [];
+
+    svgs.forEach((svg) => {
+      const viewBoxAttr = svg.getAttribute("viewBox");
+      if (!viewBoxAttr) return;
+
+      const parts = viewBoxAttr.trim().split(/[\s,]+/).map(Number);
+      if (parts.length !== 4 || parts.some(Number.isNaN)) return;
+      const [vx, vy, vw, vh] = parts;
+      if (!vx && !vy) return; // already at origin, nothing to neutralize
+
+      const originalViewBox = viewBoxAttr;
+      const originalTransform = svg.style.transform;
+
+      svg.setAttribute("viewBox", `0 0 ${vw} ${vh}`);
+      svg.style.transform = "translate3d(0px, 0px, 0px)";
+
+      restoreFns.push(() => {
+        svg.setAttribute("viewBox", originalViewBox);
+        svg.style.transform = originalTransform;
+      });
+    });
+
+    return function restoreAll() {
+      restoreFns.forEach((fn) => fn());
+    };
+  }
+
   async function captureMap(mapEl) {
     if (!mapEl) return null;
     if (typeof html2canvas === "undefined") {
-      console.error("html2canvas is not loaded — check the CDN script tag.");
+      console.error("html2canvas is not loaded.");
       return null;
     }
+
+    const mapInstance = window.__leafletMap || (window.map instanceof L.Map ? window.map : null);
+    let originalCenter = null;
+    let originalZoom = null;
+
+    if (mapInstance) {
+      originalCenter = mapInstance.getCenter();
+      originalZoom = mapInstance.getZoom();
+
+      let targetBounds = null;
+      mapInstance.eachLayer((layer) => {
+        if (layer.getBounds && typeof layer.getBounds === "function" && layer.feature) {
+          if (!targetBounds) {
+            targetBounds = layer.getBounds();
+          } else {
+            targetBounds.extend(layer.getBounds());
+          }
+        }
+      });
+
+      if (targetBounds && targetBounds.isValid()) {
+        // We use a Promise wrapper to halt execution until Leaflet fires 'moveend'.
+        // This ensures vectors and base tiles are locked in place before capturing.
+        await new Promise((resolve) => {
+          mapInstance.once("moveend", () => {
+            // Extra 500ms safety buffer to ensure raster basemap tiles are fully loaded and rendered
+            setTimeout(resolve, 500);
+          });
+          mapInstance.fitBounds(targetBounds, { padding: [20, 20], animate: false });
+        });
+      }
+    }
+
+    // Neutralize the Leaflet SVG transform/viewBox offset that html2canvas
+    // mishandles (see notes above) — must be done AFTER the view has
+    // settled (fitBounds/moveend above) so we read the final offsets, and
+    // must always be reverted, success or failure, so the live map isn't
+    // left broken for the user.
+    const restoreSvgOffsets = neutralizeLeafletSvgOffsets(mapEl);
+
     try {
       const canvas = await html2canvas(mapEl, {
         useCORS: true,
         backgroundColor: "#ffffff",
         scale: 2,
         logging: false,
+        onclone: (clonedDoc) => {
+          const selectorsToHide = [
+            ".leaflet-control-zoom", 
+            ".map-info-panel", 
+            ".leaflet-control-attribution"
+          ];
+          selectorsToHide.forEach(selector => {
+            const element = clonedDoc.querySelector(selector);
+            if (element) {
+              element.style.setProperty("display", "none", "important");
+            }
+          });
+        }
       });
+
+      // Safely revert user view coordinates back to original state
+      if (mapInstance && originalCenter !== null && originalZoom !== null) {
+        mapInstance.setView(originalCenter, originalZoom, { animate: false });
+      }
+
       return canvas.toDataURL("image/png", 1.0);
     } catch (e) {
-      // Most likely cause: the basemap tile server didn't send CORS
-      // headers, which taints the canvas and blocks toDataURL().
-      console.error(
-        "Map capture failed (likely a CORS-tainted canvas from the basemap tiles):",
-        e
-      );
+      console.error("Map capture failed due to CORS or rendering issues:", e);
+      
+      if (mapInstance && originalCenter !== null && originalZoom !== null) {
+        mapInstance.setView(originalCenter, originalZoom, { animate: false });
+      }
       return null;
+    } finally {
+      // Always put the live map's SVG overlay back exactly as it was,
+      // regardless of whether the capture succeeded or failed.
+      restoreSvgOffsets();
     }
   }
 
@@ -155,7 +426,7 @@
 
     try {
       if (typeof window.jspdf === "undefined") {
-        alert("jsPDF failed to load. Check your network/CDN script tags.");
+        alert("jsPDF failed to load.");
         return;
       }
       const { jsPDF } = window.jspdf;
@@ -171,97 +442,266 @@
         timeStyle: "short",
       });
 
-      // Title
+      // Accent border header
+      doc.setFillColor(26, 58, 92); 
+      doc.rect(0, 0, pageWidth, 8, "F");
+      y += 15;
+
+      // Report Header
       doc.setFont("helvetica", "bold");
-      doc.setFontSize(20);
-      doc.text("E-PACC Ukraine — Raion Analysis Report", margin, y);
-      y += 26;
+      doc.setFontSize(22);
+      doc.setTextColor(26, 58, 92);
+      doc.text("E-PACC Ukraine", margin, y);
+      y += 22;
 
-      // Period covered
+      doc.setFontSize(14);
       doc.setFont("helvetica", "normal");
-      doc.setFontSize(12);
-      doc.text(`Period covered: ${formatPeriod(state)}`, margin, y);
-      y += 16;
-      doc.text(`Report generated: ${generatedAt}`, margin, y);
-      y += 24;
+      doc.setTextColor(102, 102, 102);
+      doc.text("Raion Damage Analysis Report", margin, y);
+      y += 25;
 
-      // Summary statistics
+      // Meta Line
+      doc.setFontSize(9);
+      doc.setTextColor(136, 136, 136);
+      doc.text(`Period: ${formatPeriod(state)}`, margin, y);
+      doc.text(`Generated: ${generatedAt}`, pageWidth - margin - 150, y);
+      
+      y += 12;
+      doc.setDrawColor(224, 224, 224); 
+      doc.setLineWidth(1);
+      doc.line(margin, y, pageWidth - margin, y);
+      y += 25;
+
+      // Summary Statistics Panel
       doc.setFont("helvetica", "bold");
       doc.setFontSize(13);
+      doc.setTextColor(26, 58, 92);
       doc.text("Summary Statistics", margin, y);
-      y += 18;
+      y += 12;
 
-      doc.setFont("helvetica", "normal");
-      doc.setFontSize(11);
       const topRaion = topEntry(state.raionCounts);
       const topInfra = topEntry(state.infraCounts);
       const topExtent = topEntry(state.extentCounts);
-      const raionsAffected = Object.keys(state.raionCounts).length;
 
-      const lines = [
-        `Active selection filter: ${state.activeFilterText}`,
-        `National frame total: ${state.nationalTotal}`,
-        `Raions with recorded damage in this window: ${raionsAffected || "N/A"}`,
-        topRaion ? `Most-affected raion: ${topRaion[0]} (${topRaion[1].toLocaleString()})` : null,
-        topInfra ? `Most-reported infrastructure type: ${topInfra[0]} (${topInfra[1].toLocaleString()})` : null,
-        topExtent ? `Most common extent of damage: ${topExtent[0]} (${topExtent[1].toLocaleString()})` : null,
-      ].filter(Boolean);
+      const colWidth = (pageWidth - (margin * 2) - 40) / 2; 
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(9.5);
 
-      lines.forEach((line) => {
-        doc.text(line, margin, y);
-        y += 16;
+      const leftRaw = [
+        `Oblast coverage: ${state.oblastLabel}`,
+        `Raion coverage: ${state.raionLabel}`,
+        `Affected Raions: ${Object.keys(state.raionCounts).length || "N/A"}`
+      ];
+
+      const rightRaw = [
+        topRaion ? `Most affected: ${topRaion[0]} (${topRaion[1].toLocaleString()})` : "Most affected: N/A",
+        topInfra ? `Most damaged infrastructure: ${topInfra[0]} (${topInfra[1].toLocaleString()})` : "Most damaged infrastructure: N/A",
+        topExtent ? `Most common level of damage: ${topExtent[0]} (${topExtent[1].toLocaleString()})` : "Most common level of damage: N/A"
+      ];
+
+      const leftWrapped = leftRaw.map(str => doc.splitTextToSize(str, colWidth));
+      const rightWrapped = rightRaw.map(str => doc.splitTextToSize(str, colWidth));
+
+      const getColHeight = (wrappedArray) => {
+        return wrappedArray.reduce((acc, lines) => acc + (lines.length * 13) + 6, 0);
+      };
+      
+      const leftColHeight = getColHeight(leftWrapped);
+      const rightColHeight = getColHeight(rightWrapped);
+      const contentHeight = Math.max(leftColHeight, rightColHeight);
+      
+      const statBoxHeight = contentHeight + 45;
+
+      doc.setFillColor(240, 244, 248); 
+      doc.roundedRect(margin, y, pageWidth - (margin * 2), statBoxHeight, 6, 6, "F");
+      doc.setFillColor(26, 58, 92);
+      doc.rect(margin, y, 4, statBoxHeight, "F");
+
+      doc.setTextColor(68, 68, 68);
+      let currentLeftY = y + 20;
+      leftWrapped.forEach(lines => {
+        lines.forEach(line => {
+          doc.text(line, margin + 20, currentLeftY);
+          currentLeftY += 13;
+        });
+        currentLeftY += 6;
       });
-      y += 10;
 
-      // Map
+      let currentRightY = y + 20;
+      const rightColX = pageWidth / 2 + 10;
+      rightWrapped.forEach(lines => {
+        lines.forEach(line => {
+          doc.text(line, rightColX, currentRightY);
+          currentRightY += 13;
+        });
+        currentRightY += 6;
+      });
+
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(11);
+      doc.setTextColor(26, 58, 92);
+      doc.text(`Total Buildings Impacted: ${state.nationalTotal}`, margin + 20, y + statBoxHeight - 15);
+
+      y += statBoxHeight + 25;
+
+      // --- MAP ATTACHMENT ---
       const mapEl = document.getElementById(IDS.mapContainer);
       const mapImg = await captureMap(mapEl);
       if (mapImg) {
         y = addImageWithHeading(
           doc,
-          "Spatial Damage Assessment Mapping Profile — Raion Level",
+          "Damage Buildings per Raion",
           mapImg,
           y,
           margin,
           pageWidth,
-          pageHeight
+          pageHeight,
+          pageWidth - margin * 2
         );
       } else {
-        doc.text(
-          "(Map image unavailable — see console for details, likely a basemap CORS issue)",
+        doc.setFont("helvetica", "italic");
+        doc.setFontSize(10);
+        doc.setTextColor(192, 57, 43);
+        doc.text("(Map image unavailable - likely a basemap CORS issue)", margin, y);
+        y += 25;
+      }
+
+      // --- GRID CHARTS ATTACHMENT ---
+      doc.addPage();
+      y = margin + 15;
+
+      // 1. Timeline (Full Width)
+      const timelineCanvas = document.getElementById(IDS.charts.timeline.id);
+      const timelineImg = await captureCanvas(timelineCanvas);
+      if (timelineImg) {
+        y = addImageWithHeading(
+          doc,
+          IDS.charts.timeline.label,
+          timelineImg,
+          y,
           margin,
-          y
+          pageWidth,
+          pageHeight,
+          pageWidth - margin * 2
         );
-        y += 20;
       }
 
-      // Charts
-      for (const chartDef of IDS.charts) {
-        const canvasEl = document.getElementById(chartDef.id);
-        const img = await captureCanvas(canvasEl);
-        if (!img) {
-          doc.addPage();
-          y = margin;
-          doc.setFontSize(11);
-          doc.text(`(Chart "${chartDef.label}" could not be captured)`, margin, y);
-          y += 20;
-          continue;
-        }
-        y = addImageWithHeading(doc, chartDef.label, img, y, margin, pageWidth, pageHeight);
+      const gridGap = 16;
+      const colChartWidth = (pageWidth - margin * 2 - gridGap) / 2;
+
+      // 2. Top Raions & 3. Infra Type (Side-by-Side)
+      const topRaionsCanvas = document.getElementById(IDS.charts.topRaions.id);
+      const infraCanvas = document.getElementById(IDS.charts.infra.id);
+      const extentCanvas = document.getElementById(IDS.charts.extent.id);
+
+      // All three summary charts are forced to the same fixed height and
+      // label/legend font size, so they always match regardless of each
+      // chart's own on-page configuration or aspect ratio.
+      const SUMMARY_CHART_HEIGHT_PX = 300;
+      const SUMMARY_CHART_FONT_PX = 9.5;
+
+      const topRaionsImg = await captureChartAtSize(
+        topRaionsCanvas,
+        SUMMARY_CHART_HEIGHT_PX,
+        SUMMARY_CHART_FONT_PX
+      );
+      const infraImg = await captureChartAtSize(
+        infraCanvas,
+        SUMMARY_CHART_HEIGHT_PX,
+        SUMMARY_CHART_FONT_PX
+      );
+      const extentImg = await captureChartAtSize(
+        extentCanvas,
+        SUMMARY_CHART_HEIGHT_PX,
+        SUMMARY_CHART_FONT_PX,
+        { legendPosition: "right", legendAlign: "center" }
+      );
+
+      // Top Raions, Infra Type, and Level of Damage are all "summary"
+      // charts and should read as the same size in the PDF. Their source
+      // canvases can have different native aspect ratios (e.g. a square
+      // doughnut vs. a wider bar chart), so instead of letting each
+      // image's own aspect ratio dictate its box height independently,
+      // compute one shared height from whichever of the three would
+      // naturally be tallest at colChartWidth, then apply that same
+      // height to all three via addImageWithHeading's contain-fit sizing.
+      const naturalHeightAt = (imgDataUrl) => {
+        if (!imgDataUrl) return 0;
+        const props = doc.getImageProperties(imgDataUrl);
+        return (props.height * colChartWidth) / props.width;
+      };
+      const summaryChartHeight = Math.max(
+        naturalHeightAt(topRaionsImg),
+        naturalHeightAt(infraImg),
+        naturalHeightAt(extentImg)
+      ) || null;
+
+      let rowYStart = y;
+      let maxRowHeight = 0;
+
+      if (topRaionsImg) {
+        const nextY = addImageWithHeading(
+          doc,
+          IDS.charts.topRaions.label,
+          topRaionsImg,
+          rowYStart,
+          margin,
+          pageWidth,
+          pageHeight,
+          colChartWidth,
+          margin,
+          summaryChartHeight
+        );
+        maxRowHeight = Math.max(maxRowHeight, nextY - rowYStart);
       }
 
-      // Footer
+      if (infraImg) {
+        const nextY = addImageWithHeading(
+          doc,
+          IDS.charts.infra.label,
+          infraImg,
+          rowYStart,
+          margin,
+          pageWidth,
+          pageHeight,
+          colChartWidth,
+          margin + colChartWidth + gridGap,
+          summaryChartHeight
+        );
+        maxRowHeight = Math.max(maxRowHeight, nextY - rowYStart);
+      }
+
+      y = rowYStart + (maxRowHeight > 0 ? maxRowHeight : 0);
+
+      // 4. Level of Damage (Centered, same box size as the row above)
+      if (extentImg) {
+        const centerX = (pageWidth - colChartWidth) / 2;
+        y = addImageWithHeading(
+          doc,
+          IDS.charts.extent.label,
+          extentImg,
+          y,
+          margin,
+          pageWidth,
+          pageHeight,
+          colChartWidth,
+          centerX,
+          summaryChartHeight
+        );
+      }
+
+      // --- FOOTER AND PAGE NUMBERING ---
       const pageCount = doc.internal.getNumberOfPages();
       for (let i = 1; i <= pageCount; i++) {
         doc.setPage(i);
         doc.setFontSize(8);
-        doc.setTextColor(120);
+        doc.setTextColor(136, 136, 136);
         doc.text(
-          "E-PACC Ukraine Project — Created by MapAction and ACAPS. Data sourced from ACAPS.",
+          "E-PACC Ukraine Project - Created by MapAction and ACAPS. Data sourced from ACAPS.",
           margin,
           pageHeight - 20
         );
-        doc.text(`Page ${i} of ${pageCount}`, pageWidth - margin - 60, pageHeight - 20);
+        doc.text(`Page ${i} of ${pageCount}`, pageWidth - margin - 45, pageHeight - 20);
       }
 
       const safeYear = String(state.year || "report").replace(/\s+/g, "_");
@@ -277,34 +717,64 @@
     }
   }
 
-  function addImageWithHeading(doc, heading, imgDataUrl, y, margin, pageWidth, pageHeight) {
-    const maxImgWidth = pageWidth - margin * 2;
+  // `maxHeight` (optional) locks the image into a shared box of size
+  // targetWidth x maxHeight using contain-fit scaling: the image is
+  // scaled to fit fully inside that box, preserving its own aspect
+  // ratio (never stretched/distorted), and centered horizontally. This
+  // is what keeps the Top Raions / Infra Type / Level of Damage charts
+  // at one consistent visual size in the PDF even though their source
+  // canvases may have different native aspect ratios. Without
+  // maxHeight, the image is simply sized to targetWidth and its height
+  // follows its own natural aspect ratio (used for the full-width
+  // timeline chart).
+  function addImageWithHeading(doc, heading, imgDataUrl, y, margin, pageWidth, pageHeight, targetWidth, explicitX = null, maxHeight = null) {
+    const xPos = explicitX !== null ? explicitX : margin;
     const props = doc.getImageProperties(imgDataUrl);
-    let imgWidth = maxImgWidth;
-    let imgHeight = (props.height * imgWidth) / props.width;
+    const naturalAspect = props.width / props.height;
 
-    const maxImgHeight = pageHeight - margin * 2 - 40;
-    if (imgHeight > maxImgHeight) {
-      imgHeight = maxImgHeight;
-      imgWidth = (props.width * imgHeight) / props.height;
+    let imgWidth = targetWidth;
+    let imgHeight = targetWidth / naturalAspect;
+
+    if (maxHeight) {
+      const boxAspect = targetWidth / maxHeight;
+      if (naturalAspect > boxAspect) {
+        // Relatively wider than the box: width is the limiting dimension.
+        imgWidth = targetWidth;
+        imgHeight = targetWidth / naturalAspect;
+      } else {
+        // Relatively taller than the box: height is the limiting dimension.
+        imgHeight = maxHeight;
+        imgWidth = maxHeight * naturalAspect;
+      }
     }
 
-    if (y + imgHeight + 30 > pageHeight - margin) {
-      doc.addPage();
-      y = margin;
-    }
+    const drawX = xPos + (targetWidth - imgWidth) / 2;
+    const boxHeight = maxHeight || imgHeight;
 
     doc.setFont("helvetica", "bold");
-    doc.setFontSize(13);
-    doc.text(heading, margin, y);
-    y += 14;
+    doc.setFontSize(10);
+    doc.setTextColor(26, 58, 92);
 
-    doc.addImage(imgDataUrl, "PNG", margin, y, imgWidth, imgHeight);
-    return y + imgHeight + 24;
+    const headingLines = doc.splitTextToSize(heading, targetWidth);
+    const headingHeight = headingLines.length * 13;
+
+    if (y + boxHeight + headingHeight + 20 > pageHeight - margin) {
+      doc.addPage();
+      y = margin + 15;
+    }
+
+    headingLines.forEach((line) => {
+      doc.text(line, xPos, y);
+      y += 13;
+    });
+    y += 6;
+
+    doc.addImage(imgDataUrl, "PNG", drawX, y, imgWidth, imgHeight);
+    return y + boxHeight + 30;
   }
 
   // --------------------------------------------------------------------
-  // 4. Button
+  // 4. Button Setup
   // --------------------------------------------------------------------
   function injectButton() {
     if (document.getElementById("generate-report-btn")) return;
@@ -330,8 +800,7 @@
     injectButton();
     if (!document.getElementById("generate-report-btn")) {
       console.warn(
-        "report-generator.js: could not find '.map-hint' to attach the button near. " +
-          "Add <button id=\"generate-report-btn\">Generate PDF Report</button> manually and it will still work."
+        "report-generator.js: could not find '.map-hint' to attach the button near."
       );
     }
   }
