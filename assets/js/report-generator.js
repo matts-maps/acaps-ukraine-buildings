@@ -1,5 +1,5 @@
 /* ============================================================================
-   E-PACC UKRAINE — "Generate PDF Report" (Updated with Robust Error Handling)
+   E-PACC UKRAINE — "Generate PDF Report" for raion_analysis.html
    ============================================================================ */
 
 (function () {
@@ -24,125 +24,205 @@
 
   const BUTTON_INSERT_AFTER_SELECTOR = ".map-hint";
 
-  // --- Helper: Get State ---
+  // --------------------------------------------------------------------
+  // State Reading
+  // --------------------------------------------------------------------
   function getReportState() {
-    const state = window.__mapReportState || {};
+    const state = window.__mapReportState;
+    const yearEl = document.getElementById(IDS.yearSelect);
+    const aggEl = document.getElementById(IDS.aggSelect);
+    const startEl = document.getElementById(IDS.startSelect);
+    const endEl = document.getElementById(IDS.endSelect);
+    const totalEl = document.getElementById(IDS.totalValue);
+    const filterGroup = document.getElementById(IDS.activeFilterGroup);
+    const filterLabel = document.getElementById(IDS.activeFilterLabel);
+
+    const activeFilterText =
+      filterGroup && filterGroup.style.display !== "none" && filterLabel
+        ? filterLabel.textContent.trim()
+        : "None (national view)";
+
+    if (state) {
+      return {
+        year: state.year,
+        aggregationLabel: state.aggregationLabel,
+        startLabel: state.startLabel,
+        endLabel: state.endLabel,
+        nationalTotal: state.nationalTotal.toLocaleString(),
+        activeFilterText,
+        raionCounts: state.raionCounts || {},
+        infraCounts: state.infraCounts || {},
+        extentCounts: state.extentCounts || {},
+      };
+    }
+
     return {
-      year: state.year || document.getElementById(IDS.yearSelect)?.value || "N/A",
-      aggregationLabel: state.aggregationLabel || "N/A",
-      startLabel: state.startLabel || "N/A",
-      endLabel: state.endLabel || "N/A",
-      nationalTotal: state.nationalTotal?.toLocaleString() || document.getElementById(IDS.totalValue)?.textContent.trim() || "0",
-      activeFilterText: state.activeFilterText || "None (national view)",
-      raionCounts: state.raionCounts || {},
-      infraCounts: state.infraCounts || {},
-      extentCounts: state.extentCounts || {},
+      year: yearEl ? yearEl.value : "N/A",
+      aggregationLabel: aggEl ? aggEl.options[aggEl.selectedIndex]?.text : "N/A",
+      startLabel: startEl ? startEl.options[startEl.selectedIndex]?.text : "N/A",
+      endLabel: endEl ? endEl.options[endEl.selectedIndex]?.text : "N/A",
+      nationalTotal: totalEl ? totalEl.textContent.trim() : "0",
+      activeFilterText,
+      raionCounts: {},
+      infraCounts: {},
+      extentCounts: {},
     };
   }
 
-  // --- Capture Helpers ---
+  function formatPeriod(state) {
+    const range =
+      state.startLabel === state.endLabel
+        ? state.startLabel
+        : `${state.startLabel} to ${state.endLabel}`;
+    return `${state.year} — ${state.aggregationLabel} — ${range}`;
+  }
+
+  function topEntry(counts) {
+    const entries = Object.entries(counts || {});
+    if (!entries.length) return null;
+    entries.sort((a, b) => b[1] - a[1]);
+    return entries[0];
+  }
+
+  // --------------------------------------------------------------------
+  // Capturing Assets
+  // --------------------------------------------------------------------
   async function captureCanvas(canvasEl) {
     if (!canvasEl) return null;
-    try { 
-      // Ensure canvas is not empty
-      return canvasEl.toDataURL("image/png", 1.0); 
-    } catch (e) { 
-      console.warn("Chart capture skipped:", e); 
-      return null; 
-    }
+    try { return canvasEl.toDataURL("image/png", 1.0); } 
+    catch (e) { console.warn("Chart capture failed:", e); return null; }
   }
 
   async function captureMap(mapEl) {
     if (!mapEl || typeof html2canvas === "undefined") return null;
     try {
-      // Small delay to ensure rendering settles
-      await new Promise(resolve => setTimeout(resolve, 500));
       const canvas = await html2canvas(mapEl, { 
         useCORS: true, 
-        allowTaint: true, // Attempt to bypass strict CORS if tiles allow
         backgroundColor: "#ffffff", 
-        scale: 2 
+        scale: 2, 
+        logging: false 
       });
       return canvas.toDataURL("image/png", 1.0);
-    } catch (e) { 
-      console.error("Map capture failed (likely CORS):", e); 
-      return null; // Return null so report continues without map
-    }
+    } catch (e) { return null; }
   }
 
-  // --- PDF Generation ---
+  // --------------------------------------------------------------------
+  // PDF Generation
+  // --------------------------------------------------------------------
   async function generateReport() {
     const btn = document.getElementById("generate-report-btn");
-    const originalText = btn.textContent;
-    if (btn) { btn.disabled = true; btn.textContent = "Generating..."; }
+    if (btn) btn.disabled = true;
 
     try {
       const { jsPDF } = window.jspdf;
-      const doc = new jsPDF("p", "pt", "a4");
+      const doc = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
+      const pageWidth = doc.internal.pageSize.getWidth();
+      const pageHeight = doc.internal.pageSize.getHeight();
       const margin = 40;
       let y = margin;
 
       const state = getReportState();
-      
-      // Title
-      doc.setTextColor(26, 58, 92);
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(22);
-      doc.text("E-PACC Ukraine — Raion Analysis", margin, y);
-      y += 40;
+      const generatedAt = new Date().toLocaleString("en-GB", { dateStyle: "long", timeStyle: "short" });
 
-      // Statistics
-      doc.setTextColor(50, 50, 50);
+      const primaryColor = [26, 58, 92]; // Site brand blue
+      const textColor = [50, 50, 50];
+
+      // Title
+      doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(24);
+      doc.text("E-PACC Ukraine — Raion Analysis", margin, y);
+      y += 35;
+
+      // Metadata
+      doc.setTextColor(textColor[0], textColor[1], textColor[2]);
+      doc.setFont("helvetica", "normal");
       doc.setFontSize(11);
-      doc.text(`Period: ${state.year} | National Total: ${state.nationalTotal}`, margin, y);
+      doc.text(`Period: ${formatPeriod(state)}`, margin, y);
+      y += 18;
+      doc.text(`Generated: ${generatedAt}`, margin, y);
       y += 30;
 
-      // Capture Map
-      const mapImg = await captureMap(document.getElementById(IDS.mapContainer));
-      if (mapImg) {
-        y = addImageWithHeading(doc, "Spatial Damage Assessment", mapImg, y, margin);
-      }
+      // Summary
+      doc.setTextColor(primaryColor[0], primaryColor[1], primaryColor[2]);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(16);
+      doc.text("Summary Statistics", margin, y);
+      y += 20;
 
-      // Capture Charts
+      doc.setTextColor(textColor[0], textColor[1], textColor[2]);
+      doc.setFont("helvetica", "normal");
+      doc.setFontSize(11);
+
+      const topRaion = topEntry(state.raionCounts);
+      const topInfra = topEntry(state.infraCounts);
+      const raionsAffected = Object.keys(state.raionCounts).length;
+
+      // Updated Matrix: Using "Type" instead of "Theme(s)", Location removed.
+      const stats = [
+        { label: "Active Filter", val: state.activeFilterText },
+        { label: "National Frame Total", val: state.nationalTotal },
+        { label: "Raions with Damage", val: raionsAffected || "N/A" },
+        topRaion ? { label: "Most-affected Raion", val: `${topRaion[0]} (${topRaion[1].toLocaleString()})` } : null,
+        topInfra ? { label: "Most-reported Type", val: `${topInfra[0]} (${topInfra[1].toLocaleString()})` } : null
+      ].filter(Boolean);
+
+      stats.forEach((item) => {
+        doc.setFont("helvetica", "bold");
+        doc.text(`${item.label}:`, margin, y);
+        doc.setFont("helvetica", "normal");
+        doc.text(item.val, margin + 160, y);
+        y += 18;
+      });
+      y += 20;
+
+      // Map & Charts
+      const mapEl = document.getElementById(IDS.mapContainer);
+      const mapImg = await captureMap(mapEl);
+      if (mapImg) y = addImageWithHeading(doc, "Spatial Damage Assessment Mapping Profile", mapImg, y, margin, pageWidth, pageHeight);
+
       for (const chartDef of IDS.charts) {
-        const img = await captureCanvas(document.getElementById(chartDef.id));
-        if (img) y = addImageWithHeading(doc, chartDef.label, img, y, margin);
+        const canvasEl = document.getElementById(chartDef.id);
+        const img = await captureCanvas(canvasEl);
+        if (img) y = addImageWithHeading(doc, chartDef.label, img, y, margin, pageWidth, pageHeight);
       }
 
-      doc.save(`EPACC_Report_${state.year}.pdf`);
-    } catch (err) { 
-      console.error("PDF Fatal Error:", err); 
-      alert("Report failed to generate. Please check the console for details."); 
-    } finally { 
-      if (btn) { btn.disabled = false; btn.textContent = originalText; } 
-    }
+      // Footer with correct spelling
+      const footerText = "E-PACC Ukraine Project — Created by MapAction and ACAPS. Data sourced from ACAPS. Visualisations by MapAction.";
+      doc.setFontSize(8);
+      doc.setTextColor(150);
+      doc.text(footerText, margin, pageHeight - 20);
+
+      doc.save(`EPACC_Raion_Report_${state.year || 'data'}.pdf`);
+    } catch (err) { console.error(err); alert("Report generation failed."); }
+    finally { if (btn) btn.disabled = false; }
   }
 
-  function addImageWithHeading(doc, heading, imgDataUrl, y, margin) {
-    const pageWidth = doc.internal.pageSize.getWidth();
-    const maxW = pageWidth - (margin * 2);
+  function addImageWithHeading(doc, heading, imgDataUrl, y, margin, pageWidth, pageHeight) {
+    const maxImgWidth = pageWidth - margin * 2;
     const props = doc.getImageProperties(imgDataUrl);
-    const h = (props.height * maxW) / props.width;
-
-    if (y + h + 40 > doc.internal.pageSize.getHeight() - margin) { doc.addPage(); y = margin; }
+    let imgHeight = (props.height * maxImgWidth) / props.width;
+    if (y + imgHeight + 40 > pageHeight - margin) { doc.addPage(); y = margin; }
     
     doc.setFont("helvetica", "bold");
+    doc.setFontSize(13);
     doc.text(heading, margin, y);
-    doc.addImage(imgDataUrl, "PNG", margin, y + 10, maxW, h);
-    return y + h + 40;
+    doc.addImage(imgDataUrl, "PNG", margin, y + 10, maxImgWidth, imgHeight);
+    return y + imgHeight + 40;
   }
 
   function injectButton() {
     const anchor = document.querySelector(BUTTON_INSERT_AFTER_SELECTOR);
-    if (anchor && !document.getElementById("generate-report-btn")) {
-      const btn = document.createElement("button");
-      btn.id = "generate-report-btn";
-      btn.className = "map-report-btn";
-      btn.textContent = "Generate PDF Report";
-      btn.onclick = generateReport;
-      anchor.insertAdjacentElement("afterend", btn);
-    }
+    if (!anchor || document.getElementById("generate-report-btn")) return;
+
+    const btn = document.createElement("button");
+    btn.id = "generate-report-btn";
+    btn.className = "map-report-btn";
+    btn.textContent = "Generate PDF Report";
+    btn.addEventListener("click", generateReport);
+    anchor.insertAdjacentElement("afterend", btn);
   }
 
-  document.readyState === "loading" ? document.addEventListener("DOMContentLoaded", injectButton) : injectButton();
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", injectButton);
+  else injectButton();
 })();
