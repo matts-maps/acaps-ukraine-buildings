@@ -5,7 +5,7 @@
     <div id="map-error-msg"></div>
 
     <div class="map-control-group">
-      <label for="map-year-select">Year:</label>
+      <label for="map-year-select">Target Assessment Year:</label>
       <select id="map-year-select" onchange="processMapVisualisations()"></select>
     </div>
 
@@ -24,7 +24,7 @@
     </div>
 
     <div class="map-control-group">
-      <label for="map-aggregation-select">Level of detail:</label>
+      <label for="map-aggregation-select">Time Frame Filter Type:</label>
       <select id="map-aggregation-select" onchange="buildMapPeriodDropdowns()">
         <option value="7">Weekly Granularity</option>
         <option value="14">Fortnightly Granularity</option>
@@ -33,7 +33,7 @@
     </div>
 
     <div class="map-control-group">
-      <label for="map-period-start-select">Timeframe:</label>
+      <label for="map-period-start-select">Select Window Frame Range:</label>
       <div class="map-range-row">
         <select id="map-period-start-select" onchange="processMapVisualisations()"></select>
         <span class="map-range-sep">to</span>
@@ -42,7 +42,7 @@
     </div>
 
     <div class="map-summary-box">
-      <div class="label">Total damaged buildings</div>
+      <div class="label">National Frame Total</div>
       <div class="value" id="map-total-value">0</div>
     </div>
 
@@ -52,31 +52,30 @@
     </div>
 
     <p class="map-hint">Click a raion on the map, or a bar/segment/point in the charts below, to filter everything to that selection.</p>
-    <!-- report-generator.js injects the "Generate PDF Report" button right here automatically -->
   </aside>
 
   <main id="map-wrapper-card">
-    <h2 id="map-view-title">Damage buildings per Raion</h2>
+    <h2 id="map-view-title">Spatial Damage Assessment Mapping Profile — Raion Level</h2>
     <div id="map-container"></div>
   </main>
 </div>
 
 <section id="map-charts-section">
   <div class="map-chart-card timeline-card">
-    <h3>Timeline of damaged buildings</h3>
+    <h3>Damage Timeline Over Selected Window</h3>
     <div class="chart-wrap"><canvas id="map-timeline-chart"></canvas></div>
   </div>
 
   <div class="map-chart-card">
-    <h3>Most damaged Raions</h3>
+    <h3>Top Raions by Reported Damage</h3>
     <div class="chart-wrap"><canvas id="map-top-oblasts-chart"></canvas></div>
   </div>
   <div class="map-chart-card">
-    <h3>Damage by infrastructure type</h3>
+    <h3>Damage by Infrastructure Type</h3>
     <div class="chart-wrap"><canvas id="map-infra-type-chart"></canvas></div>
   </div>
   <div class="map-chart-card">
-    <h3>Level of damage</h3>
+    <h3>Extent of Damage</h3>
     <div class="chart-wrap"><canvas id="map-extent-chart"></canvas></div>
   </div>
   <p class="map-charts-note">Charts reflect the year, window frame range, and any active selection filter above.</p>
