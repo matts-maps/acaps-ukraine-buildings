@@ -125,6 +125,7 @@
   // elsewhere in the document, instead of dropping in a rasterized PNG
   // snapshot of each chart.
   const PDF_CHART_FONT = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+  const CHART_PALETTE = ["#1a3a5c", "#2c5f8a", "#4a90c4", "#7cb4dd", "#a8d0e8", "#d94801", "#f16913", "#fdae6b", "#fdd0a2", "#999999"];
   const SVG_NS = "http://www.w3.org/2000/svg";
 
   function svgEl(tag, attrs) {
@@ -317,17 +318,26 @@
     });
   }
 
-  // Embeds an SVG chart into the PDF as vector paths via svg2pdf.js. Falls
-  // back to a rasterized snapshot only if that library isn't available, so
-  // a CDN hiccup degrades the output rather than breaking the report.
-  async function embedSvgChart(doc, svgElement, x, y, width, height) {
+  // Embeds an SVG chart into the PDF as vector paths via svg2pdf.js v2
+  // (doc.svg). Falls back to a rasterized SVG snapshot, then to the live
+  // on-page Chart.js canvas when provided, so a CDN hiccup degrades the
+  // output rather than leaving the report blank.
+  async function embedSvgChart(doc, svgElement, x, y, width, height, canvasId) {
     svgElement.style.position = "absolute";
     svgElement.style.left = "-99999px";
     svgElement.style.top = "0";
     document.body.appendChild(svgElement);
 
     try {
-      if (typeof window.svg2pdf === "function") {
+      // svg2pdf.js v2 extends jsPDF with doc.svg(); v1 exposed window.svg2pdf().
+      if (typeof doc.svg === "function") {
+        try {
+          await doc.svg(svgElement, { x, y, width, height });
+          return true;
+        } catch (e) {
+          console.warn("doc.svg embed failed, falling back to a rasterized snapshot:", e);
+        }
+      } else if (typeof window.svg2pdf === "function") {
         try {
           await window.svg2pdf(svgElement, doc, { x, y, width, height });
           return true;
@@ -337,11 +347,24 @@
       } else {
         console.warn("svg2pdf.js not loaded - falling back to a rasterized snapshot of the chart.");
       }
+
       const dataUrl = await svgToPngDataUrl(svgElement, width, height);
       doc.addImage(dataUrl, "PNG", x, y, width, height);
       return true;
     } catch (e) {
-      console.error("Chart embed failed entirely:", e);
+      console.warn("SVG chart embed failed, trying on-page canvas fallback:", e);
+      if (canvasId) {
+        const canvas = document.getElementById(canvasId);
+        if (canvas && typeof canvas.toDataURL === "function") {
+          try {
+            doc.addImage(canvas.toDataURL("image/png", 1.0), "PNG", x, y, width, height);
+            return true;
+          } catch (canvasErr) {
+            console.error("Canvas fallback also failed:", canvasErr);
+          }
+        }
+      }
+      console.error("Chart embed failed entirely.");
       return false;
     } finally {
       document.body.removeChild(svgElement);
@@ -351,7 +374,7 @@
   // Draws a heading, paginating if needed, then embeds the SVG chart in a
   // fixed-size box beneath it. Mirrors addImageWithHeading's layout logic
   // (see below) but for vector SVG content instead of a raster image.
-  async function addSvgWithHeading(doc, heading, svgElement, y, margin, pageWidth, pageHeight, targetWidth, explicitX, boxHeight) {
+  async function addSvgWithHeading(doc, heading, svgElement, y, margin, pageWidth, pageHeight, targetWidth, explicitX, boxHeight, canvasId) {
     const xPos = explicitX !== null && explicitX !== undefined ? explicitX : margin;
 
     doc.setFont("helvetica", "bold");
@@ -371,7 +394,7 @@
     });
     y += 6;
 
-    await embedSvgChart(doc, svgElement, xPos, y, targetWidth, boxHeight);
+    await embedSvgChart(doc, svgElement, xPos, y, targetWidth, boxHeight, canvasId);
     return y + boxHeight + 30;
   }
 
@@ -685,7 +708,8 @@
           series.timeline.labels, series.timeline.values, timelineWidth, timelineHeight
         );
         y = await addSvgWithHeading(
-          doc, IDS.charts.timeline.label, timelineSvg, y, margin, pageWidth, pageHeight, timelineWidth, margin, timelineHeight
+          doc, IDS.charts.timeline.label, timelineSvg, y, margin, pageWidth, pageHeight,
+          timelineWidth, margin, timelineHeight, IDS.charts.timeline.id
         );
       }
 
@@ -708,7 +732,7 @@
         );
         const nextY = await addSvgWithHeading(
           doc, IDS.charts.topRaions.label, topRaionsSvg, rowYStart, margin, pageWidth, pageHeight,
-          colChartWidth, margin, SUMMARY_CHART_HEIGHT_PX
+          colChartWidth, margin, SUMMARY_CHART_HEIGHT_PX, IDS.charts.topRaions.id
         );
         maxRowHeight = Math.max(maxRowHeight, nextY - rowYStart);
       }
@@ -721,7 +745,7 @@
         );
         const nextY = await addSvgWithHeading(
           doc, IDS.charts.infra.label, infraSvg, rowYStart, margin, pageWidth, pageHeight,
-          colChartWidth, margin + colChartWidth + gridGap, SUMMARY_CHART_HEIGHT_PX
+          colChartWidth, margin + colChartWidth + gridGap, SUMMARY_CHART_HEIGHT_PX, IDS.charts.infra.id
         );
         maxRowHeight = Math.max(maxRowHeight, nextY - rowYStart);
       }
@@ -736,7 +760,7 @@
         const centerX = (pageWidth - colChartWidth) / 2;
         y = await addSvgWithHeading(
           doc, IDS.charts.extent.label, extentSvg, y, margin, pageWidth, pageHeight,
-          colChartWidth, centerX, SUMMARY_CHART_HEIGHT_PX
+          colChartWidth, centerX, SUMMARY_CHART_HEIGHT_PX, IDS.charts.extent.id
         );
       }
 

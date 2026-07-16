@@ -150,6 +150,7 @@ function initMapElement() {
     // Start on a reasonable default view; this gets replaced by fitBounds()
     // once the Ukraine boundary geoJSON has loaded.
     mapInstance = L.map('map-container', { zoomSnap: 0.5 }).setView([48.3794, 31.1656], 6);
+    window.__leafletMap = mapInstance;
     L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
         attribution: '&copy; OpenStreetMap', maxZoom: 20
     }).addTo(mapInstance);
