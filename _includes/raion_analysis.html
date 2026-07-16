@@ -10,6 +10,20 @@
     </div>
 
     <div class="map-control-group">
+      <label for="map-oblast-select">Oblast:</label>
+      <select id="map-oblast-select" onchange="onOblastFilterChange()">
+        <option value="">All Oblasts</option>
+      </select>
+    </div>
+
+    <div class="map-control-group">
+      <label for="map-raion-select">Raion:</label>
+      <select id="map-raion-select" onchange="onRaionFilterChange()">
+        <option value="">All Raions</option>
+      </select>
+    </div>
+
+    <div class="map-control-group">
       <label for="map-aggregation-select">Time Frame Filter Type:</label>
       <select id="map-aggregation-select" onchange="buildMapPeriodDropdowns()">
         <option value="7">Weekly Granularity</option>
