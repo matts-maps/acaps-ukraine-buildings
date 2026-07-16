@@ -1,5 +1,8 @@
 /* ============================================================================
    E-PACC UKRAINE - "Generate PDF Report" for raion_analysis.html
+   Charts are rendered as native SVG (vector) and embedded into the PDF via
+   svg2pdf.js, so shapes, gridlines, and text all stay crisp/vector and the
+   layout mirrors the live Chart.js charts on the page.
    ========================================================================== */
 
 (function () {
@@ -23,6 +26,7 @@
   };
 
   const BUTTON_INSERT_AFTER_SELECTOR = ".map-hint";
+  const SVG2PDF_URL = "https://cdnjs.cloudflare.com/ajax/libs/svg2pdf.js/2.2.3/svg2pdf.umd.min.js";
 
   // 1. Read current filter state
   function getReportState() {
@@ -100,106 +104,276 @@
     }
   }
 
+  function escapeXML(str) {
+    return String(str)
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&apos;");
+  }
+
   // ------------------------------------------------------------------
-  // High-Fidelity Capture: Hides native chart text, extracts exact 
-  // coordinate positions, and captures a clean shapes-only graphic.
+  // SVG Chart Engine: reads the live Chart.js instance behind a canvas
+  // (same data, same colors as the webpage) and re-draws it as a plain
+  // SVG string, so the PDF gets true vector shapes + vector text instead
+  // of a rasterized screenshot.
   // ------------------------------------------------------------------
-  async function captureChartDataAndCleanGraphic(canvasEl, heightPx) {
+  function getChartInstance(canvasEl) {
     if (!canvasEl) return null;
     if (typeof Chart === "undefined" || typeof Chart.getChart !== "function") return null;
+    return Chart.getChart(canvasEl);
+  }
 
-    const chart = Chart.getChart(canvasEl);
+  function extractChartModel(chart) {
     if (!chart) return null;
+    const type = chart.config.type;
+    const labels = (chart.data.labels || []).map((l) =>
+      Array.isArray(l) ? l.join(" ") : l !== undefined && l !== null ? String(l) : ""
+    );
 
-    const container = canvasEl.parentElement;
-    const currentWidth = canvasEl.getBoundingClientRect().width;
-
-    const original = {
-      aspectRatio: chart.options.maintainAspectRatio,
-      containerHeight: container ? container.style.height : null,
-      legendDisplay: chart.options.plugins?.legend?.display,
-      xColor: chart.options.scales?.x?.ticks?.color,
-      yColor: chart.options.scales?.y?.ticks?.color,
-    };
-
-    try {
-      // 1. Enforce size and suppress legend to free space up for graphic mapping
-      chart.options.maintainAspectRatio = false;
-      if (container && heightPx) container.style.height = `${heightPx}px`;
-      if (chart.options.plugins?.legend) chart.options.plugins.legend.display = false;
-      
-      chart.resize(currentWidth, heightPx || 220);
-      chart.update("none");
-
-      // 2. Extract Metadata mappings now that layout is frozen
-      const parseLabel = (l) => Array.isArray(l) ? l.join(" ") : (l !== undefined && l !== null ? String(l) : "");
-      
-      const metaData = {
-        type: chart.config.type,
-        labels: chart.data.labels || [],
-        legendLabels: [],
-        xTicks: [],
-        yTicks: [],
-        canvas: { width: chart.width, height: chart.height },
-        chartArea: chart.chartArea ? { ...chart.chartArea } : null
+    const datasets = (chart.data.datasets || []).map((ds) => {
+      const bg = ds.backgroundColor;
+      const border = ds.borderColor;
+      const colorFor = (i) => {
+        if (Array.isArray(bg) && bg.length) return bg[i % bg.length] || "#4a90d9";
+        if (bg) return bg;
+        if (Array.isArray(border) && border.length) return border[i % border.length] || "#4a90d9";
+        return border || "#4a90d9";
       };
+      const data = (ds.data || []).map((v) => {
+        if (v && typeof v === "object") return Number(v.y ?? v.value ?? 0) || 0;
+        return Number(v) || 0;
+      });
+      return {
+        label: ds.label || "",
+        data,
+        colorFor,
+        borderColor: Array.isArray(border) ? border[0] : border || colorFor(0),
+      };
+    });
 
-      // Legend Extractor
-      if (original.legendDisplay !== false) {
-        if (chart.config.type === 'doughnut' || chart.config.type === 'pie') {
-           const bgColors = chart.data.datasets[0]?.backgroundColor || [];
-           metaData.legendLabels = (chart.data.labels || []).map((lbl, i) => ({
-               text: lbl,
-               fillStyle: Array.isArray(bgColors) ? bgColors[i] : bgColors
-           }));
-        } else {
-           metaData.legendLabels = chart.data.datasets.map(d => ({
-               text: d.label,
-               fillStyle: Array.isArray(d.backgroundColor) ? d.backgroundColor[0] : (d.backgroundColor || '#ccc')
-           }));
-        }
-      }
+    return { type, labels, datasets };
+  }
 
-      // X/Y Ticks Extractor mapped to precise canvas pixels
-      if (chart.scales.x) {
-          metaData.xTicks = chart.scales.x.getTicks().map((t, index) => ({
-              label: parseLabel(t.label !== undefined ? t.label : t.value),
-              x: chart.scales.x.getPixelForTick(index)
-          }));
-      }
-      if (chart.scales.y) {
-          metaData.yTicks = chart.scales.y.getTicks().map((t, index) => ({
-              label: parseLabel(t.label !== undefined ? t.label : t.value),
-              y: chart.scales.y.getPixelForTick(index)
-          }));
-      }
-
-      // 3. Make text transparent to capture a clean chart graphic
-      if (chart.options.scales?.x?.ticks) chart.options.scales.x.ticks.color = 'transparent';
-      if (chart.options.scales?.y?.ticks) chart.options.scales.y.ticks.color = 'transparent';
-      chart.update("none");
-
-      const graphicDataUrl = canvasEl.toDataURL("image/png", 1.0);
-
-      return { img: graphicDataUrl, meta: metaData };
-    } catch (e) {
-      console.warn("Clean chart graphic extraction failed:", e);
-      return null;
-    } finally {
-      // Restore live map cleanly
-      if (chart.options.plugins?.legend) chart.options.plugins.legend.display = original.legendDisplay;
-      if (chart.options.scales?.x?.ticks) chart.options.scales.x.ticks.color = original.xColor;
-      if (chart.options.scales?.y?.ticks) chart.options.scales.y.ticks.color = original.yColor;
-      
-      chart.options.maintainAspectRatio = original.aspectRatio;
-      if (container) container.style.height = original.containerHeight || "";
-      chart.resize();
-      chart.update("none");
+  function niceTicks(maxVal) {
+    if (!maxVal || maxVal <= 0) return [0, 1];
+    const rough = maxVal / 4;
+    const mag = Math.pow(10, Math.floor(Math.log10(rough)));
+    const norm = rough / mag;
+    let step;
+    if (norm < 1.5) step = 1 * mag;
+    else if (norm < 3) step = 2 * mag;
+    else if (norm < 7) step = 5 * mag;
+    else step = 10 * mag;
+    const ticks = [];
+    let t = 0;
+    while (t < maxVal + step) {
+      ticks.push(Math.round(t * 100) / 100);
+      t += step;
     }
+    return ticks;
+  }
+
+  const AXIS_FONT = `font-size="8" font-family="Helvetica, Arial, sans-serif" fill="#6e6e6e"`;
+  const LEGEND_FONT = `font-size="8" font-family="Helvetica, Arial, sans-serif" fill="#444444"`;
+
+  function buildBarChartSVG(model, width, height) {
+    const padTop = 10, padBottom = 32, padLeft = 42, padRight = 10;
+    const plotW = Math.max(1, width - padLeft - padRight);
+    const plotH = Math.max(1, height - padTop - padBottom);
+
+    const allValues = model.datasets.flatMap((ds) => ds.data);
+    const maxVal = Math.max(1, ...allValues, 0);
+    const ticks = niceTicks(maxVal);
+    const scaleMax = ticks[ticks.length - 1] || 1;
+
+    const n = model.labels.length || 1;
+    const groupW = plotW / n;
+    const dsCount = model.datasets.length || 1;
+    const barGap = 3;
+    const barW = Math.max(3, (groupW - barGap * 2) / dsCount);
+
+    let grid = "", yLabels = "";
+    ticks.forEach((t) => {
+      const yy = padTop + plotH - (t / scaleMax) * plotH;
+      grid += `<line x1="${padLeft}" y1="${yy.toFixed(1)}" x2="${width - padRight}" y2="${yy.toFixed(1)}" stroke="#e6e6e6" stroke-width="1"/>`;
+      yLabels += `<text x="${(padLeft - 6).toFixed(1)}" y="${(yy + 3).toFixed(1)}" text-anchor="end" ${AXIS_FONT}>${t}</text>`;
+    });
+
+    let bars = "", xLabels = "";
+    model.labels.forEach((label, i) => {
+      const groupX = padLeft + i * groupW;
+      model.datasets.forEach((ds, dsIdx) => {
+        const val = ds.data[i] || 0;
+        const barH = (val / scaleMax) * plotH;
+        const bx = groupX + barGap + dsIdx * barW;
+        const by = padTop + plotH - barH;
+        bars += `<rect x="${bx.toFixed(1)}" y="${by.toFixed(1)}" width="${barW.toFixed(1)}" height="${barH.toFixed(1)}" fill="${ds.colorFor(i)}"/>`;
+      });
+      const labelX = groupX + groupW / 2;
+      const truncated = label.length > 14 ? label.slice(0, 13) + "\u2026" : label;
+      xLabels += `<text x="${labelX.toFixed(1)}" y="${(padTop + plotH + 13).toFixed(1)}" text-anchor="middle" ${AXIS_FONT}>${escapeXML(truncated)}</text>`;
+    });
+
+    const axes =
+      `<line x1="${padLeft}" y1="${padTop + plotH}" x2="${width - padRight}" y2="${padTop + plotH}" stroke="#c9c9c9" stroke-width="1"/>` +
+      `<line x1="${padLeft}" y1="${padTop}" x2="${padLeft}" y2="${padTop + plotH}" stroke="#c9c9c9" stroke-width="1"/>`;
+
+    return grid + axes + bars + xLabels + yLabels;
+  }
+
+  function buildLineChartSVG(model, width, height) {
+    const padTop = 10, padBottom = 26, padLeft = 42, padRight = 14;
+    const plotW = Math.max(1, width - padLeft - padRight);
+    const plotH = Math.max(1, height - padTop - padBottom);
+
+    const allValues = model.datasets.flatMap((ds) => ds.data);
+    const maxVal = Math.max(1, ...allValues, 0);
+    const ticks = niceTicks(maxVal);
+    const scaleMax = ticks[ticks.length - 1] || 1;
+
+    const n = model.labels.length || 1;
+    const stepX = n > 1 ? plotW / (n - 1) : plotW;
+
+    let grid = "", yLabels = "";
+    ticks.forEach((t) => {
+      const yy = padTop + plotH - (t / scaleMax) * plotH;
+      grid += `<line x1="${padLeft}" y1="${yy.toFixed(1)}" x2="${width - padRight}" y2="${yy.toFixed(1)}" stroke="#e6e6e6" stroke-width="1"/>`;
+      yLabels += `<text x="${(padLeft - 6).toFixed(1)}" y="${(yy + 3).toFixed(1)}" text-anchor="end" ${AXIS_FONT}>${t}</text>`;
+    });
+
+    let xLabels = "";
+    const xLabelEvery = Math.max(1, Math.ceil(n / 8));
+    model.labels.forEach((label, i) => {
+      if (i % xLabelEvery !== 0 && i !== n - 1) return;
+      const x = padLeft + i * stepX;
+      xLabels += `<text x="${x.toFixed(1)}" y="${(padTop + plotH + 13).toFixed(1)}" text-anchor="middle" ${AXIS_FONT}>${escapeXML(label)}</text>`;
+    });
+
+    let lines = "";
+    model.datasets.forEach((ds) => {
+      const color = ds.borderColor || ds.colorFor(0);
+      const pts = ds.data
+        .map((v, i) => {
+          const x = padLeft + i * stepX;
+          const y = padTop + plotH - (v / scaleMax) * plotH;
+          return `${x.toFixed(1)},${y.toFixed(1)}`;
+        })
+        .join(" ");
+      lines += `<polyline points="${pts}" fill="none" stroke="${color}" stroke-width="2"/>`;
+      ds.data.forEach((v, i) => {
+        const x = padLeft + i * stepX;
+        const y = padTop + plotH - (v / scaleMax) * plotH;
+        lines += `<circle cx="${x.toFixed(1)}" cy="${y.toFixed(1)}" r="2.2" fill="${color}"/>`;
+      });
+    });
+
+    const axes =
+      `<line x1="${padLeft}" y1="${padTop + plotH}" x2="${width - padRight}" y2="${padTop + plotH}" stroke="#c9c9c9" stroke-width="1"/>` +
+      `<line x1="${padLeft}" y1="${padTop}" x2="${padLeft}" y2="${padTop + plotH}" stroke="#c9c9c9" stroke-width="1"/>`;
+
+    return grid + axes + lines + xLabels + yLabels;
+  }
+
+  function buildDoughnutChartSVG(model, width, height) {
+    const ds = model.datasets[0] || { data: [], colorFor: () => "#888888" };
+    const total = ds.data.reduce((a, b) => a + b, 0) || 1;
+
+    const cx = width * 0.32;
+    const cy = height / 2;
+    const r = Math.max(10, Math.min(cx, height / 2) - 8);
+    const rInner = r * 0.55;
+
+    let angle = -Math.PI / 2;
+    let slices = "";
+    const legendItems = [];
+
+    model.labels.forEach((label, i) => {
+      const val = ds.data[i] || 0;
+      const frac = val / total;
+      const sweep = frac * Math.PI * 2;
+      const startAngle = angle;
+      const endAngle = angle + sweep;
+      const color = ds.colorFor(i);
+
+      if (val > 0) {
+        const x1 = cx + r * Math.cos(startAngle), y1 = cy + r * Math.sin(startAngle);
+        const x2 = cx + r * Math.cos(endAngle), y2 = cy + r * Math.sin(endAngle);
+        const xi1 = cx + rInner * Math.cos(endAngle), yi1 = cy + rInner * Math.sin(endAngle);
+        const xi2 = cx + rInner * Math.cos(startAngle), yi2 = cy + rInner * Math.sin(startAngle);
+        const largeArc = sweep > Math.PI ? 1 : 0;
+        slices += `<path d="M ${x1.toFixed(1)} ${y1.toFixed(1)} A ${r.toFixed(1)} ${r.toFixed(1)} 0 ${largeArc} 1 ${x2.toFixed(1)} ${y2.toFixed(1)} L ${xi1.toFixed(1)} ${yi1.toFixed(1)} A ${rInner.toFixed(1)} ${rInner.toFixed(1)} 0 ${largeArc} 0 ${xi2.toFixed(1)} ${yi2.toFixed(1)} Z" fill="${color}"/>`;
+      }
+      legendItems.push({ label, color, pct: (frac * 100).toFixed(1) });
+      angle = endAngle;
+    });
+
+    let legend = "";
+    const legendX = width * 0.6;
+    let legendY = cy - (legendItems.length * 14) / 2 + 4;
+    legendItems.forEach((item) => {
+      legend += `<rect x="${legendX.toFixed(1)}" y="${(legendY - 8).toFixed(1)}" width="9" height="9" fill="${item.color}"/>`;
+      legend += `<text x="${(legendX + 13).toFixed(1)}" y="${legendY.toFixed(1)}" ${LEGEND_FONT}>${escapeXML(item.label)} (${item.pct}%)</text>`;
+      legendY += 14;
+    });
+
+    return slices + legend;
+  }
+
+  function buildLegendSVG(model, width, yCenter) {
+    if (model.datasets.length < 2) return "";
+    const items = model.datasets.map((ds, i) => ({
+      label: ds.label || `Series ${i + 1}`,
+      color: ds.borderColor || ds.colorFor(0),
+    }));
+    const totalWidth = items.reduce((acc, it) => acc + 20 + it.label.length * 5, 0);
+    let x = Math.max(0, (width - totalWidth) / 2);
+    let out = "";
+    items.forEach((it) => {
+      out += `<rect x="${x.toFixed(1)}" y="${(yCenter - 7).toFixed(1)}" width="9" height="9" fill="${it.color}"/>`;
+      out += `<text x="${(x + 13).toFixed(1)}" y="${(yCenter + 1).toFixed(1)}" ${LEGEND_FONT}>${escapeXML(it.label)}</text>`;
+      x += 20 + it.label.length * 5;
+    });
+    return out;
+  }
+
+  // Reads a live Chart.js canvas and produces an SVG string that mirrors it.
+  function buildChartSVG(canvasEl, width, height) {
+    const chart = getChartInstance(canvasEl);
+    if (!chart) return null;
+    const model = extractChartModel(chart);
+    if (!model) return null;
+
+    const isPie = model.type === "doughnut" || model.type === "pie";
+    const needsLegend = !isPie && model.datasets.length > 1;
+    const legendHeight = needsLegend ? 16 : 0;
+    const plotHeight = height - legendHeight;
+
+    let body;
+    if (isPie) {
+      body = buildDoughnutChartSVG(model, width, height);
+    } else if (model.type === "line") {
+      body = buildLineChartSVG(model, width, plotHeight);
+    } else {
+      body = buildBarChartSVG(model, width, plotHeight);
+    }
+
+    if (needsLegend) {
+      body += buildLegendSVG(model, width, height - 5);
+    }
+
+    return (
+      `<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" viewBox="0 0 ${width} ${height}">` +
+      `<rect x="0" y="0" width="${width}" height="${height}" fill="#ffffff"/>` +
+      body +
+      `</svg>`
+    );
   }
 
   // --------------------------------------------------------------------
-  // Capture Map (html2canvas)
+  // Capture Map (html2canvas) - unchanged; the map is a Leaflet tile
+  // layer, not a chart, so it's still captured as an image.
   // --------------------------------------------------------------------
   async function captureMap(mapEl) {
     if (!mapEl) return null;
@@ -233,11 +407,11 @@
         logging: false,
         onclone: (clonedDoc) => {
           const hidden = [".leaflet-control-zoom", ".map-info-panel", ".leaflet-control-attribution"];
-          hidden.forEach(s => {
+          hidden.forEach((s) => {
             const el = clonedDoc.querySelector(s);
             if (el) el.style.setProperty("display", "none", "important");
           });
-        }
+        },
       });
 
       if (mapInstance && originalCenter) mapInstance.setView(originalCenter, originalZoom, { animate: false });
@@ -246,6 +420,33 @@
       if (mapInstance && originalCenter) mapInstance.setView(originalCenter, originalZoom, { animate: false });
       return null;
     }
+  }
+
+  // --------------------------------------------------------------------
+  // svg2pdf.js loader - needed so jsPDF gets a doc.svg() method that
+  // draws SVG content as true vector paths/text in the PDF.
+  // --------------------------------------------------------------------
+  function ensureSvg2pdfLoaded() {
+    return new Promise((resolve, reject) => {
+      const hasSvgMethod =
+        window.jspdf && window.jspdf.jsPDF && typeof window.jspdf.jsPDF.API.svg === "function";
+      if (hasSvgMethod) {
+        resolve();
+        return;
+      }
+      const existing = document.querySelector('script[data-svg2pdf-loader="true"]');
+      if (existing) {
+        existing.addEventListener("load", () => resolve());
+        existing.addEventListener("error", () => reject(new Error("svg2pdf.js failed to load")));
+        return;
+      }
+      const script = document.createElement("script");
+      script.src = SVG2PDF_URL;
+      script.dataset.svg2pdfLoader = "true";
+      script.onload = () => resolve();
+      script.onerror = () => reject(new Error("svg2pdf.js failed to load"));
+      document.head.appendChild(script);
+    });
   }
 
   // --------------------------------------------------------------------
@@ -276,7 +477,7 @@
       const generatedAt = new Date().toLocaleString("en-GB", { dateStyle: "long", timeStyle: "short" });
 
       // Page Top Accent line
-      doc.setFillColor(26, 58, 92); 
+      doc.setFillColor(26, 58, 92);
       doc.rect(0, 0, pageWidth, 8, "F");
       y += 15;
 
@@ -296,9 +497,9 @@
       doc.setTextColor(136, 136, 136);
       doc.text(`Period: ${formatPeriod(state)}`, margin, y);
       doc.text(`Generated: ${generatedAt}`, pageWidth - margin - 150, y);
-      
+
       y += 12;
-      doc.setDrawColor(224, 224, 224); 
+      doc.setDrawColor(224, 224, 224);
       doc.setLineWidth(1);
       doc.line(margin, y, pageWidth - margin, y);
       y += 25;
@@ -313,7 +514,7 @@
       const topRaion = topEntry(state.raionCounts);
       const topInfra = topEntry(state.infraCounts);
       const topExtent = topEntry(state.extentCounts);
-      const colWidth = (pageWidth - (margin * 2) - 40) / 2; 
+      const colWidth = (pageWidth - margin * 2 - 40) / 2;
 
       doc.setFont(font, "normal");
       doc.setFontSize(9.5);
@@ -321,37 +522,47 @@
       const leftRaw = [
         `Oblast coverage: ${state.oblastLabel}`,
         `Raion coverage: ${state.raionLabel}`,
-        `Affected Raions: ${Object.keys(state.raionCounts).length || "N/A"}`
+        `Affected Raions: ${Object.keys(state.raionCounts).length || "N/A"}`,
       ];
       const rightRaw = [
         topRaion ? `Most affected: ${topRaion[0]} (${topRaion[1].toLocaleString()})` : "Most affected: N/A",
-        topInfra ? `Most damaged infrastructure: ${topInfra[0]} (${topInfra[1].toLocaleString()})` : "Most damaged infrastructure: N/A",
-        topExtent ? `Most common level of damage: ${topExtent[0]} (${topExtent[1].toLocaleString()})` : "Most common level of damage: N/A"
+        topInfra
+          ? `Most damaged infrastructure: ${topInfra[0]} (${topInfra[1].toLocaleString()})`
+          : "Most damaged infrastructure: N/A",
+        topExtent
+          ? `Most common level of damage: ${topExtent[0]} (${topExtent[1].toLocaleString()})`
+          : "Most common level of damage: N/A",
       ];
 
-      const leftWrapped = leftRaw.map(str => doc.splitTextToSize(str, colWidth));
-      const rightWrapped = rightRaw.map(str => doc.splitTextToSize(str, colWidth));
-      const leftColHeight = leftWrapped.reduce((acc, lines) => acc + (lines.length * 13) + 6, 0);
-      const rightColHeight = rightWrapped.reduce((acc, lines) => acc + (lines.length * 13) + 6, 0);
+      const leftWrapped = leftRaw.map((str) => doc.splitTextToSize(str, colWidth));
+      const rightWrapped = rightRaw.map((str) => doc.splitTextToSize(str, colWidth));
+      const leftColHeight = leftWrapped.reduce((acc, lines) => acc + lines.length * 13 + 6, 0);
+      const rightColHeight = rightWrapped.reduce((acc, lines) => acc + lines.length * 13 + 6, 0);
       const statBoxHeight = Math.max(leftColHeight, rightColHeight) + 45;
 
       // Draw Box Layout
-      doc.setFillColor(240, 244, 248); 
-      doc.roundedRect(margin, y, pageWidth - (margin * 2), statBoxHeight, 6, 6, "F");
+      doc.setFillColor(240, 244, 248);
+      doc.roundedRect(margin, y, pageWidth - margin * 2, statBoxHeight, 6, 6, "F");
       doc.setFillColor(26, 58, 92);
       doc.rect(margin, y, 4, statBoxHeight, "F");
 
       doc.setTextColor(68, 68, 68);
       let currentLeftY = y + 20;
-      leftWrapped.forEach(lines => {
-        lines.forEach(line => { doc.text(line, margin + 20, currentLeftY); currentLeftY += 13; });
+      leftWrapped.forEach((lines) => {
+        lines.forEach((line) => {
+          doc.text(line, margin + 20, currentLeftY);
+          currentLeftY += 13;
+        });
         currentLeftY += 6;
       });
 
       let currentRightY = y + 20;
       const rightColX = pageWidth / 2 + 10;
-      rightWrapped.forEach(lines => {
-        lines.forEach(line => { doc.text(line, rightColX, currentRightY); currentRightY += 13; });
+      rightWrapped.forEach((lines) => {
+        lines.forEach((line) => {
+          doc.text(line, rightColX, currentRightY);
+          currentRightY += 13;
+        });
         currentRightY += 6;
       });
 
@@ -375,19 +586,38 @@
         y += 25;
       }
 
-      // --- PAGE 2: CHARTS WITH NATIVE SELECTABLE PDF TEXTS ---
+      // --- PAGE 2: CHARTS AS NATIVE VECTOR SVG, SAME LAYOUT AS THE WEBPAGE ---
       doc.addPage();
       y = margin + 15;
 
-      // 1. Timeline Chart
-      const timelineCanvas = document.getElementById(IDS.charts.timeline.id);
-      const timelineData = await captureChartDataAndCleanGraphic(timelineCanvas, 200);
-
-      if (timelineData) {
-        y = addVectorLabeledChart(doc, font, IDS.charts.timeline.label, timelineData, y, margin, pageWidth, pageHeight, pageWidth - margin * 2, 200);
+      let svg2pdfReady = true;
+      try {
+        await ensureSvg2pdfLoaded();
+      } catch (e) {
+        console.warn(e);
+        svg2pdfReady = false;
       }
 
-      // Bottom Grid Column Charts Row
+      if (!svg2pdfReady) {
+        doc.setFont(font, "italic");
+        doc.setFontSize(9);
+        doc.setTextColor(192, 57, 43);
+        doc.text("(Charts unavailable - SVG rendering library failed to load)", margin, y);
+        y += 20;
+      }
+
+      // 1. Timeline Chart (full width, matches the page's top chart)
+      const timelineCanvas = document.getElementById(IDS.charts.timeline.id);
+      const timelineSVG = svg2pdfReady ? buildChartSVG(timelineCanvas, pageWidth - margin * 2, 200) : null;
+      if (timelineSVG) {
+        y = await addSVGChart(
+          doc, font, IDS.charts.timeline.label, timelineSVG,
+          y, margin, pageWidth, pageHeight, pageWidth - margin * 2, 200
+        );
+      }
+
+      // Bottom grid: two charts side by side, third one centered below -
+      // same 2-then-1 grid used on the webpage's chart panel.
       const gridGap = 20;
       const colChartWidth = (pageWidth - margin * 2 - gridGap) / 2;
       const smallChartHeight = 220;
@@ -396,28 +626,45 @@
       const infraCanvas = document.getElementById(IDS.charts.infra.id);
       const extentCanvas = document.getElementById(IDS.charts.extent.id);
 
-      const topRaionsData = await captureChartDataAndCleanGraphic(topRaionsCanvas, smallChartHeight);
-      const infraData = await captureChartDataAndCleanGraphic(infraCanvas, smallChartHeight);
-      const extentData = await captureChartDataAndCleanGraphic(extentCanvas, smallChartHeight);
+      const topRaionsSVG = svg2pdfReady ? buildChartSVG(topRaionsCanvas, colChartWidth, smallChartHeight) : null;
+      const infraSVG = svg2pdfReady ? buildChartSVG(infraCanvas, colChartWidth, smallChartHeight) : null;
+      const extentSVG = svg2pdfReady ? buildChartSVG(extentCanvas, colChartWidth, smallChartHeight) : null;
+
+      // Make sure the row's two charts land on the same page together.
+      if (topRaionsSVG || infraSVG) {
+        if (y + smallChartHeight + 40 > pageHeight - margin) {
+          doc.addPage();
+          y = margin + 15;
+        }
+      }
 
       let rowYStart = y;
       let maxRowHeight = 0;
 
-      if (topRaionsData) {
-        const nextY = addVectorLabeledChart(doc, font, IDS.charts.topRaions.label, topRaionsData, rowYStart, margin, pageWidth, pageHeight, colChartWidth, smallChartHeight, margin);
+      if (topRaionsSVG) {
+        const nextY = await addSVGChart(
+          doc, font, IDS.charts.topRaions.label, topRaionsSVG,
+          rowYStart, margin, pageWidth, pageHeight, colChartWidth, smallChartHeight, margin
+        );
         maxRowHeight = Math.max(maxRowHeight, nextY - rowYStart);
       }
 
-      if (infraData) {
-        const nextY = addVectorLabeledChart(doc, font, IDS.charts.infra.label, infraData, rowYStart, margin, pageWidth, pageHeight, colChartWidth, smallChartHeight, margin + colChartWidth + gridGap);
+      if (infraSVG) {
+        const nextY = await addSVGChart(
+          doc, font, IDS.charts.infra.label, infraSVG,
+          rowYStart, margin, pageWidth, pageHeight, colChartWidth, smallChartHeight, margin + colChartWidth + gridGap
+        );
         maxRowHeight = Math.max(maxRowHeight, nextY - rowYStart);
       }
 
       y = rowYStart + (maxRowHeight > 0 ? maxRowHeight : 0);
 
-      if (extentData) {
+      if (extentSVG) {
         const centerX = (pageWidth - colChartWidth) / 2;
-        y = addVectorLabeledChart(doc, font, IDS.charts.extent.label, extentData, y, margin, pageWidth, pageHeight, colChartWidth, smallChartHeight, centerX);
+        y = await addSVGChart(
+          doc, font, IDS.charts.extent.label, extentSVG,
+          y, margin, pageWidth, pageHeight, colChartWidth, smallChartHeight, centerX
+        );
       }
 
       // Footer stamp
@@ -427,7 +674,7 @@
         doc.setFont(font, "normal");
         doc.setFontSize(8);
         doc.setTextColor(136, 136, 136);
-        doc.text("E-PACC Ukraine Project - Sourced from ACAPS. Built using Vector PDF Text standards.", margin, pageHeight - 20);
+        doc.text("E-PACC Ukraine Project - Sourced from ACAPS. Charts rendered as vector SVG.", margin, pageHeight - 20);
         doc.text(`Page ${i} of ${pageCount}`, pageWidth - margin - 45, pageHeight - 20);
       }
 
@@ -445,123 +692,38 @@
   }
 
   // ------------------------------------------------------------------
-  // Native PDF Engine (Reconstructs Texts at Exact Pixel Coords)
+  // Embeds a built SVG chart string into the PDF at (xPos, y) as true
+  // vector content via svg2pdf.js (doc.svg()).
   // ------------------------------------------------------------------
-  function addVectorLabeledChart(doc, font, heading, chartPayload, y, margin, pageWidth, pageHeight, targetWidth, targetHeight, explicitX = null) {
+  async function addSVGChart(doc, font, heading, svgString, y, margin, pageWidth, pageHeight, targetWidth, targetHeight, explicitX = null) {
     const xPos = explicitX !== null ? explicitX : margin;
-    const requiredTotalHeight = targetHeight + 65; // Headings + chart + legends margin
+    const requiredHeight = targetHeight + 40;
 
-    if (y + requiredTotalHeight > pageHeight - margin) {
+    if (y + requiredHeight > pageHeight - margin) {
       doc.addPage();
       y = margin + 15;
     }
 
-    // 1. Draw Heading Vector Text
     doc.setFont(font, "bold");
     doc.setFontSize(10);
     doc.setTextColor(26, 58, 92);
     doc.text(heading, xPos, y);
     y += 14;
 
-    // 2. Plot Raw Blank Shape Graphic
-    doc.addImage(chartPayload.img, "PNG", xPos, y, targetWidth, targetHeight);
-
-    // 3. Render Precise Axis Texts dynamically as clean vector text labels
-    const FONT_SIZE = 9; // <--- Hard requirement for 9pt text implemented here
-    doc.setFont(font, "normal");
-    doc.setFontSize(FONT_SIZE);
-    doc.setTextColor(110, 110, 110);
-
-    const meta = chartPayload.meta;
-    const ratioX = targetWidth / meta.canvas.width;
-    const ratioY = targetHeight / meta.canvas.height;
-
-    // X-Axis Vector Ticks
-    if (meta.xTicks && meta.xTicks.length > 0) {
-        // If data labels are dense, angle them
-        const angle = meta.xTicks.length > 8 ? -45 : 0; 
-        
-        meta.xTicks.forEach(tick => {
-            const tickX = xPos + (tick.x * ratioX);
-<<<<<<< HEAD
-<<<<<<< HEAD
-            const tickY = y + (meta.chartArea.bottom * ratioY) + 12; // Standard padding beneath axis
-            
-            // Protect borders
-            if (tickX >= xPos && tickX <= xPos + targetWidth) {
-                if (angle !== 0) {
-                    doc.text(tick.label, tickX, tickY, { align: "right", angle: angle });
-                } else {
-                    doc.text(tick.label, tickX, tickY, { align: "center" });
-                }
-=======
-            const tickY = y + (meta.chartArea.bottom * ratioY) + 12; 
-            
-            if (tickX >= xPos - 5 && tickX <= xPos + targetWidth + 5) {
-                doc.text(tick.label, tickX, tickY, { align: angle !== 0 ? "right" : "center", angle: angle });
->>>>>>> parent of c39cc56 (Update report-generator.js)
-=======
-            const tickY = y + (meta.chartArea.bottom * ratioY) + 12; 
-            
-            if (tickX >= xPos - 5 && tickX <= xPos + targetWidth + 5) {
-                doc.text(tick.label, tickX, tickY, { align: angle !== 0 ? "right" : "center", angle: angle });
->>>>>>> parent of c39cc56 (Update report-generator.js)
-            }
-        });
+    try {
+      const parser = new DOMParser();
+      const svgDoc = parser.parseFromString(svgString, "image/svg+xml");
+      const svgEl = svgDoc.documentElement;
+      await doc.svg(svgEl, { x: xPos, y: y, width: targetWidth, height: targetHeight });
+    } catch (e) {
+      console.warn("SVG chart embed failed:", e);
+      doc.setFont(font, "italic");
+      doc.setFontSize(9);
+      doc.setTextColor(192, 57, 43);
+      doc.text("(Chart unavailable)", xPos, y + 10);
     }
 
-    // Y-Axis Vector Ticks
-    if (meta.yTicks && meta.yTicks.length > 0) {
-        meta.yTicks.forEach(tick => {
-<<<<<<< HEAD
-<<<<<<< HEAD
-            const tickY = y + (tick.y * ratioY) + 3; // +3 to align to vertical middle
-            const tickX = xPos + (meta.chartArea.left * ratioX) - 5; // offset slightly off the axis line
-            
-            if (tickY >= y && tickY <= y + targetHeight) {
-=======
-            const tickY = y + (tick.y * ratioY) + 3; 
-            const tickX = xPos + (meta.chartArea.left * ratioX) - 5; 
-            
-            if (tickY >= y - 10 && tickY <= y + targetHeight + 10) {
->>>>>>> parent of c39cc56 (Update report-generator.js)
-=======
-            const tickY = y + (tick.y * ratioY) + 3; 
-            const tickX = xPos + (meta.chartArea.left * ratioX) - 5; 
-            
-            if (tickY >= y - 10 && tickY <= y + targetHeight + 10) {
->>>>>>> parent of c39cc56 (Update report-generator.js)
-                doc.text(tick.label, tickX, tickY, { align: "right" });
-            }
-        });
-    }
-
-    // 4. Render Manual Interactive Legend
-    if (meta.legendLabels && meta.legendLabels.length > 0) {
-        let totalLegendWidth = 0;
-        meta.legendLabels.forEach(leg => {
-            totalLegendWidth += 12 + 6 + doc.getTextWidth(leg.text) + 15;
-        });
-        totalLegendWidth -= 15;
-        
-        let legendX = xPos + (targetWidth / 2) - (totalLegendWidth / 2);
-        if (legendX < xPos) legendX = xPos;
-        const legendY = y + targetHeight + 30;
-
-        meta.legendLabels.forEach(leg => {
-            const colorStr = typeof leg.fillStyle === 'string' ? leg.fillStyle : '#888888';
-            
-            doc.setFillColor(colorStr);
-            doc.rect(legendX, legendY - 7, 9, 9, "F");
-            
-            doc.setTextColor(80, 80, 80);
-            doc.text(leg.text, legendX + 13, legendY + 1);
-            
-            legendX += 13 + doc.getTextWidth(leg.text) + 15;
-        });
-    }
-
-    return y + targetHeight + 50;
+    return y + targetHeight + 30;
   }
 
   function addImageWithHeading(doc, font, heading, imgDataUrl, y, margin, pageWidth, pageHeight, targetWidth, explicitX = null) {
