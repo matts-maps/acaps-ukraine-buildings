@@ -7,11 +7,15 @@
    1. Add the hook in raion_analysis.js so window.__mapReportState is populated 
       with the real numbers behind the current view.
 
-   2. Add these two CDN libraries to raion_analysis.html, then this file,
-      all AFTER the existing Leaflet / Chart.js / raion_analysis.js scripts:
+   2. Add these CDN libraries to raion_analysis.html, then this file, all
+      AFTER the existing Leaflet / Chart.js / raion_analysis.js scripts.
+      svg2pdf.js embeds the vector SVG charts built below directly into the
+      PDF (no rasterization); html2canvas is still used only for the
+      Leaflet basemap capture, which has no vector equivalent:
 
         <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" defer></script>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
+        <script src="https://cdn.jsdelivr.net/npm/svg2pdf.js@2/dist/svg2pdf.umd.min.js" defer></script>
         <script src="{{ '/assets/js/report-generator.js' | relative_url }}" defer></script>
 
    3. The button is injected automatically into #map-controls, right after
@@ -74,6 +78,8 @@
         raionCounts: state.raionCounts || {},
         infraCounts: state.infraCounts || {},
         extentCounts: state.extentCounts || {},
+        chartSeries: state.chartSeries || null,
+        activeFilter: state.activeFilter || null,
       };
     }
 
@@ -89,6 +95,8 @@
       raionCounts: {},
       infraCounts: {},
       extentCounts: {},
+      chartSeries: null,
+      activeFilter: null,
     };
   }
 
@@ -108,173 +116,270 @@
   }
 
   // --------------------------------------------------------------------
-  // 2. Capture helpers (Includes Synchronized Alignment for Overlays)
+  // 2. Vector chart builders
   // --------------------------------------------------------------------
-  async function captureCanvas(canvasEl) {
-    if (!canvasEl) return null;
+  // The four summary charts are rebuilt here as real <svg> markup (not
+  // captured off the on-screen <canvas>), then embedded into the PDF as
+  // vector graphics via svg2pdf.js. This keeps the report crisp at any
+  // zoom level, consistent with the vector text/lines jsPDF already draws
+  // elsewhere in the document, instead of dropping in a rasterized PNG
+  // snapshot of each chart.
+  const PDF_CHART_FONT = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+  const SVG_NS = "http://www.w3.org/2000/svg";
+
+  function svgEl(tag, attrs) {
+    const el = document.createElementNS(SVG_NS, tag);
+    Object.entries(attrs || {}).forEach(([k, v]) => {
+      if (v !== undefined && v !== null) el.setAttribute(k, v);
+    });
+    return el;
+  }
+
+  function newSvgRoot(width, height) {
+    return svgEl("svg", { xmlns: SVG_NS, width, height, viewBox: `0 0 ${width} ${height}` });
+  }
+
+  // Horizontal bar chart (Top Raions / Infra Type): category label on the
+  // left, bar, and its value just past the bar end - no value axis.
+  function buildHorizontalBarSVG(labels, values, width, height, highlightSet) {
+    const svg = newSvgRoot(width, height);
+    if (!labels.length) return svg;
+
+    const max = Math.max(1, ...values);
+    const rowH = height / labels.length;
+    const barH = Math.min(20, rowH * 0.55);
+    const labelColW = Math.min(width * 0.34, 150);
+    const valueColW = 50;
+    const barAreaW = Math.max(20, width - labelColW - valueColW - 10);
+
+    labels.forEach((label, i) => {
+      const cy = rowH * i + rowH / 2;
+      const barW = Math.max((values[i] / max) * barAreaW, 1);
+      const isHighlighted = Boolean(highlightSet && highlightSet.has(label));
+
+      const catText = svgEl("text", {
+        x: labelColW - 8, y: cy, "text-anchor": "end", "dominant-baseline": "middle",
+        "font-size": "10.5", "font-family": PDF_CHART_FONT, fill: "#444"
+      });
+      catText.textContent = label;
+      svg.appendChild(catText);
+
+      svg.appendChild(svgEl("rect", {
+        x: labelColW, y: cy - barH / 2, width: barW, height: barH, rx: 4, ry: 4,
+        fill: isHighlighted ? "#d94801" : "#1a3a5c"
+      }));
+
+      const valText = svgEl("text", {
+        x: labelColW + barW + 8, y: cy, "text-anchor": "start", "dominant-baseline": "middle",
+        "font-size": "10.5", "font-family": PDF_CHART_FONT, "font-weight": "600", fill: "#1a3a5c"
+      });
+      valText.textContent = values[i].toLocaleString();
+      svg.appendChild(valText);
+    });
+
+    return svg;
+  }
+
+  // Vertical column chart (Timeline): value label above each column,
+  // period label below - no value axis.
+  function buildColumnChartSVG(labels, values, width, height) {
+    const svg = newSvgRoot(width, height);
+    if (!labels.length) return svg;
+
+    const max = Math.max(1, ...values);
+    const topPad = 22;
+    const bottomPad = 34;
+    const plotH = height - topPad - bottomPad;
+    const colW = width / labels.length;
+    const barW = Math.min(26, colW * 0.6);
+    const rotateLabels = labels.length > 10;
+
+    labels.forEach((label, i) => {
+      const cx = colW * i + colW / 2;
+      const value = values[i];
+
+      if (value > 0) {
+        const barH = Math.max((value / max) * plotH, 1);
+        const barY = topPad + (plotH - barH);
+        svg.appendChild(svgEl("rect", {
+          x: cx - barW / 2, y: barY, width: barW, height: barH, rx: 3, ry: 3, fill: "#1a3a5c"
+        }));
+
+        const valText = svgEl("text", {
+          x: cx, y: barY - 6, "text-anchor": "middle",
+          "font-size": "8.5", "font-family": PDF_CHART_FONT, "font-weight": "600", fill: "#1a3a5c"
+        });
+        valText.textContent = value.toLocaleString();
+        svg.appendChild(valText);
+      }
+
+      const lblY = height - bottomPad + 14;
+      const lbl = svgEl("text", {
+        x: cx, y: lblY, "text-anchor": rotateLabels ? "end" : "middle",
+        "font-size": "8", "font-family": PDF_CHART_FONT, fill: "#666",
+        transform: rotateLabels ? `rotate(-40 ${cx} ${lblY})` : undefined
+      });
+      lbl.textContent = label;
+      svg.appendChild(lbl);
+    });
+
+    return svg;
+  }
+
+  function polarPoint(cx, cy, r, angle) {
+    return { x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle) };
+  }
+
+  function donutSlicePath(cx, cy, innerR, outerR, startAngle, endAngle) {
+    const largeArc = endAngle - startAngle > Math.PI ? 1 : 0;
+    const p1 = polarPoint(cx, cy, outerR, startAngle);
+    const p2 = polarPoint(cx, cy, outerR, endAngle);
+    const p3 = polarPoint(cx, cy, innerR, endAngle);
+    const p4 = polarPoint(cx, cy, innerR, startAngle);
+    return `M ${p1.x} ${p1.y} A ${outerR} ${outerR} 0 ${largeArc} 1 ${p2.x} ${p2.y} ` +
+      `L ${p3.x} ${p3.y} A ${innerR} ${innerR} 0 ${largeArc} 0 ${p4.x} ${p4.y} Z`;
+  }
+
+  // Doughnut chart (Level of Damage): slices with outside labels + leader
+  // lines, mirroring the on-page chart's outsideDoughnutLabels plugin.
+  function buildDonutSVG(labels, values, width, height, palette) {
+    const svg = newSvgRoot(width, height);
+    const total = values.reduce((a, b) => a + b, 0);
+    if (!total) return svg;
+
+    const cx = width / 2;
+    const cy = height / 2;
+    const outerR = Math.max(30, Math.min(width, height) / 2 - 62);
+    const innerR = outerR * 0.55;
+
+    let angle = -Math.PI / 2;
+    labels.forEach((label, i) => {
+      const value = values[i];
+      const frac = value / total;
+      const startAngle = angle;
+      const endAngle = angle + frac * Math.PI * 2;
+      angle = endAngle;
+      if (!value) return;
+
+      svg.appendChild(svgEl("path", {
+        d: donutSlicePath(cx, cy, innerR, outerR, startAngle, endAngle),
+        fill: palette[i % palette.length]
+      }));
+
+      const mid = (startAngle + endAngle) / 2;
+      const isRight = Math.cos(mid) >= 0;
+      const lineStart = polarPoint(cx, cy, outerR + 2, mid);
+      const bend = polarPoint(cx, cy, outerR + 16, mid);
+      const textX = bend.x + (isRight ? 14 : -14);
+
+      svg.appendChild(svgEl("polyline", {
+        points: `${lineStart.x},${lineStart.y} ${bend.x},${bend.y} ${textX + (isRight ? -4 : 4)},${bend.y}`,
+        fill: "none", stroke: "#999", "stroke-width": "1"
+      }));
+
+      const pct = Math.round(frac * 100);
+      const text = svgEl("text", {
+        x: textX, y: bend.y, "text-anchor": isRight ? "start" : "end", "dominant-baseline": "middle",
+        "font-size": "9.5", "font-family": PDF_CHART_FONT, fill: "#333"
+      });
+      text.textContent = `${label}: ${value.toLocaleString()} (${pct}%)`;
+      svg.appendChild(text);
+    });
+
+    return svg;
+  }
+
+  // Rasterizes an <svg> element as a fallback, only used if svg2pdf.js
+  // failed to load - keeps report generation working end-to-end even
+  // without the vector-embedding library, at the cost of that one chart
+  // no longer being vector in the output.
+  function svgToPngDataUrl(svgElement, width, height, scale = 3) {
+    return new Promise((resolve, reject) => {
+      const svgString = new XMLSerializer().serializeToString(svgElement);
+      const blob = new Blob([svgString], { type: "image/svg+xml;charset=utf-8" });
+      const url = URL.createObjectURL(blob);
+      const img = new Image();
+      img.onload = () => {
+        const canvas = document.createElement("canvas");
+        canvas.width = width * scale;
+        canvas.height = height * scale;
+        const ctx = canvas.getContext("2d");
+        ctx.scale(scale, scale);
+        ctx.drawImage(img, 0, 0, width, height);
+        URL.revokeObjectURL(url);
+        resolve(canvas.toDataURL("image/png", 1.0));
+      };
+      img.onerror = (e) => {
+        URL.revokeObjectURL(url);
+        reject(e);
+      };
+      img.src = url;
+    });
+  }
+
+  // Embeds an SVG chart into the PDF as vector paths via svg2pdf.js. Falls
+  // back to a rasterized snapshot only if that library isn't available, so
+  // a CDN hiccup degrades the output rather than breaking the report.
+  async function embedSvgChart(doc, svgElement, x, y, width, height) {
+    svgElement.style.position = "absolute";
+    svgElement.style.left = "-99999px";
+    svgElement.style.top = "0";
+    document.body.appendChild(svgElement);
+
     try {
-      return canvasEl.toDataURL("image/png", 1.0);
+      if (typeof window.svg2pdf === "function") {
+        try {
+          await window.svg2pdf(svgElement, doc, { x, y, width, height });
+          return true;
+        } catch (e) {
+          console.warn("svg2pdf embed failed, falling back to a rasterized snapshot:", e);
+        }
+      } else {
+        console.warn("svg2pdf.js not loaded - falling back to a rasterized snapshot of the chart.");
+      }
+      const dataUrl = await svgToPngDataUrl(svgElement, width, height);
+      doc.addImage(dataUrl, "PNG", x, y, width, height);
+      return true;
     } catch (e) {
-      console.warn("Chart canvas capture failed:", e);
-      return null;
+      console.error("Chart embed failed entirely:", e);
+      return false;
+    } finally {
+      document.body.removeChild(svgElement);
     }
   }
 
-  // ------------------------------------------------------------------
-  // The "Level of Damage" donut's canvas normally renders with its
-  // legend in a row underneath the ring, which eats vertical space and
-  // leaves the ring itself much smaller than the bar-chart canvases
-  // beside it — simply scaling that (mostly whitespace) canvas up in
-  // the PDF doesn't make the ring bigger, since the ring only occupies
-  // a small portion of the canvas to begin with.
-  //
-  // Fix: use Chart.js's public Chart.getChart(canvas) API to grab each
-  // live chart instance and force it to a fixed size (300px tall) and
-  // fixed label font size (9.5px), rather than trying to infer a size
-  // from another chart on the page. This is applied uniformly to Top
-  // Raions, Infra Type, and Level of Damage so all three always match.
-  // ------------------------------------------------------------------
-  // Forces a live Chart.js chart to redraw at an exact pixel height and
-  // label/legend font size, captures that frame, then puts everything
-  // back exactly as it was. Used to make the Top Raions, Infra Type,
-  // and Level of Damage charts all render at one consistent size in
-  // the PDF (300px tall, 9.5px labels), regardless of how each is
-  // configured on the live page.
-  //
-  // IMPORTANT: only ever assign scalar leaf values below (position,
-  // align, size, maintainAspectRatio, style.height) - never replace a
-  // whole nested option object (e.g. `legendOpts.labels = {...}`).
-  // Chart.js v4's options are live merged proxies; overwriting a
-  // sub-object wholesale breaks that proxy's internal resolver and
-  // sends it into a get/set loop ("too much recursion").
-  // ------------------------------------------------------------------
-  async function captureChartAtSize(canvasEl, heightPx, fontSizePx, extraOptions = {}) {
-    if (!canvasEl) return null;
+  // Draws a heading, paginating if needed, then embeds the SVG chart in a
+  // fixed-size box beneath it. Mirrors addImageWithHeading's layout logic
+  // (see below) but for vector SVG content instead of a raster image.
+  async function addSvgWithHeading(doc, heading, svgElement, y, margin, pageWidth, pageHeight, targetWidth, explicitX, boxHeight) {
+    const xPos = explicitX !== null && explicitX !== undefined ? explicitX : margin;
 
-    if (typeof Chart === "undefined" || typeof Chart.getChart !== "function") {
-      // Chart.js not exposed globally as expected - fall back to a plain
-      // capture rather than failing the whole report.
-      return captureCanvas(canvasEl);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(10);
+    doc.setTextColor(26, 58, 92);
+    const headingLines = doc.splitTextToSize(heading, targetWidth);
+    const headingHeight = headingLines.length * 13;
+
+    if (y + boxHeight + headingHeight + 20 > pageHeight - margin) {
+      doc.addPage();
+      y = margin + 15;
     }
 
-    const chart = Chart.getChart(canvasEl);
-    if (!chart) return captureCanvas(canvasEl);
+    headingLines.forEach(line => {
+      doc.text(line, xPos, y);
+      y += 13;
+    });
+    y += 6;
 
-    const container = canvasEl.parentElement;
-    const currentWidth = canvasEl.getBoundingClientRect().width;
-    const legendOpts = chart.options?.plugins?.legend;
-    const xTicks = chart.options?.scales?.x?.ticks;
-    const yTicks = chart.options?.scales?.y?.ticks;
+    await embedSvgChart(doc, svgElement, xPos, y, targetWidth, boxHeight);
+    return y + boxHeight + 30;
+  }
 
-    const original = {
-      maintainAspectRatio: chart.options.maintainAspectRatio,
-      containerHeight: container ? container.style.height : null,
-      legendPosition: legendOpts ? legendOpts.position : undefined,
-      legendAlign: legendOpts ? legendOpts.align : undefined,
-      legendFontSize: legendOpts?.labels?.font?.size,
-      legendFontExisted: Boolean(legendOpts?.labels?.font),
-      legendBoxWidth: legendOpts?.labels?.boxWidth,
-      legendBoxHeight: legendOpts?.labels?.boxHeight,
-      xTickFontSize: xTicks?.font?.size,
-      xTickFontExisted: Boolean(xTicks?.font),
-      yTickFontSize: yTicks?.font?.size,
-      yTickFontExisted: Boolean(yTicks?.font),
-    };
-
-    // Sets `.size` on holder.font, creating a plain `{ size }` object only
-    // when holder.font is genuinely missing. This is safe because we're
-    // initializing an empty slot, not reassigning an object that Chart.js
-    // already manages internally - THAT (e.g. `legendOpts.labels = {...}`)
-    // is what caused the earlier "too much recursion" bug.
-    function setFontSize(holder, size) {
-      if (!holder) return;
-      if (holder.font && typeof holder.font === "object") {
-        holder.font.size = size;
-      } else {
-        holder.font = { size };
-      }
-    }
-
-    try {
-      if (extraOptions.legendPosition && legendOpts) {
-        legendOpts.position = extraOptions.legendPosition;
-        legendOpts.align = extraOptions.legendAlign || "center";
-      }
-
-      if (fontSizePx) {
-        if (legendOpts?.labels) {
-          setFontSize(legendOpts.labels, fontSizePx);
-          // Scale the legend's color swatch to match the text size too,
-          // so the whole legend row reads at a consistent size rather
-          // than just the label text changing.
-          legendOpts.labels.boxWidth = fontSizePx;
-          legendOpts.labels.boxHeight = fontSizePx;
-        }
-        setFontSize(xTicks, fontSizePx);
-        setFontSize(yTicks, fontSizePx);
-      }
-
-      // maintainAspectRatio (true by default) makes Chart.js clamp the
-      // canvas to a fixed width:height ratio regardless of how big its
-      // container actually is - disable it so the explicit resize below
-      // actually takes effect.
-      chart.options.maintainAspectRatio = false;
-
-      if (container && heightPx) {
-        container.style.height = `${heightPx}px`;
-      }
-
-      // Pass explicit pixel dimensions rather than relying on Chart.js
-      // to auto-detect the container size, so the chart is guaranteed
-      // to redraw at this exact height.
-      if (heightPx && currentWidth) {
-        chart.resize(currentWidth, heightPx);
-      } else {
-        chart.resize();
-      }
-      chart.update("none");
-
-      return canvasEl.toDataURL("image/png", 1.0);
-    } catch (e) {
-      console.warn("Chart capture failed:", e);
-      return null;
-    } finally {
-      if (legendOpts) {
-        legendOpts.position = original.legendPosition;
-        legendOpts.align = original.legendAlign;
-        if (legendOpts.labels?.font) {
-          if (original.legendFontExisted) {
-            legendOpts.labels.font.size = original.legendFontSize;
-          } else {
-            delete legendOpts.labels.font;
-          }
-        }
-        if (legendOpts.labels) {
-          legendOpts.labels.boxWidth = original.legendBoxWidth;
-          legendOpts.labels.boxHeight = original.legendBoxHeight;
-        }
-      }
-      if (xTicks?.font) {
-        if (original.xTickFontExisted) {
-          xTicks.font.size = original.xTickFontSize;
-        } else {
-          delete xTicks.font;
-        }
-      }
-      if (yTicks?.font) {
-        if (original.yTickFontExisted) {
-          yTicks.font.size = original.yTickFontSize;
-        } else {
-          delete yTicks.font;
-        }
-      }
-      chart.options.maintainAspectRatio = original.maintainAspectRatio;
-      if (container) {
-        container.style.height = original.containerHeight || "";
-      }
-      chart.resize();
-      chart.update("none");
-    }
+  // A raion/infra/period value highlighted on-screen via the cross-filter
+  // should read the same way in the PDF's bar charts.
+  function highlightSetFor(dimension, activeFilter) {
+    if (!activeFilter || activeFilter.dimension !== dimension) return null;
+    return new Set([activeFilter.value]);
   }
 
   // ------------------------------------------------------------------
@@ -566,107 +671,57 @@
         y += 25;
       }
 
-      // --- GRID CHARTS ATTACHMENT ---
+      // --- GRID CHARTS ATTACHMENT (all rebuilt as vector SVG) ---
       doc.addPage();
       y = margin + 15;
 
+      const series = state.chartSeries || {};
+
       // 1. Timeline (Full Width)
-      const timelineCanvas = document.getElementById(IDS.charts.timeline.id);
-      const timelineImg = await captureCanvas(timelineCanvas);
-      if (timelineImg) {
-        y = addImageWithHeading(
-          doc,
-          IDS.charts.timeline.label,
-          timelineImg,
-          y,
-          margin,
-          pageWidth,
-          pageHeight,
-          pageWidth - margin * 2
+      if (series.timeline && series.timeline.labels.length) {
+        const timelineWidth = pageWidth - margin * 2;
+        const timelineHeight = 170;
+        const timelineSvg = buildColumnChartSVG(
+          series.timeline.labels, series.timeline.values, timelineWidth, timelineHeight
+        );
+        y = await addSvgWithHeading(
+          doc, IDS.charts.timeline.label, timelineSvg, y, margin, pageWidth, pageHeight, timelineWidth, margin, timelineHeight
         );
       }
 
       const gridGap = 16;
       const colChartWidth = (pageWidth - margin * 2 - gridGap) / 2;
 
-      // 2. Top Raions & 3. Infra Type (Side-by-Side)
-      const topRaionsCanvas = document.getElementById(IDS.charts.topRaions.id);
-      const infraCanvas = document.getElementById(IDS.charts.infra.id);
-      const extentCanvas = document.getElementById(IDS.charts.extent.id);
-
-      // All three summary charts are forced to the same fixed height and
-      // label/legend font size, so they always match regardless of each
-      // chart's own on-page configuration or aspect ratio.
-      const SUMMARY_CHART_HEIGHT_PX = 300;
-      const SUMMARY_CHART_FONT_PX = 9.5;
-
-      const topRaionsImg = await captureChartAtSize(
-        topRaionsCanvas,
-        SUMMARY_CHART_HEIGHT_PX,
-        SUMMARY_CHART_FONT_PX
-      );
-      const infraImg = await captureChartAtSize(
-        infraCanvas,
-        SUMMARY_CHART_HEIGHT_PX,
-        SUMMARY_CHART_FONT_PX
-      );
-      const extentImg = await captureChartAtSize(
-        extentCanvas,
-        SUMMARY_CHART_HEIGHT_PX,
-        SUMMARY_CHART_FONT_PX,
-        { legendPosition: "right", legendAlign: "center" }
-      );
-
-      // Top Raions, Infra Type, and Level of Damage are all "summary"
-      // charts and should read as the same size in the PDF. Their source
-      // canvases can have different native aspect ratios (e.g. a square
-      // doughnut vs. a wider bar chart), so instead of letting each
-      // image's own aspect ratio dictate its box height independently,
-      // compute one shared height from whichever of the three would
-      // naturally be tallest at colChartWidth, then apply that same
-      // height to all three via addImageWithHeading's contain-fit sizing.
-      const naturalHeightAt = (imgDataUrl) => {
-        if (!imgDataUrl) return 0;
-        const props = doc.getImageProperties(imgDataUrl);
-        return (props.height * colChartWidth) / props.width;
-      };
-      const summaryChartHeight = Math.max(
-        naturalHeightAt(topRaionsImg),
-        naturalHeightAt(infraImg),
-        naturalHeightAt(extentImg)
-      ) || null;
+      // Top Raions, Infra Type, and Level of Damage all read as the same
+      // "summary chart" size in the PDF, matching how they appear on the
+      // page as a uniform row of chart cards.
+      const SUMMARY_CHART_HEIGHT_PX = 220;
 
       let rowYStart = y;
       let maxRowHeight = 0;
 
-      if (topRaionsImg) {
-        const nextY = addImageWithHeading(
-          doc,
-          IDS.charts.topRaions.label,
-          topRaionsImg,
-          rowYStart,
-          margin,
-          pageWidth,
-          pageHeight,
-          colChartWidth,
-          margin,
-          summaryChartHeight
+      // 2. Top Raions
+      if (series.topRaions && series.topRaions.labels.length) {
+        const topRaionsSvg = buildHorizontalBarSVG(
+          series.topRaions.labels, series.topRaions.values, colChartWidth, SUMMARY_CHART_HEIGHT_PX,
+          highlightSetFor("raion", state.activeFilter)
+        );
+        const nextY = await addSvgWithHeading(
+          doc, IDS.charts.topRaions.label, topRaionsSvg, rowYStart, margin, pageWidth, pageHeight,
+          colChartWidth, margin, SUMMARY_CHART_HEIGHT_PX
         );
         maxRowHeight = Math.max(maxRowHeight, nextY - rowYStart);
       }
 
-      if (infraImg) {
-        const nextY = addImageWithHeading(
-          doc,
-          IDS.charts.infra.label,
-          infraImg,
-          rowYStart,
-          margin,
-          pageWidth,
-          pageHeight,
-          colChartWidth,
-          margin + colChartWidth + gridGap,
-          summaryChartHeight
+      // 3. Infra Type
+      if (series.infra && series.infra.labels.length) {
+        const infraSvg = buildHorizontalBarSVG(
+          series.infra.labels, series.infra.values, colChartWidth, SUMMARY_CHART_HEIGHT_PX,
+          highlightSetFor("infra", state.activeFilter)
+        );
+        const nextY = await addSvgWithHeading(
+          doc, IDS.charts.infra.label, infraSvg, rowYStart, margin, pageWidth, pageHeight,
+          colChartWidth, margin + colChartWidth + gridGap, SUMMARY_CHART_HEIGHT_PX
         );
         maxRowHeight = Math.max(maxRowHeight, nextY - rowYStart);
       }
@@ -674,19 +729,14 @@
       y = rowYStart + (maxRowHeight > 0 ? maxRowHeight : 0);
 
       // 4. Level of Damage (Centered, same box size as the row above)
-      if (extentImg) {
+      if (series.extent && series.extent.labels.length) {
+        const extentSvg = buildDonutSVG(
+          series.extent.labels, series.extent.values, colChartWidth, SUMMARY_CHART_HEIGHT_PX, CHART_PALETTE
+        );
         const centerX = (pageWidth - colChartWidth) / 2;
-        y = addImageWithHeading(
-          doc,
-          IDS.charts.extent.label,
-          extentImg,
-          y,
-          margin,
-          pageWidth,
-          pageHeight,
-          colChartWidth,
-          centerX,
-          summaryChartHeight
+        y = await addSvgWithHeading(
+          doc, IDS.charts.extent.label, extentSvg, y, margin, pageWidth, pageHeight,
+          colChartWidth, centerX, SUMMARY_CHART_HEIGHT_PX
         );
       }
 

@@ -26,6 +26,64 @@ let activeFilter = null; // { dimension: 'raion' | 'infra' | 'extent' | 'period'
 const CHART_PALETTE = ['#1a3a5c', '#2c5f8a', '#4a90c4', '#7cb4dd', '#a8d0e8', '#d94801', '#f16913', '#fdae6b', '#fdd0a2', '#999999'];
 const FILTER_HIGHLIGHT_COLOR = '#d94801';
 
+// Registers the chartjs-plugin-datalabels plugin (loaded via CDN in the
+// HTML) so the bar/column charts below can render their values as external
+// labels at the end of each bar/column, rather than relying on a value axis.
+if (typeof Chart !== 'undefined' && typeof ChartDataLabels !== 'undefined') {
+    Chart.register(ChartDataLabels);
+}
+
+// Renders labels for the "Extent of Damage" doughnut outside the ring, each
+// with a short leader line back to its slice, so the ring doesn't need a
+// value axis or an on-chart legend to be readable. Registered only on the
+// doughnut chart instance (not globally) since it's specific to that shape.
+const outsideDoughnutLabelsPlugin = {
+    id: 'outsideDoughnutLabels',
+    afterDraw(chart) {
+        const meta = chart.getDatasetMeta(0);
+        const dataset = chart.data.datasets[0];
+        if (!meta || !dataset) return;
+        const total = dataset.data.reduce((a, b) => a + b, 0);
+        if (!total) return;
+
+        const { ctx } = chart;
+        ctx.save();
+        ctx.font = '11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+        ctx.textBaseline = 'middle';
+
+        meta.data.forEach((arc, i) => {
+            const value = dataset.data[i];
+            if (!value) return;
+
+            const { x, y, startAngle, endAngle, outerRadius } =
+                arc.getProps(['x', 'y', 'startAngle', 'endAngle', 'outerRadius'], true);
+            const midAngle = (startAngle + endAngle) / 2;
+            const cos = Math.cos(midAngle);
+            const sin = Math.sin(midAngle);
+            const isRight = cos >= 0;
+
+            const lineStart = { x: x + cos * (outerRadius + 2), y: y + sin * (outerRadius + 2) };
+            const bend = { x: x + cos * (outerRadius + 16), y: y + sin * (outerRadius + 16) };
+            const textX = bend.x + (isRight ? 14 : -14);
+
+            ctx.strokeStyle = '#999';
+            ctx.lineWidth = 1;
+            ctx.beginPath();
+            ctx.moveTo(lineStart.x, lineStart.y);
+            ctx.lineTo(bend.x, bend.y);
+            ctx.lineTo(textX + (isRight ? -4 : 4), bend.y);
+            ctx.stroke();
+
+            const pct = Math.round((value / total) * 100);
+            ctx.fillStyle = '#333';
+            ctx.textAlign = isRight ? 'left' : 'right';
+            ctx.fillText(`${chart.data.labels[i]}: ${value.toLocaleString()} (${pct}%)`, textX, bend.y);
+        });
+
+        ctx.restore();
+    }
+};
+
 const monthsList = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 // Column name for oblast in the CSV. ASSUMPTION: adjust this single value if
@@ -415,7 +473,7 @@ function processMapVisualisations() {
     const breaks = computeDynamicBreaks(counts);
     updateLegend(breaks);
 
-    updateSummaryCharts(counts, infraCounts, extentCounts, timeCounts, labelsList);
+    const chartSeries = updateSummaryCharts(counts, infraCounts, extentCounts, timeCounts, labelsList);
 
     // Zoom the map to the filtered area: a raion selected via the dropdown
     // takes precedence, then a raion selected by clicking the map/a chart,
@@ -438,7 +496,8 @@ function processMapVisualisations() {
         infraCounts: { ...infraCounts },
         extentCounts: { ...extentCounts },
         timeCounts: { ...timeCounts },
-        labelsList: [...labelsList]
+        labelsList: [...labelsList],
+        chartSeries
     };
 
     if (leafletGeoLayer) mapInstance.removeLayer(leafletGeoLayer);
@@ -470,7 +529,7 @@ function processMapVisualisations() {
 }
 
 function updateSummaryCharts(raionCounts, infraCounts, extentCounts, timeCounts, labelsList) {
-    if (typeof Chart === 'undefined') return;
+    if (typeof Chart === 'undefined') return null;
 
     // 1. Top Raions Bar Chart
     const topRaions = Object.entries(raionCounts)
@@ -506,6 +565,16 @@ function updateSummaryCharts(raionCounts, infraCounts, extentCounts, timeCounts,
         'map-timeline-chart', timelineChartInstance, 
         labelsList, timelineValues, 'period'
     );
+
+    // Expose the exact series each chart was drawn with, so the PDF report
+    // can rebuild identical vector charts without re-deriving the Top-N /
+    // "Other" bucketing / sort order logic a second time.
+    return {
+        topRaions: { labels: topRaions.map(e => e[0]), values: topRaions.map(e => e[1]) },
+        infra: { labels: infraLabels, values: infraValues },
+        extent: { labels: extentEntries.map(e => e[0]), values: extentEntries.map(e => e[1]) },
+        timeline: { labels: labelsList, values: timelineValues }
+    };
 }
 
 function isFilterableLabel(label) {
@@ -539,15 +608,29 @@ function renderBarChart(canvasId, existingInstance, labels, data, dimension) {
             indexAxis: 'y',
             responsive: true,
             maintainAspectRatio: false,
-            plugins: { legend: { display: false } },
-            scales: { 
-                x: { 
-                    beginAtZero: true, 
-                    ticks: { precision: 0 },
-                    grid: { drawOnChartArea: false, drawTicks: true }
+            layout: { padding: { right: 34 } },
+            plugins: {
+                legend: { display: false },
+                // Value labels rendered just past the end of each bar, so
+                // the value axis below is no longer needed to read amounts.
+                datalabels: {
+                    anchor: 'end',
+                    align: 'end',
+                    clip: false,
+                    color: '#1a3a5c',
+                    font: { size: 11, weight: '600' },
+                    formatter: value => value.toLocaleString()
+                }
+            },
+            scales: {
+                // Value axis removed - each bar now carries its own label.
+                x: {
+                    display: false,
+                    beginAtZero: true,
+                    grace: '12%'
                 },
                 y: {
-                    grid: { drawOnChartArea: false, drawTicks: true }
+                    grid: { display: false }
                 }
             },
             onClick: (evt, elements, chart) => {
@@ -585,10 +668,16 @@ function renderDoughnutChart(canvasId, existingInstance, labels, data, dimension
             labels,
             datasets: [{ data, backgroundColor: CHART_PALETTE, borderColor: '#1a3a5c', borderWidth }]
         },
+        plugins: [outsideDoughnutLabelsPlugin],
         options: {
             responsive: true,
             maintainAspectRatio: false,
-            plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } } },
+            // Extra room on every side for the outside labels + leader
+            // lines drawn by outsideDoughnutLabelsPlugin.
+            layout: { padding: { top: 36, bottom: 36, left: 84, right: 84 } },
+            // The legend is dropped in favour of the outside labels, which
+            // already carry the category name, value, and percentage.
+            plugins: { legend: { display: false }, datalabels: { display: false } },
             onClick: (evt, elements, chart) => {
                 if (!elements.length) return;
                 const label = chart.data.labels[elements[0].index];
@@ -633,21 +722,35 @@ function renderTimelineBarChart(canvasId, existingInstance, labels, data, dimens
         options: {
             responsive: true,
             maintainAspectRatio: false,
-            plugins: { legend: { display: false } },
+            layout: { padding: { top: 26 } },
+            plugins: {
+                legend: { display: false },
+                // Value labels rendered just above each column, so the
+                // value axis below is no longer needed to read amounts.
+                datalabels: {
+                    anchor: 'end',
+                    align: 'end',
+                    clip: false,
+                    color: '#1a3a5c',
+                    font: { size: 10, weight: '600' },
+                    formatter: value => value.toLocaleString(),
+                    // Skip empty periods entirely rather than stamping a
+                    // "0" above every zero-value column.
+                    display: context => context.dataset.data[context.dataIndex] > 0
+                }
+            },
             scales: {
                 x: {
-                    grid: { 
+                    grid: {
                         drawOnChartArea: false, // Removes background vertical grid lines
                         drawTicks: true         // Keeps x-axis tick marks
                     }
                 },
+                // Value axis removed - each column now carries its own label.
                 y: {
+                    display: false,
                     beginAtZero: true,
-                    ticks: { precision: 0 },
-                    grid: { 
-                        drawOnChartArea: false, // Removes background horizontal grid lines
-                        drawTicks: true         // Keeps y-axis tick marks
-                    }
+                    grace: '18%'
                 }
             },
             onClick: (evt, elements, chart) => {
