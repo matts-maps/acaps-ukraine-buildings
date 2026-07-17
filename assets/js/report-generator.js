@@ -170,8 +170,38 @@
     return tokens;
   }
 
-  // Greedily wraps a label into the fewest lines that each fit maxWidth.
-  function wrapLabelText(text, maxWidth, fontSizePx) {
+  // Joins already-wrapped line fragments back together, respecting the
+  // same no-space-after-slash rule tokenizeLabel/wrapLabelText use.
+  function joinLineFragments(fragments) {
+    return fragments.reduce((acc, line) => {
+      if (!acc) return line;
+      const sep = acc.endsWith("/") ? "" : " ";
+      return `${acc}${sep}${line}`;
+    }, "");
+  }
+
+  // Trims text to the longest prefix that fits maxWidth with a trailing
+  // "…" appended.
+  function truncateWithEllipsis(text, maxWidth, fontSizePx) {
+    if (measureTextWidth(text, fontSizePx) <= maxWidth) return text;
+    let low = 0;
+    let high = text.length;
+    while (low < high) {
+      const mid = Math.ceil((low + high) / 2);
+      const candidate = `${text.slice(0, mid).trimEnd()}…`;
+      if (measureTextWidth(candidate, fontSizePx) <= maxWidth) {
+        low = mid;
+      } else {
+        high = mid - 1;
+      }
+    }
+    return `${text.slice(0, low).trimEnd()}…`;
+  }
+
+  // Greedily wraps a label into the fewest lines that each fit maxWidth,
+  // capped at maxLines - any remainder beyond that is merged into the
+  // final line and truncated with an ellipsis rather than adding more lines.
+  function wrapLabelText(text, maxWidth, fontSizePx, maxLines = 2) {
     const tokens = tokenizeLabel(String(text));
     if (!tokens.length) return [String(text)];
 
@@ -190,7 +220,13 @@
       }
     });
     if (current) lines.push(current);
-    return lines;
+
+    if (lines.length <= maxLines) return lines;
+
+    const kept = lines.slice(0, maxLines - 1);
+    const overflowText = joinLineFragments(lines.slice(maxLines - 1));
+    kept.push(truncateWithEllipsis(overflowText, maxWidth, fontSizePx));
+    return kept;
   }
 
   function newSvgRoot(width, height) {
@@ -218,7 +254,7 @@
       // label column, rather than letting long labels (e.g. infrastructure
       // type names) overflow or run into the bar.
       const maxLabelWidth = labelColW - 8;
-      const fontSize = 6;
+      const fontSize = 8;
       const lineHeight = fontSize + 2.5;
       const lines = wrapLabelText(label, maxLabelWidth, fontSize);
       const firstLineY = cy - ((lines.length - 1) * lineHeight) / 2;
@@ -259,7 +295,7 @@
     const plotH = height - topPad - bottomPad;
     const colW = width / labels.length;
     const barW = Math.min(26, colW * 0.6);
-  const fontSize = 6;
+    const fontSize = 8;
 
     // Keep axis labels horizontal at all times (matching the webpage's
     // Chart.js timeline) by thinning them out - showing only every Nth
@@ -407,7 +443,7 @@
 
       const textEl = svgEl("text", {
         x: textX, y: textY, "text-anchor": isRight ? "start" : "end", "dominant-baseline": "middle",
-        "font-size": "6", "font-family": PDF_CHART_FONT, fill: "#333"
+        "font-size": "8", "font-family": PDF_CHART_FONT, fill: "#333"
       });
       textEl.textContent = text;
       svg.appendChild(textEl);

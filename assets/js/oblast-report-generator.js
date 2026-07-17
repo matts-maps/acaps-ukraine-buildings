@@ -164,8 +164,38 @@
     return tokens;
   }
 
-  // Greedily wraps a label into the fewest lines that each fit maxWidth.
-  function wrapLabelText(text, maxWidth, fontSizePx) {
+  // Joins already-wrapped line fragments back together, respecting the
+  // same no-space-after-slash rule tokenizeLabel/wrapLabelText use.
+  function joinLineFragments(fragments) {
+    return fragments.reduce((acc, line) => {
+      if (!acc) return line;
+      const sep = acc.endsWith("/") ? "" : " ";
+      return `${acc}${sep}${line}`;
+    }, "");
+  }
+
+  // Trims text to the longest prefix that fits maxWidth with a trailing
+  // "…" appended.
+  function truncateWithEllipsis(text, maxWidth, fontSizePx) {
+    if (measureTextWidth(text, fontSizePx) <= maxWidth) return text;
+    let low = 0;
+    let high = text.length;
+    while (low < high) {
+      const mid = Math.ceil((low + high) / 2);
+      const candidate = `${text.slice(0, mid).trimEnd()}…`;
+      if (measureTextWidth(candidate, fontSizePx) <= maxWidth) {
+        low = mid;
+      } else {
+        high = mid - 1;
+      }
+    }
+    return `${text.slice(0, low).trimEnd()}…`;
+  }
+
+  // Greedily wraps a label into the fewest lines that each fit maxWidth,
+  // capped at maxLines - any remainder beyond that is merged into the
+  // final line and truncated with an ellipsis rather than adding more lines.
+  function wrapLabelText(text, maxWidth, fontSizePx, maxLines = 2) {
     const tokens = tokenizeLabel(String(text));
     if (!tokens.length) return [String(text)];
 
@@ -184,7 +214,13 @@
       }
     });
     if (current) lines.push(current);
-    return lines;
+
+    if (lines.length <= maxLines) return lines;
+
+    const kept = lines.slice(0, maxLines - 1);
+    const overflowText = joinLineFragments(lines.slice(maxLines - 1));
+    kept.push(truncateWithEllipsis(overflowText, maxWidth, fontSizePx));
+    return kept;
   }
 
   function newSvgRoot(width, height) {
