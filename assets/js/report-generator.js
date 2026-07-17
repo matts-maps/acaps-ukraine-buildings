@@ -133,6 +133,37 @@
     return el;
   }
 
+  // Measures how wide a label would render at a given font size/weight,
+  // using an offscreen canvas - used to decide when a label needs to be
+  // wrapped, skipped, or thinned so it never overlaps a neighbour.
+  let _measureCanvas = null;
+  function measureTextWidth(text, fontSizePx, fontWeight = "400") {
+    if (!_measureCanvas) _measureCanvas = document.createElement("canvas");
+    const ctx = _measureCanvas.getContext("2d");
+    ctx.font = `${fontWeight} ${fontSizePx}px ${PDF_CHART_FONT}`;
+    return ctx.measureText(text).width;
+  }
+
+  // Greedily wraps a label into the fewest lines that each fit maxWidth.
+  function wrapLabelText(text, maxWidth, fontSizePx) {
+    const words = String(text).split(/\s+/).filter(Boolean);
+    if (!words.length) return [String(text)];
+
+    const lines = [];
+    let current = "";
+    words.forEach((word) => {
+      const candidate = current ? `${current} ${word}` : word;
+      if (current && measureTextWidth(candidate, fontSizePx) > maxWidth) {
+        lines.push(current);
+        current = word;
+      } else {
+        current = candidate;
+      }
+    });
+    if (current) lines.push(current);
+    return lines;
+  }
+
   function newSvgRoot(width, height) {
     return svgEl("svg", { xmlns: SVG_NS, width, height, viewBox: `0 0 ${width} ${height}` });
   }
@@ -154,13 +185,23 @@
       const barW = Math.max((values[i] / max) * barAreaW, 1);
       const isHighlighted = Boolean(highlightSet && highlightSet.has(label));
 
-      // Updated to match web label styles: size 8, weight 600 (implied for consistency)
-      const catText = svgEl("text", {
-        x: labelColW - 8, y: cy, "text-anchor": "end", "dominant-baseline": "middle",
-        "font-size": "8", "font-family": PDF_CHART_FONT, fill: "#444"
+      // Wrap the category label onto as many lines as it needs to fit the
+      // label column, rather than letting long labels (e.g. infrastructure
+      // type names) overflow or run into the bar.
+      const maxLabelWidth = labelColW - 8;
+      const fontSize = 8;
+      const lineHeight = fontSize + 2.5;
+      const lines = wrapLabelText(label, maxLabelWidth, fontSize);
+      const firstLineY = cy - ((lines.length - 1) * lineHeight) / 2;
+
+      lines.forEach((line, li) => {
+        const catText = svgEl("text", {
+          x: labelColW - 8, y: firstLineY + li * lineHeight, "text-anchor": "end", "dominant-baseline": "middle",
+          "font-size": String(fontSize), "font-family": PDF_CHART_FONT, fill: "#444"
+        });
+        catText.textContent = line;
+        svg.appendChild(catText);
       });
-      catText.textContent = label;
-      svg.appendChild(catText);
 
       svg.appendChild(svgEl("rect", {
         x: labelColW, y: cy - barH / 2, width: barW, height: barH, rx: 4, ry: 4,
@@ -189,7 +230,21 @@
     const plotH = height - topPad - bottomPad;
     const colW = width / labels.length;
     const barW = Math.min(26, colW * 0.6);
-    const rotateLabels = labels.length > 10;
+    const fontSize = 8;
+
+    // Keep axis labels horizontal at all times (matching the webpage's
+    // Chart.js timeline) by thinning them out - showing only every Nth
+    // label - rather than rotating them when there are too many to fit.
+    // This mirrors Chart.js's own autoSkip behaviour for category axes.
+    let step = 1;
+    while (step < labels.length) {
+      let widest = 0;
+      for (let i = 0; i < labels.length; i += step) {
+        widest = Math.max(widest, measureTextWidth(labels[i], fontSize));
+      }
+      if (widest <= colW * step * 0.85) break;
+      step++;
+    }
 
     labels.forEach((label, i) => {
       const cx = colW * i + colW / 2;
@@ -202,20 +257,26 @@
           x: cx - barW / 2, y: barY, width: barW, height: barH, rx: 3, ry: 3, fill: "#1a3a5c"
         }));
 
-        // Updated to match web: size 8, weight 600
-        const valText = svgEl("text", {
-          x: cx, y: barY - 6, "text-anchor": "middle",
-          "font-size": "8", "font-family": PDF_CHART_FONT, "font-weight": "600", fill: "#1a3a5c"
-        });
-        valText.textContent = value.toLocaleString();
-        svg.appendChild(valText);
+        // Updated to match web: size 8, weight 600. Skipped if the column
+        // is too narrow to fit the label without touching its neighbours
+        // (matches the webpage's Chart.js timeline behaviour).
+        const valueText = value.toLocaleString();
+        if (measureTextWidth(valueText, 8, "600") <= colW * 0.85) {
+          const valText = svgEl("text", {
+            x: cx, y: barY - 6, "text-anchor": "middle",
+            "font-size": "8", "font-family": PDF_CHART_FONT, "font-weight": "600", fill: "#1a3a5c"
+          });
+          valText.textContent = valueText;
+          svg.appendChild(valText);
+        }
       }
+
+      if (i % step !== 0) return;
 
       const lblY = height - bottomPad + 14;
       const lbl = svgEl("text", {
-        x: cx, y: lblY, "text-anchor": rotateLabels ? "end" : "middle",
-        "font-size": "8", "font-family": PDF_CHART_FONT, fill: "#666",
-        transform: rotateLabels ? `rotate(-40 ${cx} ${lblY})` : undefined
+        x: cx, y: lblY, "text-anchor": "middle",
+        "font-size": String(fontSize), "font-family": PDF_CHART_FONT, fill: "#666"
       });
       lbl.textContent = label;
       svg.appendChild(lbl);
@@ -249,6 +310,13 @@
     const outerR = Math.max(30, Math.min(width, height) / 2 - 62);
     const innerR = outerR * 0.55;
 
+    // Minimum vertical gap enforced between two label lines on the same
+    // side of the ring, so neighbouring slices with similar angles never
+    // draw text on top of each other.
+    const LINE_HEIGHT = 13;
+    const leftLabels = [];
+    const rightLabels = [];
+
     let angle = -Math.PI / 2;
     labels.forEach((label, i) => {
       const value = values[i];
@@ -268,20 +336,52 @@
       const lineStart = polarPoint(cx, cy, outerR + 2, mid);
       const bend = polarPoint(cx, cy, outerR + 16, mid);
       const textX = bend.x + (isRight ? 14 : -14);
+      const pct = Math.round(frac * 100);
+      const text = `${label}: ${value.toLocaleString()} (${pct}%)`;
 
+      const entry = { lineStart, bend, textX, textY: bend.y, text, isRight };
+      (isRight ? rightLabels : leftLabels).push(entry);
+    });
+
+    // Within each side, walk top-to-bottom pushing any label too close to
+    // the one above it further down; if that runs the stack past the
+    // bottom of the chart, compress gaps upward from the bottom instead so
+    // the whole stack stays on screen.
+    function declutter(list) {
+      list.sort((a, b) => a.textY - b.textY);
+      for (let i = 1; i < list.length; i++) {
+        if (list[i].textY - list[i - 1].textY < LINE_HEIGHT) {
+          list[i].textY = list[i - 1].textY + LINE_HEIGHT;
+        }
+      }
+      const maxY = height - 4;
+      if (list.length && list[list.length - 1].textY > maxY) {
+        list[list.length - 1].textY = maxY;
+        for (let i = list.length - 2; i >= 0; i--) {
+          if (list[i + 1].textY - list[i].textY < LINE_HEIGHT) {
+            list[i].textY = list[i + 1].textY - LINE_HEIGHT;
+          }
+        }
+      }
+    }
+
+    declutter(leftLabels);
+    declutter(rightLabels);
+
+    [...leftLabels, ...rightLabels].forEach(({ lineStart, bend, textX, textY, text, isRight }) => {
       svg.appendChild(svgEl("polyline", {
-        points: `${lineStart.x},${lineStart.y} ${bend.x},${bend.y} ${textX + (isRight ? -4 : 4)},${bend.y}`,
+        // Elbow at the slice's natural angle first, then a vertical run to
+        // the label's (possibly decluttered) final height.
+        points: `${lineStart.x},${lineStart.y} ${bend.x},${bend.y} ${bend.x},${textY} ${textX + (isRight ? -4 : 4)},${textY}`,
         fill: "none", stroke: "#999", "stroke-width": "1"
       }));
 
-      const pct = Math.round(frac * 100);
-      // Updated to match web labels: size 8
-      const text = svgEl("text", {
-        x: textX, y: bend.y, "text-anchor": isRight ? "start" : "end", "dominant-baseline": "middle",
+      const textEl = svgEl("text", {
+        x: textX, y: textY, "text-anchor": isRight ? "start" : "end", "dominant-baseline": "middle",
         "font-size": "8", "font-family": PDF_CHART_FONT, fill: "#333"
       });
-      text.textContent = `${label}: ${value.toLocaleString()} (${pct}%)`;
-      svg.appendChild(text);
+      textEl.textContent = text;
+      svg.appendChild(textEl);
     });
 
     return svg;
