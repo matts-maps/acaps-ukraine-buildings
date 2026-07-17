@@ -62,6 +62,7 @@ function initMapElement() {
     // Start on a reasonable default view; this gets replaced by fitBounds()
     // once the Ukraine boundary geoJSON has loaded.
     mapInstance = L.map('map-container', { zoomSnap: 0.5 }).setView([48.3794, 31.1656], 6);
+    window.__leafletMap = mapInstance;
     L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
         attribution: '&copy; OpenStreetMap', maxZoom: 20
     }).addTo(mapInstance);
@@ -289,7 +290,24 @@ function processMapVisualisations() {
     const breaks = computeDynamicBreaks(counts);
     updateLegend(breaks);
 
-    updateSummaryCharts(counts, infraCounts, extentCounts, timeCounts, labelsList);
+    const chartSeries = updateSummaryCharts(counts, infraCounts, extentCounts, timeCounts, labelsList);
+
+    // Expose the current filter state + underlying numbers for anything
+    // outside this module that needs them (e.g. the PDF report generator).
+    window.__mapReportState = {
+        year: targetYear,
+        aggregationLabel: aggEl.options[aggEl.selectedIndex]?.text || '',
+        startLabel: startEl.options[startEl.selectedIndex]?.text || '',
+        endLabel: endEl.options[endEl.selectedIndex]?.text || '',
+        activeFilter: activeFilter ? { ...activeFilter } : null,
+        nationalTotal: Object.values(counts).reduce((a, b) => a + b, 0),
+        oblastCounts: { ...counts },
+        infraCounts: { ...infraCounts },
+        extentCounts: { ...extentCounts },
+        timeCounts: { ...timeCounts },
+        labelsList: [...labelsList],
+        chartSeries
+    };
 
     if (leafletGeoLayer) mapInstance.removeLayer(leafletGeoLayer);
     
@@ -320,7 +338,7 @@ function processMapVisualisations() {
 }
 
 function updateSummaryCharts(oblastCounts, infraCounts, extentCounts, timeCounts, labelsList) {
-    if (typeof Chart === 'undefined') return;
+    if (typeof Chart === 'undefined') return null;
 
     const topOblasts = Object.entries(oblastCounts)
         .sort((a, b) => b[1] - a[1])
@@ -353,6 +371,16 @@ function updateSummaryCharts(oblastCounts, infraCounts, extentCounts, timeCounts
         'map-timeline-chart', timelineChartInstance, 
         labelsList, timelineValues, 'period'
     );
+
+    // Expose the exact series each chart was drawn with, so the PDF report
+    // can rebuild identical vector charts without re-deriving the Top-N /
+    // "Other" bucketing / sort order logic a second time.
+    return {
+        topOblasts: { labels: topOblasts.map(e => e[0]), values: topOblasts.map(e => e[1]) },
+        infra: { labels: infraLabels, values: infraValues },
+        extent: { labels: extentEntries.map(e => e[0]), values: extentEntries.map(e => e[1]) },
+        timeline: { labels: labelsList, values: timelineValues }
+    };
 }
 
 function isFilterableLabel(label) {
