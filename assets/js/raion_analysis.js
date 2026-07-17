@@ -46,10 +46,21 @@ const outsideDoughnutLabelsPlugin = {
         const total = dataset.data.reduce((a, b) => a + b, 0);
         if (!total) return;
 
-        const { ctx } = chart;
+        const { ctx, chartArea } = chart;
         ctx.save();
         ctx.font = '11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
         ctx.textBaseline = 'middle';
+
+        // Minimum vertical gap enforced between two label lines on the same
+        // side of the ring, so neighbouring slices with similar angles never
+        // draw text on top of each other.
+        const LINE_HEIGHT = 14;
+
+        // First pass: work out each visible slice's natural (pre-collision)
+        // label position/text, split into a left-side and right-side group
+        // since labels only ever need to avoid others on the same side.
+        const leftLabels = [];
+        const rightLabels = [];
 
         meta.data.forEach((arc, i) => {
             const value = dataset.data[i];
@@ -66,23 +77,71 @@ const outsideDoughnutLabelsPlugin = {
             const bend = { x: x + cos * (outerRadius + 16), y: y + sin * (outerRadius + 16) };
             const textX = bend.x + (isRight ? 14 : -14);
 
+            const pct = Math.round((value / total) * 100);
+            const text = `${chart.data.labels[i]}: ${value.toLocaleString()} (${pct}%)`;
+
+            const entry = { lineStart, bend, textX, textY: bend.y, text, isRight };
+            (isRight ? rightLabels : leftLabels).push(entry);
+        });
+
+        // Second pass: within each side, walk top-to-bottom and push any
+        // label that's too close to the one above it further down. If that
+        // runs the stack past the bottom of the chart, walk back up from the
+        // bottom compressing gaps instead, so the whole stack stays on screen.
+        function declutter(list) {
+            list.sort((a, b) => a.textY - b.textY);
+
+            for (let i = 1; i < list.length; i++) {
+                if (list[i].textY - list[i - 1].textY < LINE_HEIGHT) {
+                    list[i].textY = list[i - 1].textY + LINE_HEIGHT;
+                }
+            }
+
+            const maxY = chartArea.bottom - 4;
+            if (list.length && list[list.length - 1].textY > maxY) {
+                list[list.length - 1].textY = maxY;
+                for (let i = list.length - 2; i >= 0; i--) {
+                    if (list[i + 1].textY - list[i].textY < LINE_HEIGHT) {
+                        list[i].textY = list[i + 1].textY - LINE_HEIGHT;
+                    }
+                }
+            }
+        }
+
+        declutter(leftLabels);
+        declutter(rightLabels);
+
+        [...leftLabels, ...rightLabels].forEach(({ lineStart, bend, textX, textY, text, isRight }) => {
             ctx.strokeStyle = '#999';
             ctx.lineWidth = 1;
             ctx.beginPath();
             ctx.moveTo(lineStart.x, lineStart.y);
+            // Elbow at the slice's natural angle first, then a vertical run
+            // to the label's (possibly decluttered) final height.
             ctx.lineTo(bend.x, bend.y);
-            ctx.lineTo(textX + (isRight ? -4 : 4), bend.y);
+            ctx.lineTo(bend.x, textY);
+            ctx.lineTo(textX + (isRight ? -4 : 4), textY);
             ctx.stroke();
 
-            const pct = Math.round((value / total) * 100);
             ctx.fillStyle = '#333';
             ctx.textAlign = isRight ? 'left' : 'right';
-            ctx.fillText(`${chart.data.labels[i]}: ${value.toLocaleString()} (${pct}%)`, textX, bend.y);
+            ctx.fillText(text, textX, textY);
         });
 
         ctx.restore();
     }
 };
+
+// Measures how wide a datalabel string would render at a given font size,
+// so a chart can decide whether there's enough room to draw it without
+// colliding with its neighbours (see renderTimelineBarChart below).
+function measureLabelWidth(ctx, text, fontSizePx) {
+    ctx.save();
+    ctx.font = `600 ${fontSizePx}px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif`;
+    const width = ctx.measureText(text).width;
+    ctx.restore();
+    return width;
+}
 
 const monthsList = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
@@ -736,8 +795,23 @@ function renderTimelineBarChart(canvasId, existingInstance, labels, data, dimens
                     font: { size: 8, weight: '600' },
                     formatter: value => value.toLocaleString(),
                     // Skip empty periods entirely rather than stamping a
-                    // "0" above every zero-value column.
-                    display: context => context.dataset.data[context.dataIndex] > 0
+                    // "0" above every zero-value column. Also skip a label
+                    // if its column is too narrow to fit the text without
+                    // overlapping its neighbours - this is what happens on
+                    // Weekly Granularity views with a long window range,
+                    // where columns get much thinner than the label text.
+                    display: context => {
+                        const value = context.dataset.data[context.dataIndex];
+                        if (!value) return false;
+
+                        const barCount = context.dataset.data.length;
+                        const { chartArea } = context.chart;
+                        if (!chartArea) return true;
+
+                        const availableWidth = chartArea.width / barCount;
+                        const textWidth = measureLabelWidth(context.chart.ctx, value.toLocaleString(), 8);
+                        return textWidth <= availableWidth * 0.85;
+                    }
                 }
             },
             scales: {
