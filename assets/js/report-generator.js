@@ -144,18 +144,47 @@
     return ctx.measureText(text).width;
   }
 
+  // Splits a label into wrappable tokens: breaks on whitespace (discarding
+  // it) and also right after a "/" (keeping the slash attached, no space
+  // inserted afterwards) - so long slash-joined phrases like
+  // "Industrial/Business/Enterprise facilities" can wrap at the slashes,
+  // not just at the one space in the whole string.
+  function tokenizeLabel(text) {
+    const tokens = [];
+    let current = "";
+    for (const ch of text) {
+      if (/\s/.test(ch)) {
+        if (current) {
+          tokens.push(current);
+          current = "";
+        }
+      } else {
+        current += ch;
+        if (ch === "/") {
+          tokens.push(current);
+          current = "";
+        }
+      }
+    }
+    if (current) tokens.push(current);
+    return tokens;
+  }
+
   // Greedily wraps a label into the fewest lines that each fit maxWidth.
   function wrapLabelText(text, maxWidth, fontSizePx) {
-    const words = String(text).split(/\s+/).filter(Boolean);
-    if (!words.length) return [String(text)];
+    const tokens = tokenizeLabel(String(text));
+    if (!tokens.length) return [String(text)];
 
     const lines = [];
     let current = "";
-    words.forEach((word) => {
-      const candidate = current ? `${current} ${word}` : word;
+    tokens.forEach((token) => {
+      // No space is inserted between a token and the next if the token
+      // already ends in "/" (e.g. "Industrial/" followed by "Business/").
+      const sep = current && !current.endsWith("/") ? " " : "";
+      const candidate = current ? `${current}${sep}${token}` : token;
       if (current && measureTextWidth(candidate, fontSizePx) > maxWidth) {
         lines.push(current);
-        current = word;
+        current = token;
       } else {
         current = candidate;
       }
@@ -230,7 +259,7 @@
     const plotH = height - topPad - bottomPad;
     const colW = width / labels.length;
     const barW = Math.min(26, colW * 0.6);
-    const fontSize = 6;
+  const fontSize = 6;
 
     // Keep axis labels horizontal at all times (matching the webpage's
     // Chart.js timeline) by thinning them out - showing only every Nth
@@ -378,7 +407,7 @@
 
       const textEl = svgEl("text", {
         x: textX, y: textY, "text-anchor": isRight ? "start" : "end", "dominant-baseline": "middle",
-        "font-size": "8", "font-family": PDF_CHART_FONT, fill: "#333"
+        "font-size": "6", "font-family": PDF_CHART_FONT, fill: "#333"
       });
       textEl.textContent = text;
       svg.appendChild(textEl);
