@@ -189,7 +189,7 @@
       // label column, rather than letting long labels (e.g. infrastructure
       // type names) overflow or run into the bar.
       const maxLabelWidth = labelColW - 8;
-      const fontSize = 8;
+      const fontSize = 6;
       const lineHeight = fontSize + 2.5;
       const lines = wrapLabelText(label, maxLabelWidth, fontSize);
       const firstLineY = cy - ((lines.length - 1) * lineHeight) / 2;
@@ -230,7 +230,7 @@
     const plotH = height - topPad - bottomPad;
     const colW = width / labels.length;
     const barW = Math.min(26, colW * 0.6);
-    const fontSize = 8;
+    const fontSize = 6;
 
     // Keep axis labels horizontal at all times (matching the webpage's
     // Chart.js timeline) by thinning them out - showing only every Nth
