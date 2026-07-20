@@ -126,6 +126,15 @@ function calculateDayOfYear(date) {
   return Math.floor(diff / 86400000);
 }
 
+// Maps a date to its period index (month, or Nth week/fortnight of the
+// year), clamped to the valid [0, totalPeriods - 1] range.
+function periodIndexForDate(date, stepDays, totalPeriods) {
+  const idx = stepDays === 30
+    ? date.getMonth()
+    : Math.floor((calculateDayOfYear(date) - 1) / stepDays);
+  return Math.max(0, Math.min(idx, totalPeriods - 1));
+}
+
 function buildPeriodDropdowns() {
   const periodTypeEl = document.getElementById('period-type');
   const startSel = document.getElementById('highlight-start');
@@ -145,15 +154,7 @@ function buildPeriodDropdowns() {
   });
 
   // Highlight most recent period
-  const now = new Date();
-  let mostRecentIndex = 0;
-  if (stepDays === 30) {
-    mostRecentIndex = now.getMonth();
-  } else {
-    const dayNum = calculateDayOfYear(now);
-    mostRecentIndex = Math.floor((dayNum - 1) / stepDays);
-  }
-  mostRecentIndex = Math.max(0, Math.min(mostRecentIndex, labels.length - 1));
+  const mostRecentIndex = periodIndexForDate(new Date(), stepDays, labels.length);
 
   startSel.value = mostRecentIndex;
   endSel.value = mostRecentIndex; 
@@ -206,30 +207,12 @@ function updateChartAndStats() {
     const yearCounts = countsByYear.get(year);
     if (!yearCounts) return;
 
-    let pIdx = 0;
-    if (stepDays === 30) {
-      pIdx = d.getMonth();
-    } else {
-      const dayNum = calculateDayOfYear(d);
-      pIdx = Math.floor((dayNum - 1) / stepDays);
-      if (pIdx >= totalPeriods) pIdx = totalPeriods - 1;
-      if (pIdx < 0) pIdx = 0;
-    }
+    const pIdx = periodIndexForDate(d, stepDays, totalPeriods);
     yearCounts[pIdx]++;
   });
 
   const maxDataYear = maxDate ? maxDate.getFullYear() : null;
-  let maxDataPeriodIdx = null;
-  if (maxDate) {
-    if (stepDays === 30) {
-      maxDataPeriodIdx = maxDate.getMonth();
-    } else {
-      const dayNum = calculateDayOfYear(maxDate);
-      maxDataPeriodIdx = Math.floor((dayNum - 1) / stepDays);
-      if (maxDataPeriodIdx >= totalPeriods) maxDataPeriodIdx = totalPeriods - 1;
-      if (maxDataPeriodIdx < 0) maxDataPeriodIdx = 0;
-    }
-  }
+  const maxDataPeriodIdx = maxDate ? periodIndexForDate(maxDate, stepDays, totalPeriods) : null;
 
   const pointsByYear = new Map();
   selectedYears.forEach(yr => {
