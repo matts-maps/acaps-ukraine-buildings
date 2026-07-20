@@ -3,6 +3,10 @@ let chartInstance = null;
 let uniqueYearsList = [];
 let lastChartSVG = '';
 
+// Store selected baseline years for each target year in a global map
+// e.g., comparisonBaselineOverrides.get(2024) = 2022
+const comparisonBaselineOverrides = new Map();
+
 const calendarMonths = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 const YEAR_COLORS = ['#1a3a5c', '#e07b39', '#2c8f7a', '#c0392b', '#8e44ad', '#2c5f8a', '#d4a017', '#555555'];
@@ -126,15 +130,6 @@ function calculateDayOfYear(date) {
   return Math.floor(diff / 86400000);
 }
 
-// Maps a date to its period index (month, or Nth week/fortnight of the
-// year), clamped to the valid [0, totalPeriods - 1] range.
-function periodIndexForDate(date, stepDays, totalPeriods) {
-  const idx = stepDays === 30
-    ? date.getMonth()
-    : Math.floor((calculateDayOfYear(date) - 1) / stepDays);
-  return Math.max(0, Math.min(idx, totalPeriods - 1));
-}
-
 function buildPeriodDropdowns() {
   const periodTypeEl = document.getElementById('period-type');
   const startSel = document.getElementById('highlight-start');
@@ -154,7 +149,15 @@ function buildPeriodDropdowns() {
   });
 
   // Highlight most recent period
-  const mostRecentIndex = periodIndexForDate(new Date(), stepDays, labels.length);
+  const now = new Date();
+  let mostRecentIndex = 0;
+  if (stepDays === 30) {
+    mostRecentIndex = now.getMonth();
+  } else {
+    const dayNum = calculateDayOfYear(now);
+    mostRecentIndex = Math.floor((dayNum - 1) / stepDays);
+  }
+  mostRecentIndex = Math.max(0, Math.min(mostRecentIndex, labels.length - 1));
 
   startSel.value = mostRecentIndex;
   endSel.value = mostRecentIndex; 
@@ -207,12 +210,30 @@ function updateChartAndStats() {
     const yearCounts = countsByYear.get(year);
     if (!yearCounts) return;
 
-    const pIdx = periodIndexForDate(d, stepDays, totalPeriods);
+    let pIdx = 0;
+    if (stepDays === 30) {
+      pIdx = d.getMonth();
+    } else {
+      const dayNum = calculateDayOfYear(d);
+      pIdx = Math.floor((dayNum - 1) / stepDays);
+      if (pIdx >= totalPeriods) pIdx = totalPeriods - 1;
+      if (pIdx < 0) pIdx = 0;
+    }
     yearCounts[pIdx]++;
   });
 
   const maxDataYear = maxDate ? maxDate.getFullYear() : null;
-  const maxDataPeriodIdx = maxDate ? periodIndexForDate(maxDate, stepDays, totalPeriods) : null;
+  let maxDataPeriodIdx = null;
+  if (maxDate) {
+    if (stepDays === 30) {
+      maxDataPeriodIdx = maxDate.getMonth();
+    } else {
+      const dayNum = calculateDayOfYear(maxDate);
+      maxDataPeriodIdx = Math.floor((dayNum - 1) / stepDays);
+      if (maxDataPeriodIdx >= totalPeriods) maxDataPeriodIdx = totalPeriods - 1;
+      if (maxDataPeriodIdx < 0) maxDataPeriodIdx = 0;
+    }
+  }
 
   const pointsByYear = new Map();
   selectedYears.forEach(yr => {
@@ -306,17 +327,17 @@ function updateChartAndStats() {
             callback: function(val) { return calendarMonths[val] || ''; }
           },
           grid: { 
-            display: true,          // Keeps the axis structure
-            drawOnChartArea: false, // Removes grid lines inside chart area
-            drawTicks: true         // Keeps tick marks visible
+            display: true,
+            drawOnChartArea: false,
+            drawTicks: true
           }
         },
         y: { 
           beginAtZero: true, 
           title: { display: true, text: 'Recorded Structural Damages' },
           grid: { 
-            drawOnChartArea: false, // Removes horizontal grid lines inside chart area
-            drawTicks: true         // Keeps tick marks visible
+            drawOnChartArea: false,
+            drawTicks: true
           }
         }
       }
@@ -324,11 +345,35 @@ function updateChartAndStats() {
     plugins: [highlightPlugin]
   });
 
+  // Calculate totals for all loaded years so dropdowns have complete baseline datasets
   const totalsByYear = new Map();
-  selectedYears.forEach(yr => {
+  uniqueYearsList.forEach(yr => {
     const yearCounts = countsByYear.get(yr);
     let total = 0;
-    for (let i = idxStart; i <= idxEnd; i++) total += yearCounts[i] || 0;
+    if (yearCounts) {
+      for (let i = idxStart; i <= idxEnd; i++) total += yearCounts[i] || 0;
+    } else {
+      // If a year in our full list is currently unchecked on the graph, 
+      // compute its total from scratch to allow reliable background reference
+      const fullYrCounts = new Array(totalPeriods).fill(0);
+      rawCSVData.forEach(row => {
+        const dateStr = (row.date_of_event || '').trim();
+        if (!dateStr) return;
+        const d = new Date(dateStr);
+        if (isNaN(d) || d.getFullYear() !== yr) return;
+        
+        let pIdx = 0;
+        if (stepDays === 30) {
+          pIdx = d.getMonth();
+        } else {
+          const dayNum = calculateDayOfYear(d);
+          pIdx = Math.floor((dayNum - 1) / stepDays);
+          if (pIdx >= totalPeriods) pIdx = totalPeriods - 1;
+        }
+        fullYrCounts[pIdx]++;
+      });
+      for (let i = idxStart; i <= idxEnd; i++) total += fullYrCounts[i] || 0;
+    }
     totalsByYear.set(yr, total);
   });
 
@@ -346,30 +391,89 @@ function updateChartAndStats() {
 function renderStatsBoxes(selectedYears, totalsByYear, rangeDisplay) {
   const statsEl = document.getElementById('stats');
   if (!statsEl) return;
-  const baselineYear = selectedYears[0];
-  const baselineTotal = totalsByYear.get(baselineYear);
-  statsEl.innerHTML = selectedYears.map(yr => {
+
+  const sortedYears = [...selectedYears].sort((a, b) => a - b);
+
+  statsEl.innerHTML = sortedYears.map(yr => {
     const total = totalsByYear.get(yr);
     const color = colorForYear(yr);
-    let deltaHTML = '';
-    if (yr !== baselineYear) {
-      if (baselineTotal === 0) {
-        deltaHTML = `<div class="change neutral">N/A vs ${baselineYear} (zero base)</div>`;
-      } else {
-        const pct = Math.round((total - baselineTotal) / baselineTotal * 100);
-        const sign = pct > 0 ? '+' : '';
-        const cls = pct > 0 ? 'up' : pct < 0 ? 'down' : 'neutral';
-        deltaHTML = `<div class="change ${cls}">${sign}${pct}% vs ${baselineYear}</div>`;
-      }
+    
+    // Get all years that are chronological ancestors of the target year
+    const historicalYears = uniqueYearsList.filter(y => y < yr);
+
+    // Retrieve the active override selection, otherwise default to the
+    // closest prior year that actually has data. (yr - 1 isn't safe to
+    // assume here - if there's a gap in the dataset, e.g. no records for
+    // one calendar year, yr - 1 may not be a real option, which used to
+    // leave the <select> showing one year while the percentage was
+    // silently computed against a different one.)
+    const closestHistoricalYear = historicalYears.length
+      ? historicalYears.reduce((a, b) => (b > a ? b : a))
+      : null;
+    let selectedBaseline = comparisonBaselineOverrides.get(yr);
+    if (!historicalYears.includes(selectedBaseline)) {
+      selectedBaseline = closestHistoricalYear;
     }
+
+    let deltaHTML = '';
+
+    if (historicalYears.length > 0) {
+      // Build interactive selector options
+      const dropdownOptions = historicalYears.map(histYr => {
+        const isSel = histYr === selectedBaseline ? 'selected' : '';
+        return `<option value="${histYr}" ${isSel}>vs ${histYr}</option>`;
+      }).join('');
+
+      const baseTotal = totalsByYear.get(selectedBaseline) || 0;
+      let pctHTML = '';
+
+      if (totalsByYear.has(selectedBaseline)) {
+        if (baseTotal === 0) {
+          pctHTML = `<span class="neutral">N/A (zero base)</span>`;
+        } else {
+          const pct = Math.round((total - baseTotal) / baseTotal * 100);
+          const sign = pct > 0 ? '+' : '';
+          const cls = pct > 0 ? 'up' : pct < 0 ? 'down' : 'neutral';
+          pctHTML = `<span class="${cls}">${sign}${pct}%</span>`;
+        }
+      } else {
+        pctHTML = `<span class="neutral">No Data</span>`;
+      }
+
+      deltaHTML = `
+        <div class="change compact-row">
+          ${pctHTML}
+          <select class="baseline-select" data-target-year="${yr}">
+            ${dropdownOptions}
+          </select>
+        </div>`;
+    } else {
+      deltaHTML = `<div class="change neutral">No historical years to compare</div>`;
+    }
+
     return `
-      <div class="stat-box" style="border-left-color:${color};">
-        <div class="label">${yr}${yr === baselineYear ? ' — Baseline' : ''}</div>
-        <div class="value" style="color:${color};">${total.toLocaleString()}</div>
-        <div class="sub">Totaled over custom frame (${rangeDisplay})</div>
+      <div class="stat-box stat-box-with-selector" style="border-left-color:${color};">
+        <div>
+          <div class="label">${yr}</div>
+          <div class="value" style="color:${color};">${total.toLocaleString()}</div>
+          <div class="sub">Totaled over custom frame (${rangeDisplay})</div>
+        </div>
         ${deltaHTML}
       </div>`;
   }).join('');
+
+  // Attach dynamic event listeners to update the specific baseline override and trigger re-render
+  statsEl.querySelectorAll('.baseline-select').forEach(selectEl => {
+    selectEl.addEventListener('change', (e) => {
+      const targetYear = parseInt(e.target.dataset.targetYear);
+      const chosenBaseline = parseInt(e.target.value);
+      comparisonBaselineOverrides.set(targetYear, chosenBaseline);
+      
+      // Instantly refresh calculations/views
+      updateChartAndStats();
+    });
+  });
+
   statsEl.style.display = 'flex';
 }
 
@@ -456,13 +560,11 @@ function buildChartSVG({ selectedYears, pointsByYear, periodLabels, stepDays, id
 
   const tickCount = 5;
   let gridSVG = '';
-  // Left Vertical Boundary Y-Axis Line
   gridSVG += `<line x1="${marginLeft}" y1="${marginTop}" x2="${marginLeft}" y2="${marginTop + plotHeight}" stroke="#999" stroke-width="1" />`;
   
   for (let i = 0; i <= tickCount; i++) {
     const val = (yMax / tickCount) * i;
     const py = yToPx(val).toFixed(1);
-    // Draw only a 5px tick mark outside the chart instead of a full line across the chart width
     gridSVG += `<line x1="${marginLeft - 5}" y1="${py}" x2="${marginLeft}" y2="${py}" stroke="#999" stroke-width="1" />`;
     gridSVG += `<text x="${marginLeft - 10}" y="${parseFloat(py) + 4}" font-size="11" fill="#666" text-anchor="end" font-family="Arial, sans-serif">${Math.round(val).toLocaleString()}</text>`;
   }
@@ -471,7 +573,6 @@ function buildChartSVG({ selectedYears, pointsByYear, periodLabels, stepDays, id
   let xAxisSVG = `<line x1="${marginLeft}" y1="${marginTop + plotHeight}" x2="${marginLeft + plotWidth}" y2="${marginTop + plotHeight}" stroke="#999" stroke-width="1" />`;
   for (let m = 0; m < 12; m++) {
     const px = xToPx(m + 0.5).toFixed(1);
-    // X-axis ticks (5px downward ticks under each label center)
     xAxisSVG += `<line x1="${px}" y1="${marginTop + plotHeight}" x2="${px}" y2="${marginTop + plotHeight + 5}" stroke="#999" stroke-width="1" />`;
     xAxisSVG += `<text x="${px}" y="${marginTop + plotHeight + 18}" font-size="11" fill="#666" text-anchor="middle" font-family="Arial, sans-serif">${monthAbbrev[m]}</text>`;
   }
