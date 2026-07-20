@@ -248,7 +248,7 @@
       // label column, rather than letting long labels (e.g. infrastructure
       // type names) overflow or run into the bar.
       const maxLabelWidth = labelColW - 8;
-      const fontSize = 8;
+      const fontSize = 6;
       const lineHeight = fontSize + 2.5;
       const lines = wrapLabelText(label, maxLabelWidth, fontSize);
       const firstLineY = cy - ((lines.length - 1) * lineHeight) / 2;
@@ -289,7 +289,7 @@
     const plotH = height - topPad - bottomPad;
     const colW = width / labels.length;
     const barW = Math.min(26, colW * 0.6);
-    const fontSize = 8;
+    const fontSize = 6;
 
     // Keep axis labels horizontal at all times (matching the webpage's
     // Chart.js timeline) by thinning them out - showing only every Nth
@@ -785,7 +785,7 @@
       const pageCount = doc.internal.getNumberOfPages();
       for (let i = 1; i <= pageCount; i++) {
         doc.setPage(i);
-        doc.setFontSize(8);
+        doc.setFontSize(6);
         doc.setTextColor(136, 136, 136);
         doc.text("E-PACC Ukraine Project - Created by MapAction and ACAPS. Data sourced from ACAPS.", margin, pageHeight - 20);
         doc.text(`Page ${i} of ${pageCount}`, pageWidth - margin - 45, pageHeight - 20);
