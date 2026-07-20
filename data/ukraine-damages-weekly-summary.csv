@@ -1,34 +1,12 @@
 oblast,week_ending,total_damaged_buildings
-Chernihivska,2026-07-19,1
-Dnipropetrovska,2026-07-19,5
-Poltavska,2026-07-19,1
-Zaporizka,2026-07-19,1
-Autonomous Republic of Crimea,2026-07-12,7
-Chernihivska,2026-07-12,4
-Dnipropetrovska,2026-07-12,35
-Donetska,2026-07-12,9
-Kharkivska,2026-07-12,32
-Khersonska,2026-07-12,6
-Kyiv,2026-07-12,22
-Kyivska,2026-07-12,1
-Mykolaivska,2026-07-12,2
-Odeska,2026-07-12,11
-Poltavska,2026-07-12,2
-Sumska,2026-07-12,5
-Zaporizka,2026-07-12,9
-Autonomous Republic of Crimea,2026-07-05,20
-Cherkaska,2026-07-05,1
-Chernihivska,2026-07-05,6
-Dnipropetrovska,2026-07-05,42
-Donetska,2026-07-05,6
-Kharkivska,2026-07-05,15
-Khersonska,2026-07-05,3
-Kyiv,2026-07-05,16
-Kyivska,2026-07-05,3
-Mykolaivska,2026-07-05,5
-Poltavska,2026-07-05,6
-Sumska,2026-07-05,8
-Zaporizka,2026-07-05,23
+Autonomous Republic of Crimea,2026-07-05,2
+Chernihivska,2026-07-05,4
+Dnipropetrovska,2026-07-05,11
+Donetska,2026-07-05,1
+Kharkivska,2026-07-05,5
+Poltavska,2026-07-05,1
+Sumska,2026-07-05,2
+Zaporizka,2026-07-05,8
 Autonomous Republic of Crimea,2026-06-28,8
 Chernihivska,2026-06-28,10
 Dnipropetrovska,2026-06-28,35
@@ -174,7 +152,7 @@ Sumska,2026-04-12,5
 Chernihivska,2026-04-05,3
 Dnipropetrovska,2026-04-05,628
 Donetska,2026-04-05,15
-Kharkivska,2026-04-05,30
+Kharkivska,2026-04-05,27
 Khmelnytska,2026-04-05,3
 Kyivska,2026-04-05,9
 Odeska,2026-04-05,3
@@ -214,27 +192,26 @@ Cherkaska,2026-03-15,1
 Chernihivska,2026-03-15,6
 Dnipropetrovska,2026-03-15,31
 Donetska,2026-03-15,11
-Kharkivska,2026-03-15,22
+Kharkivska,2026-03-15,18
 Khersonska,2026-03-15,3
 Kyiv,2026-03-15,1
 Kyivska,2026-03-15,9
 Mykolaivska,2026-03-15,1
 Sumska,2026-03-15,9
 Zaporizka,2026-03-15,2
-Chernihivska,2026-03-08,1
-Dnipropetrovska,2026-03-08,28
-Donetska,2026-03-08,12
-Kharkivska,2026-03-08,11
+Dnipropetrovska,2026-03-08,27
+Donetska,2026-03-08,10
+Kharkivska,2026-03-08,5
 Khersonska,2026-03-08,2
 Khmelnytska,2026-03-08,1
 Mykolaivska,2026-03-08,1
 Odeska,2026-03-08,1
 Poltavska,2026-03-08,1
-Sumska,2026-03-08,2
+Sumska,2026-03-08,1
 Chernihivska,2026-03-01,4
 Dnipropetrovska,2026-03-01,17
-Donetska,2026-03-01,6
-Kharkivska,2026-03-01,18
+Donetska,2026-03-01,5
+Kharkivska,2026-03-01,16
 Khersonska,2026-03-01,2
 Kyivska,2026-03-01,3
 Odeska,2026-03-01,13
@@ -245,7 +222,7 @@ Chernihivska,2026-02-22,3
 Dnipropetrovska,2026-02-22,51
 Donetska,2026-02-22,1
 Ivano-Frankivska,2026-02-22,1
-Kharkivska,2026-02-22,6
+Kharkivska,2026-02-22,4
 Khersonska,2026-02-22,11
 Kirovohradska,2026-02-22,1
 Kyiv,2026-02-22,1
@@ -270,10 +247,10 @@ Volynska,2026-02-15,1
 Zaporizka,2026-02-15,4
 Cherkaska,2026-02-08,3
 Chernihivska,2026-02-08,4
-Dnipropetrovska,2026-02-08,44
+Dnipropetrovska,2026-02-08,42
 Donetska,2026-02-08,8
 Ivano-Frankivska,2026-02-08,2
-Kharkivska,2026-02-08,11
+Kharkivska,2026-02-08,7
 Khersonska,2026-02-08,6
 Kirovohradska,2026-02-08,2
 Kyiv,2026-02-08,12
@@ -289,8 +266,8 @@ Zaporizka,2026-02-08,6
 Autonomous Republic of Crimea,2026-02-01,2
 Chernihivska,2026-02-01,4
 Dnipropetrovska,2026-02-01,39
-Donetska,2026-02-01,92
-Kharkivska,2026-02-01,17
+Donetska,2026-02-01,91
+Kharkivska,2026-02-01,13
 Khersonska,2026-02-01,8
 Kyivska,2026-02-01,1
 Luhanska,2026-02-01,1
@@ -302,7 +279,7 @@ Sumska,2026-02-01,3
 Zaporizka,2026-02-01,6
 Chernihivska,2026-01-25,6
 Dnipropetrovska,2026-01-25,48
-Donetska,2026-01-25,6
+Donetska,2026-01-25,5
 Kharkivska,2026-01-25,11
 Kyiv,2026-01-25,11
 Kyivska,2026-01-25,7
@@ -314,7 +291,7 @@ Zaporizka,2026-01-25,7
 Chernihivska,2026-01-18,4
 Dnipropetrovska,2026-01-18,22
 Donetska,2026-01-18,5
-Kharkivska,2026-01-18,11
+Kharkivska,2026-01-18,8
 Khersonska,2026-01-18,2
 Khmelnytska,2026-01-18,3
 Kyiv,2026-01-18,2
@@ -325,8 +302,8 @@ Zaporizka,2026-01-18,2
 Cherkaska,2026-01-11,1
 Chernihivska,2026-01-11,8
 Dnipropetrovska,2026-01-11,43
-Donetska,2026-01-11,4
-Kharkivska,2026-01-11,3
+Donetska,2026-01-11,3
+Kharkivska,2026-01-11,2
 Khersonska,2026-01-11,6
 Kirovohradska,2026-01-11,1
 Kyiv,2026-01-11,10
@@ -338,7 +315,7 @@ Zaporizka,2026-01-11,1
 Cherkaska,2026-01-04,3
 Chernihivska,2026-01-04,2
 Dnipropetrovska,2026-01-04,20
-Donetska,2026-01-04,12
+Donetska,2026-01-04,11
 Kharkivska,2026-01-04,2
 Khersonska,2026-01-04,3
 Mykolaivska,2026-01-04,1
@@ -349,7 +326,7 @@ Zaporizka,2026-01-04,3
 Cherkaska,2025-12-28,3
 Chernihivska,2025-12-28,6
 Dnipropetrovska,2025-12-28,18
-Donetska,2025-12-28,3
+Donetska,2025-12-28,1
 Kharkivska,2025-12-28,5
 Khersonska,2025-12-28,15
 Khmelnytska,2025-12-28,1
@@ -367,7 +344,7 @@ Zhytomyrska,2025-12-28,6
 Cherkaska,2025-12-21,1
 Chernihivska,2025-12-21,4
 Dnipropetrovska,2025-12-21,27
-Donetska,2025-12-21,12
+Donetska,2025-12-21,10
 Kharkivska,2025-12-21,3
 Khersonska,2025-12-21,9
 Mykolaivska,2025-12-21,2
@@ -377,7 +354,7 @@ Zaporizka,2025-12-21,6
 Chernihivska,2025-12-14,9
 Dnipropetrovska,2025-12-14,34
 Donetska,2025-12-14,16
-Kharkivska,2025-12-14,7
+Kharkivska,2025-12-14,6
 Khersonska,2025-12-14,8
 Kyivska,2025-12-14,1
 Mykolaivska,2025-12-14,1
@@ -398,10 +375,10 @@ Zaporizka,2025-12-07,5
 Cherkaska,2025-11-30,1
 Chernihivska,2025-11-30,5
 Dnipropetrovska,2025-11-30,32
-Donetska,2025-11-30,11
+Donetska,2025-11-30,10
 Kharkivska,2025-11-30,2
 Khersonska,2025-11-30,4
-Kyiv,2025-11-30,5
+Kyiv,2025-11-30,4
 Kyivska,2025-11-30,6
 Mykolaivska,2025-11-30,1
 Odeska,2025-11-30,2
@@ -410,17 +387,17 @@ Sumska,2025-11-30,3
 Zaporizka,2025-11-30,3
 Autonomous Republic of Crimea,2025-11-23,3
 Cherkaska,2025-11-23,1
-Chernihivska,2025-11-23,6
+Chernihivska,2025-11-23,5
 Dnipropetrovska,2025-11-23,74
-Donetska,2025-11-23,13
+Donetska,2025-11-23,12
 Ivano-Frankivska,2025-11-23,2
-Kharkivska,2025-11-23,23
+Kharkivska,2025-11-23,21
 Khersonska,2025-11-23,3
 Khmelnytska,2025-11-23,1
 Lvivska,2025-11-23,7
 Mykolaivska,2025-11-23,1
-Odeska,2025-11-23,6
-Sumska,2025-11-23,4
+Odeska,2025-11-23,5
+Sumska,2025-11-23,3
 Ternopilska,2025-11-23,6
 Zaporizka,2025-11-23,5
 Autonomous Republic of Crimea,2025-11-16,1
@@ -428,7 +405,7 @@ Cherkaska,2025-11-16,2
 Chernihivska,2025-11-16,9
 Dnipropetrovska,2025-11-16,35
 Donetska,2025-11-16,10
-Kharkivska,2025-11-16,35
+Kharkivska,2025-11-16,34
 Khersonska,2025-11-16,13
 Kirovohradska,2025-11-16,1
 Kyiv,2025-11-16,11
@@ -454,7 +431,7 @@ Cherkaska,2025-11-02,2
 Chernihivska,2025-11-02,15
 Chernivetska,2025-11-02,1
 Dnipropetrovska,2025-11-02,31
-Donetska,2025-11-02,17
+Donetska,2025-11-02,15
 Ivano-Frankivska,2025-11-02,1
 Kharkivska,2025-11-02,16
 Khersonska,2025-11-02,14
@@ -470,7 +447,7 @@ Cherkaska,2025-10-26,3
 Chernihivska,2025-10-26,14
 Dnipropetrovska,2025-10-26,32
 Donetska,2025-10-26,28
-Kharkivska,2025-10-26,50
+Kharkivska,2025-10-26,48
 Khersonska,2025-10-26,13
 Kirovohradska,2025-10-26,2
 Kyiv,2025-10-26,26
@@ -479,7 +456,7 @@ Mykolaivska,2025-10-26,1
 Odeska,2025-10-26,2
 Poltavska,2025-10-26,1
 Sumska,2025-10-26,7
-Zaporizka,2025-10-26,5
+Zaporizka,2025-10-26,4
 Autonomous Republic of Crimea,2025-10-19,6
 Chernihivska,2025-10-19,11
 Dnipropetrovska,2025-10-19,29
@@ -496,7 +473,7 @@ Autonomous Republic of Crimea,2025-10-12,1
 Cherkaska,2025-10-12,6
 Chernihivska,2025-10-12,19
 Dnipropetrovska,2025-10-12,27
-Donetska,2025-10-12,37
+Donetska,2025-10-12,36
 Kharkivska,2025-10-12,21
 Khersonska,2025-10-12,10
 Kirovohradska,2025-10-12,1
