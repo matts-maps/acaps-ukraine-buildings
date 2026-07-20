@@ -1,10 +1,13 @@
 /* ==========================================================================
-   Layout Framework
+   Shared Oblast/Raion Analysis Layout
+   Used by both oblast_analysis.html and raion_analysis.html, which share
+   the identical "controls row + full-width map + summary box" layout.
+   Edit this one file and both pages update together.
    ========================================================================== */
 .map-dashboard-container {
   display: flex;
   flex-direction: column; /* Stacks controls above the map */
-  width: 1000px;          
+  width: 1000px;          /* Feel free to increase this (e.g., 1200px) for an even wider layout */
   max-width: 100%;
   margin: 32px auto;
   padding: 0 20px;
@@ -18,8 +21,8 @@
 #map-controls {
   width: 100%;
   min-width: 100%;
-  background: #fff;
-  border-radius: 10px;
+  background: var(--color-bg-card);
+  border-radius: var(--radius-lg);
   padding: 20px 24px;
   box-sizing: border-box;
   display: flex;
@@ -27,15 +30,14 @@
   flex-wrap: wrap;        /* Safely wraps elements on smaller screens */
   align-items: flex-end;  /* Aligns all dropdown inputs and labels on the same baseline */
   gap: 20px;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  box-shadow: var(--shadow-card);
 }
 
-/* Three horizontal filter groups sharing 3/4 (75%) space of the row */
 .map-control-group {
   display: flex;
   flex-direction: column;
   gap: 8px;
-  flex: 1 1 calc(24% - 14px); 
+  flex: 1 1 calc(24% - 14px);
   min-width: 150px;
 }
 
@@ -52,22 +54,22 @@
 
 .map-range-sep {
   font-size: 12px;
-  color: #777;
+  color: var(--color-text-faint);
   flex-shrink: 0;
 }
 
 #map-controls label {
   font-size: 13px;
   font-weight: 600;
-  color: #444;
+  color: var(--color-text-label);
 }
 
 #map-controls select {
   padding: 7px 12px;
-  border: 1px solid #ccc;
-  border-radius: 6px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-sm);
   font-size: 13px;
-  background: #fff;
+  background: var(--color-bg-card);
   font-family: inherit;
   cursor: pointer;
   width: 100%;
@@ -78,11 +80,11 @@
    ========================================================================== */
 .map-summary-box {
   margin-top: 0;
-  background: #f0f4f8;
-  border-radius: 8px;
+  background: var(--color-bg-highlight);
+  border-radius: var(--radius-md);
   padding: 10px 16px;
-  border-left: 4px solid #1a3a5c;
-  
+  border-left: 4px solid var(--color-primary);
+
   /* Strictly allocates 1/4 (25%) of the parent width minus the gap */
   flex: 0 0 calc(25% - 20px);
   box-sizing: border-box;
@@ -91,7 +93,7 @@
 
 .map-summary-box .label {
   font-size: 11px;
-  color: #666;
+  color: var(--color-text-faint);
   text-transform: uppercase;
   letter-spacing: 0.5px;
   font-weight: 600;
@@ -100,7 +102,7 @@
 .map-summary-box .value {
   font-size: 22px;
   font-weight: 700;
-  color: #1a3a5c;
+  color: var(--color-primary);
   margin-top: 2px;
 }
 
@@ -110,23 +112,23 @@
 #map-wrapper-card {
   width: 100%;            /* Force card to span 100% of the horizontal layout container */
   box-sizing: border-box;
-  background: #fff;
-  border-radius: 10px;
+  background: var(--color-bg-card);
+  border-radius: var(--radius-lg);
   padding: 20px;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  box-shadow: var(--shadow-card);
   display: flex;
   flex-direction: column;
 }
 
 #map-wrapper-card h2 {
   font-size: 16px;
-  color: #1a3a5c;
+  color: var(--color-primary);
   margin: 0 0 4px 0;
 }
 
 #map-wrapper-card .subtitle {
   font-size: 12px;
-  color: #888;
+  color: var(--color-text-muted);
   margin-bottom: 16px;
 }
 
@@ -143,27 +145,27 @@
   padding: 12px 16px;
   font-family: inherit;
   font-size: 13px;
-  background: #fff;
-  color: #333;
+  background: var(--color-bg-card);
+  color: var(--color-text);
   border: none;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
-  border-radius: 6px;
+  box-shadow: var(--shadow-float);
+  border-radius: var(--radius-sm);
   min-width: 180px;
 }
 
 .map-info-panel h4 {
   margin: 0 0 6px 0;
   font-size: 14px;
-  color: #1a3a5c;
+  color: var(--color-primary);
 }
 
 .map-legend {
   line-height: 20px;
-  color: #555;
-  background: #fff;
+  color: var(--color-text-secondary);
+  background: var(--color-bg-card);
   padding: 12px;
-  border-radius: 6px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.15);
+  border-radius: var(--radius-sm);
+  box-shadow: var(--shadow-float);
   font-size: 12px;
 }
 
@@ -173,12 +175,12 @@
   float: left;
   margin-right: 8px;
   opacity: 0.85;
-  border-radius: 3px;
+  border-radius: var(--radius-xs);
 }
 
 #map-error-msg {
   flex-basis: 100%;       /* Spans full width above filters if visible */
-  color: #c0392b;
+  color: var(--color-danger);
   font-size: 13px;
   margin-bottom: 12px;
   display: none;
@@ -193,9 +195,9 @@
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  background: #fff4ec;
-  border: 1px solid #f4c9a5;
-  border-radius: 8px;
+  background: var(--color-accent-soft-bg);
+  border: 1px solid var(--color-accent-soft-border);
+  border-radius: var(--radius-md);
   padding: 8px 10px;
   font-size: 12px;
   margin-top: 10px;
@@ -203,14 +205,14 @@
 
 #map-active-filter-label {
   font-weight: 600;
-  color: #a2440a;
+  color: var(--color-accent-text);
 }
 
 #map-clear-filter-btn {
-  border: 1px solid #d94801;
-  background: #fff;
-  color: #d94801;
-  border-radius: 6px;
+  border: 1px solid var(--color-accent);
+  background: var(--color-bg-card);
+  color: var(--color-accent);
+  border-radius: var(--radius-sm);
   padding: 4px 10px;
   font-size: 12px;
   cursor: pointer;
@@ -218,14 +220,14 @@
 }
 
 #map-clear-filter-btn:hover {
-  background: #d94801;
-  color: #fff;
+  background: var(--color-accent);
+  color: var(--color-text-inverse);
 }
 
 .map-hint {
   flex-basis: 100%;       /* Pushes instructions below the filters and totalizer box */
   font-size: 11px;
-  color: #888;
+  color: var(--color-text-muted);
   line-height: 1.4;
   margin: 4px 0 0 0;
 }
@@ -242,7 +244,7 @@
   display: flex;
   flex-wrap: wrap;
   gap: 20px;
-  max-width: 1000px;
+  max-width: var(--content-max-width);
   margin: 0 auto 32px;
   padding: 0 20px;
   box-sizing: border-box;
@@ -250,11 +252,11 @@
 
 .map-chart-card {
   flex: 1 1 280px;
-  background: #fff;
-  border-radius: 10px;
+  background: var(--color-bg-card);
+  border-radius: var(--radius-lg);
   padding: 20px;
   box-sizing: border-box;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+  box-shadow: var(--shadow-card);
 }
 
 .map-chart-card.timeline-card {
@@ -264,7 +266,7 @@
 .map-chart-card h3 {
   font-size: 14px;
   font-weight: 600;
-  color: #1a3a5c;
+  color: var(--color-primary);
   margin: 0 0 14px;
 }
 
@@ -276,7 +278,7 @@
 .map-charts-note {
   flex-basis: 100%;
   font-size: 12px;
-  color: #888;
+  color: var(--color-text-muted);
   margin: 0;
   text-align: center;
 }
@@ -301,3 +303,22 @@
     width: 100%;
   }
 }
+
+/* "Generate PDF Report" button injected by report-generator.js /
+   oblast-report-generator.js. Matches #controls button so the PDF
+   trigger looks identical to every other primary button on the site. */
+.map-report-btn {
+  margin-top: 12px;
+  padding: 10px 16px;
+  background: var(--color-primary);
+  color: var(--color-text-inverse);
+  border: none;
+  border-radius: var(--radius-sm);
+  font-size: 13px;
+  font-weight: 600;
+  cursor: pointer;
+  width: 100%;
+}
+.map-report-btn:hover { background: var(--color-primary-hover); }
+.map-report-btn:disabled { opacity: 0.7; cursor: not-allowed; }
+

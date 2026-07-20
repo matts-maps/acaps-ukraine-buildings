@@ -854,12 +854,10 @@
     btn.id = "generate-report-btn";
     btn.type = "button";
     btn.textContent = "Generate PDF Report";
+    // Styling (including :hover) lives in .map-report-btn in the page's
+    // CSS file, so it always matches the other buttons in #map-controls
+    // instead of drifting via an inline style override.
     btn.className = "map-report-btn";
-    btn.style.cssText =
-      "margin-top:12px;padding:10px 16px;background:#1a3a5c;color:#fff;" +
-      "border:none;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;width:100%;";
-    btn.addEventListener("mouseenter", () => (btn.style.background = "#12283f"));
-    btn.addEventListener("mouseleave", () => (btn.style.background = "#1a3a5c"));
     btn.addEventListener("click", generateReport);
     anchor.insertAdjacentElement("afterend", btn);
   }
