@@ -283,8 +283,8 @@ function updateChartAndStats() {
   if (chartInstance) chartInstance.destroy();
 
   const titleText = selectedYears.length === 1
-    ? `Damaged Buildings Profile — ${selectedYears[0]}`
-    : `Damaged Buildings Profile Breakdown — ${selectedYears.join(' vs ')}`;
+    ? `Damaged buildings timeline - ${selectedYears[0]}`
+    : `Damaged buildings timeline comparison- ${selectedYears.join(' vs ')}`;
 
   chartInstance = new Chart(canvas, {
     type: 'line',
@@ -334,7 +334,7 @@ function updateChartAndStats() {
         },
         y: { 
           beginAtZero: true, 
-          title: { display: true, text: 'Recorded Structural Damages' },
+          title: { display: true, text: 'Number of damaged buildings' },
           grid: { 
             drawOnChartArea: false,
             drawTicks: true
