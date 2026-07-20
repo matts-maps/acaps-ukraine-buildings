@@ -38,23 +38,11 @@ jobs:
         run: python scripts/compare_weeks.py
 
       - name: Commit changes
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
-
-          # Stage raw data, summaries, static charts, and the automated dashboard interface
-          git add data/ukraine-damages.csv \
-                  data/ukraine-damages-weekly-summary.csv \
-                  data/week_4_comparison.csv \
-                  index.html
-
-          if git diff --cached --quiet; then
-            echo "No changes detected in raw data, summaries, plots, or dashboard."
-          else
-            git commit -m "Weekly ACAPS updates, analytical summaries, and interactive dashboard update"
-            
-            # Pull any remote changes and rebase our automated commit on top of them
-            git pull --rebase origin main
-            
-            git push origin main
-          fi
+        uses: stefanzweifel/git-auto-commit-action@v5
+        with:
+          commit_message: "Weekly ACAPS updates, analytical summaries, and interactive dashboard update"
+          file_pattern: >-
+            data/ukraine-damages.csv
+            data/ukraine-damages-weekly-summary.csv
+            data/week_4_comparison.csv
+            index.html
