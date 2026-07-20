@@ -50,6 +50,21 @@
   const CHART_PALETTE = ["#1a3a5c", "#2c5f8a", "#4a90c4", "#7cb4dd", "#a8d0e8", "#d94801", "#f16913", "#fdae6b", "#fdd0a2", "#999999"];
   const FILTER_HIGHLIGHT_COLOR = "#d94801";
 
+  // The CSV's type_of_infrastructure values are the source of truth, but a
+  // handful are shortened here for display (charts, legends, PDF report)
+  // per the agreed report-label list. Anything not listed below (including
+  // any brand-new CSV value) is shown verbatim, unchanged.
+  const INFRA_LABEL_MAP = {
+    "Industrial/Business/Enterprise facilities": "Industrial/Business/Enterprise",
+    "Education facility (school, etc.)": "Education",
+    "Government facilities": "Government",
+    "Cultural facilities (museum, theater etc.)": "Cultural",
+    "Health facility (hospital, health clinic)": "Health",
+    "Agricultural facilities": "Agricultural",
+    "Religious facilities": "Religious"
+  };
+  const BLANK_INFRA_LABEL = "(blank/missing)";
+
   // 5 colour groups for values of 1 and above. A value of exactly 0 is
   // handled separately and always renders as plain white.
   const THEMATIC_COLORS = ["#fee6ce", "#fdd0a2", "#fdae6b", "#f16913", "#d94801"];
@@ -213,6 +228,13 @@
 
   MapCore.isFilterableLabel = function (label) {
     return label !== "Other";
+  };
+
+  // Maps a raw type_of_infrastructure CSV value to its report/display label.
+  MapCore.normalizeInfraLabel = function (raw) {
+    const trimmed = raw ? raw.trim() : "";
+    if (!trimmed) return BLANK_INFRA_LABEL;
+    return INFRA_LABEL_MAP[trimmed] || trimmed;
   };
 
   // --------------------------------------------------------------------

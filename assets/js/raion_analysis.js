@@ -221,7 +221,7 @@ function processMapVisualisations() {
     if (p < startPeriod || p > endPeriod) return;
 
     const name = rawRaion;
-    const infraType = r.type_of_infrastructure?.trim() || "Unspecified";
+    const infraType = MapCore.normalizeInfraLabel(r.type_of_infrastructure);
     const extent = r.extent_of_damage?.trim() || "Unspecified";
 
     const timeLabel = step === 30 ? MapCore.monthsList[p] : `${step === 7 ? "Week" : "Fortnight"} ${p + 1}`;
