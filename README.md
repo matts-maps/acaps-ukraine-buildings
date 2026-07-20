@@ -1,6 +1,6 @@
-# Ukraine Damages Auto-Updater
+# Ukraine building damage analytics
 
-This repository automatically updates the Ukraine Damages dataset from the ACAPS API every week.
+A website comparing and analysing the damaged building data from the ACAPS API on a weekly basis.
 
 ## Outputs
 
