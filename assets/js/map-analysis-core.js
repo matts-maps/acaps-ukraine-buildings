@@ -83,6 +83,30 @@
     dimensionLabels: {},
     onRerender: function () {},
     chartInstances: { entity: null, infra: null, extent: null, timeline: null },
+    minDataDate: null,
+    maxDataDate: null
+  };
+
+  // Calculate min and max dates from the CSV data for real date ranges in dropdowns
+  MapCore.calculateDataDateRange = function (rawDamageCSV) {
+    if (!rawDamageCSV || rawDamageCSV.length === 0) return;
+    
+    let minDate = null;
+    let maxDate = null;
+    
+    rawDamageCSV.forEach(row => {
+      const dateStr = (row.date_of_event || '').trim();
+      if (!dateStr) return;
+      
+      const d = new Date(dateStr);
+      if (isNaN(d)) return;
+      
+      if (!minDate || d < minDate) minDate = d;
+      if (!maxDate || d > maxDate) maxDate = d;
+    });
+    
+    MapCore.minDataDate = minDate;
+    MapCore.maxDataDate = maxDate;
   };
 
   // --------------------------------------------------------------------
@@ -247,18 +271,55 @@
     if (!yearSel) return;
     const years = [...new Set(rawDamageCSV.map(r => r.date_of_event?.slice(0, 4)).filter(y => y))].sort((a, b) => b - a);
     yearSel.innerHTML = years.map(y => `<option value="${y}">${y}</option>`).join("");
+    
+    // Calculate date range when years are loaded
+    MapCore.calculateDataDateRange(rawDamageCSV);
     MapCore.buildMapPeriodDropdowns();
   };
 
+  // UPDATED: Generate period labels with real dates from data
   MapCore.buildMapPeriodDropdowns = function () {
     const aggType = document.getElementById("map-aggregation-select").value;
     const startSel = document.getElementById("map-period-start-select");
     const endSel = document.getElementById("map-period-end-select");
     if (!startSel || !endSel) return;
 
-    const options = aggType === "30"
-      ? monthsList.map((m, i) => `<option value="${i}">${m}</option>`).join("")
-      : Array.from({ length: Math.ceil(365 / aggType) }, (_, i) => `<option value="${i}">${aggType == 7 ? "Week" : "Fortnight"} ${i + 1}</option>`).join("");
+    // Calculate reference year from data (use the max year from data)
+    if (!MapCore.minDataDate || !MapCore.maxDataDate) {
+      // Fallback if dates haven't been calculated yet
+      MapCore.maxDataDate = new Date();
+    }
+    const referenceYear = MapCore.maxDataDate ? MapCore.maxDataDate.getFullYear() : new Date().getFullYear();
+
+    let options = "";
+    if (aggType === "30") {
+      // Months - show actual date ranges
+      options = monthsList.map((m, i) => {
+        const dStart = new Date(referenceYear, i, 1);
+        const dEnd = new Date(referenceYear, i + 1, 0);
+        const fmt = d => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+        const dateRange = `${fmt(dStart)} – ${fmt(dEnd)}`;
+        return `<option value="${i}">${m} (${dateRange})</option>`;
+      }).join("");
+    } else {
+      // Weeks or Fortnights - calculate with real dates
+      const periodDays = parseInt(aggType);
+      const totalPeriods = Math.ceil(365 / periodDays);
+      const prefix = aggType === "7" ? "Week" : "Fortnight";
+      
+      for (let i = 0; i < totalPeriods; i++) {
+        const startDay = i * periodDays + 1;
+        let endDay = startDay + periodDays - 1;
+        if (endDay > 365) endDay = 365;
+        
+        const dStart = new Date(referenceYear, 0, startDay);
+        const dEnd = new Date(referenceYear, 0, endDay);
+        const fmt = d => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+        const dateRange = `${fmt(dStart)} – ${fmt(dEnd)}`;
+        
+        options += `<option value="${i}">${prefix} ${i + 1} (${dateRange})</option>`;
+      }
+    }
 
     startSel.innerHTML = options;
     endSel.innerHTML = options;
