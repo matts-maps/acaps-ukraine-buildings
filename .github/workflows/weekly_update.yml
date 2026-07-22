@@ -37,6 +37,9 @@ jobs:
       - name: Run week-4 comparison analysis
         run: python scripts/compare_weeks.py
 
+      - name: Sync with remote before committing
+        run: git pull --rebase --autostash origin main
+
       - name: Commit changes
         uses: stefanzweifel/git-auto-commit-action@v5
         with:
