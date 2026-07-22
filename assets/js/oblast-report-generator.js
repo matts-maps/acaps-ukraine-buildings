@@ -521,13 +521,17 @@
     }
   }
 
-  async function addSvgWithHeading(doc, heading, svgElement, y, margin, pageWidth, pageHeight, targetWidth, explicitX, boxHeight, canvasId) {
-    const xPos = explicitX !== null && explicitX !== undefined ? explicitX : margin;
+  function measureHeadingHeight(doc, heading, targetWidth) {
     doc.setFont("helvetica", "bold");
     doc.setFontSize(10);
+    return doc.splitTextToSize(heading, targetWidth).length * 13;
+  }
+
+  async function addSvgWithHeading(doc, heading, svgElement, y, margin, pageWidth, pageHeight, targetWidth, explicitX, boxHeight, canvasId) {
+    const xPos = explicitX !== null && explicitX !== undefined ? explicitX : margin;
+    const headingHeight = measureHeadingHeight(doc, heading, targetWidth);
     doc.setTextColor(26, 58, 92);
     const headingLines = doc.splitTextToSize(heading, targetWidth);
-    const headingHeight = headingLines.length * 13;
     if (y + boxHeight + headingHeight + 20 > pageHeight - margin) {
       doc.addPage();
       y = margin + 15;
@@ -766,6 +770,14 @@
       const SUMMARY_CHART_HEIGHT_PX = 220;
       let rowYStart = y;
       let maxRowHeight = 0;
+      const rowHeadingHeight = Math.max(
+        series.topOblasts && series.topOblasts.labels.length ? measureHeadingHeight(doc, IDS.charts.topOblasts.label, colChartWidth) : 0,
+        series.infra && series.infra.labels.length ? measureHeadingHeight(doc, IDS.charts.infra.label, colChartWidth) : 0
+      );
+      if (rowYStart + SUMMARY_CHART_HEIGHT_PX + rowHeadingHeight + 20 > pageHeight - margin) {
+        doc.addPage();
+        rowYStart = margin + 15;
+      }
       if (series.topOblasts && series.topOblasts.labels.length) {
         const topOblastsSvg = buildHorizontalBarSVG(series.topOblasts.labels, series.topOblasts.values, colChartWidth, SUMMARY_CHART_HEIGHT_PX, highlightSetFor("oblast", state.activeFilter));
         const nextY = await addSvgWithHeading(doc, IDS.charts.topOblasts.label, topOblastsSvg, rowYStart, margin, pageWidth, pageHeight, colChartWidth, margin, SUMMARY_CHART_HEIGHT_PX, IDS.charts.topOblasts.id);
