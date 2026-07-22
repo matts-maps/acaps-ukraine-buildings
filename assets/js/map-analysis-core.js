@@ -284,12 +284,15 @@
     const endSel = document.getElementById("map-period-end-select");
     if (!startSel || !endSel) return;
 
-    // Calculate reference year from data (use the max year from data)
-    if (!MapCore.minDataDate || !MapCore.maxDataDate) {
-      // Fallback if dates haven't been calculated yet
-      MapCore.maxDataDate = new Date();
-    }
-    const referenceYear = MapCore.maxDataDate ? MapCore.maxDataDate.getFullYear() : new Date().getFullYear();
+    // Use the year currently selected in the "Target Assessment Year"
+    // dropdown so period labels reflect that year's actual calendar (this
+    // matters across leap-year boundaries); fall back to the max year seen
+    // in the data, then to the current year, before the selector has options.
+    const yearSel = document.getElementById("map-year-select");
+    const selectedYear = yearSel && yearSel.value ? parseInt(yearSel.value, 10) : NaN;
+    const referenceYear = !isNaN(selectedYear)
+      ? selectedYear
+      : (MapCore.maxDataDate ? MapCore.maxDataDate.getFullYear() : new Date().getFullYear());
 
     let options = "";
     if (aggType === "30") {

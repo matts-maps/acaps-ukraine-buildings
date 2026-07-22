@@ -267,6 +267,16 @@ button:active {
   margin-top: 16px;
 }
 
+/* Hidden until damage-dashboard.js confirms the CSV loaded successfully;
+   it restores display via inline style once ready, or leaves these hidden
+   and shows #error-msg instead. Scoped to these three IDs only so the
+   shared #map-controls / .map-chart-card rules above stay unaffected. */
+#controls,
+#chart-card,
+#stats {
+  display: none;
+}
+
 .stat-box {
   flex: 1;
   min-width: 220px;

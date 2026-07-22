@@ -702,7 +702,7 @@
       doc.setFontSize(9.5);
       const leftRaw = [
         `Active filter: ${state.activeFilterText}`,
-        `Affected Oblasts: ${Object.keys(state.oblastCounts).length || "N/A"}`
+        `Affected Oblasts: ${Object.keys(state.oblastCounts).length}`
       ];
       const rightRaw = [
         topOblast ? `Most affected: ${topOblast[0]} (${topOblast[1].toLocaleString()})` : "Most affected: N/A",

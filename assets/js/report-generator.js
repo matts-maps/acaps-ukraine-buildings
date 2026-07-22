@@ -29,7 +29,7 @@
     mapContainer: "map-container",
     charts: {
       timeline: { id: "map-timeline-chart", label: "Timeline of damaged buildings" },
-      topRaions: { id: "map-top-oblasts-chart", label: "Most damaged Raions" },
+      topRaions: { id: "map-top-oblasts-chart", label: "Top Raions by Reported Damage" },
       infra: { id: "map-infra-type-chart", label: "Damage by infrastructure type" },
       extent: { id: "map-extent-chart", label: "Level of damage" }
     },
@@ -709,7 +709,7 @@
       const leftRaw = [
         `Oblast coverage: ${state.oblastLabel}`,
         `Raion coverage: ${state.raionLabel}`,
-        `Affected Raions: ${Object.keys(state.raionCounts).length || "N/A"}`
+        `Affected Raions: ${Object.keys(state.raionCounts).length}`
       ];
       const rightRaw = [
         topRaion ? `Most affected: ${topRaion[0]} (${topRaion[1].toLocaleString()})` : "Most affected: N/A",

@@ -46,7 +46,13 @@ function normalizeRaionName(raw) {
   return RAION_NAME_MAP[raw] || raw;
 }
 
-window.addEventListener("load", () => {
+// Runs immediately: this script is loaded with `defer`, so the DOM is
+// already parsed and the Leaflet/PapaParse/MapCore scripts before it in the
+// page have already executed. Waiting for the "load" event instead (which
+// also waits on map tile images) left a window where a user could click the
+// period dropdown or "Clear" filter button before MapCore.init() had wired
+// up MapCore.onRerender, silently no-op'ing the interaction.
+(() => {
   const csvPath = window.MAP_CSV_PATH || "/data/ukraine-damages.csv";
   const geojsonPath = window.MAP_GEOJSON_PATH || "/data/ukr_admn_ad2_py_s0_fieldmaps_pp_raions.json";
 
@@ -88,7 +94,7 @@ window.addEventListener("load", () => {
     MapCore.buildYearOptions(rawDamageCSV);
     buildOblastRaionFilterOptions();
   });
-});
+})();
 
 // Builds the Oblast dropdown (all unique oblasts, alphabetical) and the
 // initial Raion dropdown (all unique raions). Called once after the CSV
