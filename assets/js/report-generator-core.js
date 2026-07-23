@@ -737,16 +737,49 @@
         doc.setTextColor(26, 58, 92);
         doc.text(`Total Buildings Impacted: ${state.nationalTotal}`, margin + 20, y + statBoxHeight - 15);
         y += statBoxHeight + 25;
+        // Vector legend: the "Damaged Buildings" bubble legend (already a
+        // real <svg>, built by MapCore.updateProportionalLegend) plus the
+        // "Areas of control" swatches (built fresh by MapPdfRenderer, since
+        // the live version's swatches are plain CSS backgrounds, not SVG),
+        // embedded directly as vector graphics rather than screenshotted
+        // along with the map - this is what previously produced the blank
+        // legend swatch / gradient-background bugs. Sized and reserved
+        // *before* the map image below, so the map is deliberately left
+        // smaller than "all remaining space on the page" and both legends
+        // land on the same page as the map, not pushed off onto their own.
+        const damageLegendSvg = document.querySelector("#map-legend-panel svg");
+        const areasLegendSvg = window.MapPdfRenderer ? MapPdfRenderer.buildAreasOfControlLegendSvg() : null;
+        const legendGap = 16;
+        const legendColWidth = (pageWidth - margin * 2 - legendGap) / 2;
+        const LEGEND_MAX_HEIGHT = 100;
+        // Matches the "heading-to-content gap (6) + trailing gap (30)"
+        // that addImageWithHeading/addSvgWithHeading actually advance y by
+        // around their content box (their own internal overflow checks use
+        // a smaller "+20", which only guards against the box itself running
+        // off the page - not the full heading+gap+box+trailing-gap total
+        // that's actually consumed - so a reservation based on "+20" alone
+        // undershoots by 16pt and the legend row ends up rolling onto its
+        // own page anyway).
+        const BLOCK_OVERHEAD = 36;
+        const LAYOUT_SAFETY_MARGIN = 15;
+        const legendHeadingHeight = Math.max(
+          damageLegendSvg ? measureHeadingHeight(doc, "Damaged Buildings", legendColWidth) : 0,
+          areasLegendSvg ? measureHeadingHeight(doc, "Areas of control", legendColWidth) : 0
+        );
+        const legendReserve = (damageLegendSvg || areasLegendSvg)
+          ? legendHeadingHeight + BLOCK_OVERHEAD + LEGEND_MAX_HEIGHT + LAYOUT_SAFETY_MARGIN
+          : 0;
+
         const mapImg = await captureMapImage();
         if (mapImg) {
-          // The map image alone (legend is embedded separately, below, as
-          // vector graphics) - explicitly cap it to whatever vertical space
-          // is left on this page, rather than letting addImageWithHeading's
-          // own overflow check push it to page 2. The map and its legend
-          // must stay on the report's first page.
+          // Cap the map to whatever vertical space is left on this page
+          // once the legend row below it has already been reserved, rather
+          // than letting addImageWithHeading's own overflow check push it
+          // to page 2. The map and its legends must stay on the report's
+          // first page.
           const mapTargetWidth = pageWidth - margin * 2;
           const mapHeadingHeight = measureHeadingHeight(doc, config.mapImageHeading, mapTargetWidth);
-          const availableMapHeight = Math.max(150, pageHeight - margin - y - mapHeadingHeight - 20);
+          const availableMapHeight = Math.max(150, pageHeight - margin - y - mapHeadingHeight - BLOCK_OVERHEAD - legendReserve);
           y = addImageWithHeading(doc, config.mapImageHeading, mapImg, y, margin, pageWidth, pageHeight, mapTargetWidth, null, availableMapHeight);
         } else {
           doc.setFont("helvetica", "italic");
@@ -756,20 +789,19 @@
           y += 25;
         }
 
-        // Vector legend: the "Damaged Buildings" bubble legend (already a
-        // real <svg>, built by MapCore.updateProportionalLegend) plus the
-        // "Areas of control" swatches (built fresh by MapPdfRenderer, since
-        // the live version's swatches are plain CSS backgrounds, not SVG),
-        // embedded directly as vector graphics rather than screenshotted
-        // along with the map - this is what previously produced the blank
-        // legend swatch / gradient-background bugs.
-        const damageLegendSvg = document.querySelector("#map-legend-panel svg");
-        const areasLegendSvg = window.MapPdfRenderer ? MapPdfRenderer.buildAreasOfControlLegendSvg() : null;
         if (damageLegendSvg || areasLegendSvg) {
-          const legendGap = 16;
-          const legendColWidth = (pageWidth - margin * 2 - legendGap) / 2;
-          const LEGEND_MAX_HEIGHT = 90;
-          const legendRowY = y;
+          // Check overflow once, using both legends' worst case, and
+          // advance the page (if truly needed) once - rather than letting
+          // each addFittedSvgWithHeading call independently decide to
+          // addPage(), which is what previously split the two legends onto
+          // two separate pages of their own (each call's overflow check ran
+          // against the same stale y in turn, so the first call's addPage()
+          // left the second call still positioned as if nothing had moved).
+          let legendRowY = y;
+          if (legendRowY + LEGEND_MAX_HEIGHT + legendHeadingHeight + BLOCK_OVERHEAD > pageHeight - margin) {
+            doc.addPage();
+            legendRowY = margin + 15;
+          }
           let legendRowHeight = 0;
           if (damageLegendSvg) {
             // Must clone: addSvgWithHeading/embedSvgChart appends the node

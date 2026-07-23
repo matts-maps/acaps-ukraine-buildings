@@ -64,11 +64,22 @@
   // --------------------------------------------------------------------
   // ISW "areas of control" layers
   // --------------------------------------------------------------------
-  // Small tile of diagonal red lines, used as a repeating Canvas pattern
-  // fill for the "before 24 Feb 2022" layer - the raster equivalent of the
-  // live map's SVG <pattern> fill, which Canvas 2D (unlike html2canvas)
-  // supports natively.
-  function buildHatchPatternTile(exportScale) {
+  // Repeating Canvas pattern fill for the "before 24 Feb 2022" layer's
+  // diagonal hatch - the raster equivalent of the live map's SVG <pattern>
+  // fill, which Canvas 2D (unlike html2canvas) supports natively.
+  //
+  // The tile itself is a single *vertical* line (unrotated), exactly like
+  // the live map's SVG pattern (an unrotated vertical line, rotated as a
+  // whole via patternTransform="rotate(45)") - not a diagonal baked
+  // directly into the tile's own square bounds. Baking the angle into the
+  // tile geometry means the line gets clipped at the tile's edges before
+  // it repeats, so adjacent tiles' segments don't line up and the hatch
+  // reads as short staggered dashes instead of continuous diagonal lines.
+  // Rotating the whole repeat lattice via CanvasPattern.setTransform(),
+  // the same way SVG's patternTransform does it, keeps every line
+  // perfectly continuous across tile boundaries because the periodic
+  // lattice itself carries the rotation, not each tile's clipped content.
+  function buildHatchPattern(ctx, exportScale) {
     const tileSize = 8 * exportScale;
     const tile = document.createElement("canvas");
     tile.width = tileSize;
@@ -77,12 +88,13 @@
     tctx.strokeStyle = "#EF0000";
     tctx.lineWidth = 3 * exportScale;
     tctx.beginPath();
-    [-1, 0, 1].forEach((k) => {
-      tctx.moveTo(k * tileSize - tileSize, tileSize * 2);
-      tctx.lineTo(k * tileSize + tileSize, -tileSize);
-    });
+    tctx.moveTo(tileSize / 2, 0);
+    tctx.lineTo(tileSize / 2, tileSize);
     tctx.stroke();
-    return tile;
+
+    const pattern = ctx.createPattern(tile, "repeat");
+    pattern.setTransform(new DOMMatrix().rotate(45));
+    return pattern;
   }
 
   // Draws one FRONTLINE_LAYERS entry from its already-loaded
@@ -116,7 +128,7 @@
     });
 
     if (layerConfig.key === "pre2022") {
-      ctx.fillStyle = ctx.createPattern(buildHatchPatternTile(exportScale), "repeat");
+      ctx.fillStyle = buildHatchPattern(ctx, exportScale);
     } else {
       ctx.fillStyle = layerConfig.style.fillColor;
       ctx.globalAlpha = layerConfig.style.fillOpacity;
