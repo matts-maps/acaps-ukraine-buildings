@@ -26,8 +26,8 @@
      ...
      MapCore.buildYearOptions(rawDamageCSV);
      ...
-     const breaks = MapCore.computeDynamicBreaks(counts);
-     MapCore.updateLegend(breaks);
+     const radiusInfo = MapCore.computeRadiusScale(counts);
+     MapCore.updateProportionalLegend(radiusInfo);
      const chartSeries = MapCore.buildSummaryCharts({
        entityCounts: counts, entityDimension: 'oblast', entityKey: 'topOblasts',
        infraCounts, extentCounts, timeCounts, labelsList
@@ -65,18 +65,16 @@
   };
   const BLANK_INFRA_LABEL = "(blank/missing)";
 
-  // 5 colour groups for values of 1 and above. A value of exactly 0 is
-  // handled separately and always renders as plain white.
-  const THEMATIC_COLORS = ["#fee6ce", "#fdd0a2", "#fdae6b", "#f16913", "#d94801"];
-  const ZERO_COLOR = "#ffffff";
+  // Fill colour for every proportional damage circle (single colour — size,
+  // not hue, carries the value).
+  const PROPORTIONAL_CIRCLE_COLOR = "#00734C";
 
   const monthsList = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
 
   const MapCore = {
     CHART_PALETTE,
     FILTER_HIGHLIGHT_COLOR,
-    THEMATIC_COLORS,
-    ZERO_COLOR,
+    PROPORTIONAL_CIRCLE_COLOR,
     monthsList,
     activeFilter: null, // { dimension: string, value: string | number } | null
     mapInstance: null,
@@ -120,6 +118,15 @@
     MapCore.onRerender = (config && config.onRerender) || function () {};
   };
 
+  // Draw order (top to bottom): damaged-building circles, then the ISW
+  // "areas of control" layers (pre-2022 hatch, occupied, advances), then the
+  // basemap tiles — each on its own pane at a fixed z-index, so the order
+  // holds regardless of what's toggled on/off or the sequence it happens in.
+  // Leaflet's default overlayPane sits at z-index 400; the basemap's
+  // tilePane is 200, well below all of these.
+  MapCore.DAMAGE_CIRCLES_PANE = "map-damage-circles-pane";
+  const DAMAGE_CIRCLES_Z_INDEX = 440;
+
   MapCore.initMapElement = function (infoPanelTitle) {
     // Start on a reasonable default view; this gets replaced by fitBounds()
     // once the boundary geoJSON has loaded.
@@ -128,6 +135,7 @@
     L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
       attribution: "&copy; OpenStreetMap", maxZoom: 20
     }).addTo(instance);
+    instance.createPane(MapCore.DAMAGE_CIRCLES_PANE).style.zIndex = DAMAGE_CIRCLES_Z_INDEX;
 
     // UI: Info Panel
     window.mapInfoPanel = L.control({ position: "topright" });
@@ -138,43 +146,158 @@
     };
     window.mapInfoPanel.addTo(instance);
 
-    // UI: Legend (populated/refreshed dynamically by MapCore.updateLegend())
-    window.mapLegend = L.control({ position: "bottomleft" });
-    window.mapLegend.onAdd = function () {
-      this._div = L.DomUtil.create("div", "map-legend");
-      this._div.innerHTML = "<strong>Damage Scale</strong><br>Loading&hellip;";
-      return this._div;
-    };
-    window.mapLegend.addTo(instance);
+    // UI: Legend and "Areas of control" layer list render as regular page
+    // content below the map (see #map-legend-panel / #map-layers-panel in
+    // the page HTML) rather than as floating map overlays, to keep the map
+    // itself uncluttered. window.mapLegend._div keeps the same shape the
+    // rest of MapCore already expects (see updateProportionalLegend below).
+    window.mapLegend = { _div: document.getElementById("map-legend-panel") };
 
     MapCore.mapInstance = instance;
+    MapCore.addFrontlineControl(instance);
     return instance;
   };
 
   // --------------------------------------------------------------------
-  // Legend / colour scale
+  // ISW frontline overlay (optional context layer)
   // --------------------------------------------------------------------
-  // Computes 5 ascending thematic breakpoints (covering values of 1 and
-  // above) from whatever data is currently on screen, so the legend/colour
-  // scale adapts to the selected period instead of using a fixed scale.
-  // A value of 0 is always white and isn't part of this scale.
-  MapCore.computeDynamicBreaks = function (counts) {
-    const values = Object.values(counts).filter(v => v > 0);
-    const max = values.length ? Math.max(...values) : 0;
+  // Adds a handful of live ArcGIS FeatureServer layers as an opt-in overlay,
+  // sourced from ISW/CTP's public "Interactive Map: Russia's Invasion of
+  // Ukraine" webmap (arcgis.com item 9f04944a2fe84edab9da31750c2b15eb), so
+  // damage patterns can be read against the current front line. Each layer
+  // is off by default and fetched live from Esri on toggle — there's no
+  // local copy, since front-line control is reassessed daily.
+  const FRONTLINE_HATCH_COLOR = "#f2b6b6";
+  const FRONTLINE_OCCUPIED_COLOR = "#f4b8b7";
+  const FRONTLINE_ADVANCES_COLOR = "#cbb98a";
+  const FRONTLINE_HATCH_PATTERN_ID = "isw-pre2022-hatch-pattern";
 
-    if (max <= 4) {
-      // Small counts: keep the scale simple and integer-based.
-      return [0, 1, 2, 3, 4];
+  // Pane z-indices place these, in order, directly beneath the damaged-
+  // buildings pane (440) and above the basemap's tilePane (200) — see the
+  // draw-order comment by MapCore.DAMAGE_CIRCLES_PANE above.
+  const FRONTLINE_LAYERS = [
+    {
+      key: "pre2022",
+      label: "Russian controlled Ukrainian territory before 24 February 2022",
+      url: "https://services5.arcgis.com/SaBe5HMtmnbqSWlu/arcgis/rest/services/VIEW_Russian_controlled_Ukrainian_Territory_before_February_24_2022/FeatureServer/36",
+      swatchCss: `repeating-linear-gradient(45deg, ${FRONTLINE_HATCH_COLOR} 0, ${FRONTLINE_HATCH_COLOR} 2px, transparent 2px, transparent 6px)`,
+      style: { stroke: false, fillColor: `url(#${FRONTLINE_HATCH_PATTERN_ID})`, fillOpacity: 1 },
+      pane: "isw-pre2022-pane",
+      paneZIndex: 430
+    },
+    {
+      key: "occupied",
+      label: "Assessed Russian-occupied territories",
+      url: "https://services5.arcgis.com/SaBe5HMtmnbqSWlu/arcgis/rest/services/VIEW_RussiaCoTinUkraine_V3/FeatureServer/49",
+      swatchCss: FRONTLINE_OCCUPIED_COLOR,
+      style: { stroke: false, fillColor: FRONTLINE_OCCUPIED_COLOR, fillOpacity: 0.7 },
+      pane: "isw-occupied-pane",
+      paneZIndex: 420
+    },
+    {
+      key: "advances",
+      label: "Assessed Russian advances in Ukraine",
+      url: "https://services5.arcgis.com/SaBe5HMtmnbqSWlu/arcgis/rest/services/AssessedRussianAdvanceInUkraine_V2_view/FeatureServer/0",
+      swatchCss: FRONTLINE_ADVANCES_COLOR,
+      style: { stroke: false, fillColor: FRONTLINE_ADVANCES_COLOR, fillOpacity: 0.7 },
+      pane: "isw-advances-pane",
+      paneZIndex: 410
+    }
+  ];
+
+  MapCore.frontlineLayerInstances = {};
+
+  // Defines the diagonal-stripe SVG pattern used by the "before 24 Feb 2022"
+  // layer's fillColor (a plain "url(#id)" is valid as an SVG fill value).
+  // Injected once into a standalone hidden <svg>, independent of Leaflet's
+  // own SVG renderer root, since SVG id references resolve document-wide.
+  function ensureFrontlineHatchPattern() {
+    if (document.getElementById(FRONTLINE_HATCH_PATTERN_ID)) return;
+    const svgNS = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(svgNS, "svg");
+    svg.setAttribute("width", "0");
+    svg.setAttribute("height", "0");
+    svg.style.position = "absolute";
+    svg.innerHTML =
+      `<defs><pattern id="${FRONTLINE_HATCH_PATTERN_ID}" width="8" height="8" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">` +
+      `<rect width="8" height="8" fill="#ffffff" fill-opacity="0"></rect>` +
+      `<line x1="0" y1="0" x2="0" y2="8" stroke="${FRONTLINE_HATCH_COLOR}" stroke-width="3"></line>` +
+      `</pattern></defs>`;
+    document.body.appendChild(svg);
+  }
+
+  MapCore.addFrontlineControl = function (map) {
+    if (typeof L.esri === "undefined") return; // esri-leaflet failed to load; skip silently
+
+    const panel = document.getElementById("map-layers-panel");
+    if (!panel) return;
+
+    ensureFrontlineHatchPattern();
+
+    // Each layer overlaps the others (e.g. pre-2022 hatch over "occupied"
+    // over Crimea), so each needs to always paint in a fixed position in the
+    // stack regardless of the order they're toggled in — a dedicated pane
+    // per layer guarantees that without reordering DOM nodes on every
+    // toggle. Z-indices are set on FRONTLINE_LAYERS itself (paneZIndex).
+    FRONTLINE_LAYERS.forEach(l => {
+      if (l.pane && !map.getPane(l.pane)) {
+        map.createPane(l.pane).style.zIndex = l.paneZIndex;
+      }
+    });
+
+    let html = "<strong>Areas of control</strong>";
+    FRONTLINE_LAYERS.forEach(l => {
+      html += `<label><i class="map-frontline-swatch" style="background:${l.swatchCss}"></i><input type="checkbox" data-frontline-key="${l.key}" checked> ${l.label}</label>`;
+    });
+    html += '<span class="map-frontline-attribution">Source: <a href="https://storymaps.arcgis.com/stories/36a7f6a6f5a9448496de641cf64bd375" target="_blank" rel="noopener noreferrer">ISW &amp; CTP</a></span>';
+    panel.innerHTML = html;
+
+    function setFrontlineLayerVisible(l, visible) {
+      if (visible) {
+        if (MapCore.frontlineLayerInstances[l.key]) return;
+        const layerOptions = {
+          url: l.url,
+          style: () => l.style,
+          simplifyFactor: 0.5,
+          precision: 5
+        };
+        if (l.pane) layerOptions.pane = l.pane;
+        MapCore.frontlineLayerInstances[l.key] = L.esri.featureLayer(layerOptions).addTo(map);
+      } else if (MapCore.frontlineLayerInstances[l.key]) {
+        map.removeLayer(MapCore.frontlineLayerInstances[l.key]);
+        delete MapCore.frontlineLayerInstances[l.key];
+      }
     }
 
-    const proportions = [0.15, 0.35, 0.65, 1];
-    const breaks = [0];
-    proportions.forEach(p => {
-      let v = MapCore.roundNice(max * p);
-      if (v <= breaks[breaks.length - 1]) v = breaks[breaks.length - 1] + 1;
-      breaks.push(v);
+    FRONTLINE_LAYERS.forEach(l => {
+      const input = panel.querySelector(`[data-frontline-key="${l.key}"]`);
+      if (!input) return;
+      input.addEventListener("change", () => setFrontlineLayerVisible(l, input.checked));
+      // Checked by default (see the "checked" attribute above), so load
+      // each layer immediately rather than waiting for a user toggle.
+      if (input.checked) setFrontlineLayerVisible(l, true);
     });
-    return breaks; // [0, g1, g2, g3, g4] - 5 elements, 5 colour groups
+  };
+
+  // --------------------------------------------------------------------
+  // Legend / proportional circle scale
+  // --------------------------------------------------------------------
+  // Damage volume is encoded as circle area (not fill colour), per the
+  // standard proportional-symbol map convention: area, not radius, should
+  // scale linearly with value so the *perceived* size follows the data
+  // rather than exaggerating large values. A value of 0 gets no circle.
+  MapCore.computeRadiusScale = function (counts, options) {
+    const minRadius = (options && options.minRadius) || 4;
+    const maxRadius = (options && options.maxRadius) || 32;
+    const values = Object.values(counts).filter(v => v > 0);
+    const maxValue = values.length ? Math.max(...values) : 0;
+
+    const scale = function (value) {
+      if (!value || value <= 0 || maxValue <= 0) return 0;
+      return minRadius + (maxRadius - minRadius) * Math.sqrt(value / maxValue);
+    };
+
+    return { scale, maxValue, minRadius, maxRadius };
   };
 
   // Rounds a number to a "nice" value (1/2/5/10 x a power of ten) so legend
@@ -191,27 +314,73 @@
     return niceNormalized * magnitude;
   };
 
-  MapCore.getThematicColor = function (val, breaks) {
-    if (val <= 0) return ZERO_COLOR;
-    const grades = breaks || [0, 50, 200, 500, 1000];
-    return val > grades[4] ? THEMATIC_COLORS[4]
-      : val > grades[3] ? THEMATIC_COLORS[3]
-      : val > grades[2] ? THEMATIC_COLORS[2]
-      : val > grades[1] ? THEMATIC_COLORS[1]
-      : THEMATIC_COLORS[0];
-  };
+  // Opacity applied to each ring, largest (outermost) to smallest
+  // (innermost), so overlapping rings read as progressively darker toward
+  // the shared baseline — matching the standard "nested circle" proportional
+  // symbol legend convention.
+  const NESTED_RING_OPACITIES = [0.28, 0.55, 0.85];
 
-  MapCore.updateLegend = function (breaks) {
+  // Renders 3 reference circles (max, and two "nice" smaller fractions of
+  // it) as one set of nested circles sharing a horizontal centre and a
+  // common bottom edge (baseline), each with a leader line out to its
+  // value, rather than as separate side-by-side circles.
+  MapCore.updateProportionalLegend = function (radiusInfo) {
     if (!window.mapLegend || !window.mapLegend._div) return;
-    let html = "<strong>Damage Scale</strong><br>";
-    html += '<i style="background:' + ZERO_COLOR + '; border:1px solid #ccc;"></i> 0<br>';
-    for (let i = 0; i < THEMATIC_COLORS.length; i++) {
-      const lower = breaks[i] + 1;
-      const upper = breaks[i + 1];
-      html += '<i style="background:' + THEMATIC_COLORS[i] + '"></i> ' +
-        lower + (upper !== undefined ? "&ndash;" + upper : "+") + "<br>";
+
+    const { scale, maxValue } = radiusInfo;
+    if (!maxValue || maxValue <= 0) {
+      window.mapLegend._div.innerHTML = "<strong>Damaged Buildings</strong><br>No data in range";
+      return;
     }
-    window.mapLegend._div.innerHTML = html;
+
+    const refValues = [...new Set([
+      maxValue,
+      MapCore.roundNice(maxValue / 3),
+      MapCore.roundNice(maxValue / 10)
+    ])].filter(v => v > 0 && v <= maxValue).sort((a, b) => b - a); // largest first
+
+    const maxR = scale(maxValue);
+    const pad = 6;
+    const cx = maxR + pad;
+    const leaderLength = 16;
+    const labelGap = 6;
+    const svgWidth = cx + maxR + leaderLength + 60;
+    const svgHeight = maxR * 2 + pad * 2;
+    const baseline = svgHeight - pad; // shared bottom edge every ring sits on
+
+    // Each ring's label sits level with its top edge; when two rings are
+    // close enough in size that their labels would overlap, nudge the
+    // lower one down so labels stay legible.
+    const points = refValues.map((v, i) => ({
+      v,
+      r: scale(v),
+      opacity: NESTED_RING_OPACITIES[Math.min(i, NESTED_RING_OPACITIES.length - 1)]
+    }));
+    points.forEach(p => { p.cy = baseline - p.r; p.topY = p.cy - p.r; p.labelY = p.topY; });
+    points.sort((a, b) => a.labelY - b.labelY);
+    const MIN_LABEL_GAP = 14;
+    for (let i = 1; i < points.length; i++) {
+      if (points[i].labelY - points[i - 1].labelY < MIN_LABEL_GAP) {
+        points[i].labelY = points[i - 1].labelY + MIN_LABEL_GAP;
+      }
+    }
+
+    let circlesSvg = "";
+    [...points].sort((a, b) => b.r - a.r).forEach(p => {
+      circlesSvg += `<circle cx="${cx}" cy="${p.cy}" r="${p.r}" fill="${PROPORTIONAL_CIRCLE_COLOR}" fill-opacity="${p.opacity}" stroke="${PROPORTIONAL_CIRCLE_COLOR}" stroke-width="1" stroke-opacity="0.6"></circle>`;
+    });
+
+    let labelsSvg = "";
+    const lineEndX = cx + maxR + leaderLength;
+    points.forEach(p => {
+      labelsSvg += `<line x1="${cx}" y1="${p.topY}" x2="${lineEndX}" y2="${p.labelY}" stroke="#999" stroke-width="1"></line>` +
+        `<circle cx="${cx}" cy="${p.topY}" r="1.5" fill="#999"></circle>` +
+        `<text x="${lineEndX + labelGap}" y="${p.labelY}" dominant-baseline="middle" font-size="11" fill="#333">${p.v.toLocaleString()}</text>`;
+    });
+
+    const svg = `<svg width="${svgWidth}" height="${svgHeight}" viewBox="0 0 ${svgWidth} ${svgHeight}">${circlesSvg}${labelsSvg}</svg>`;
+
+    window.mapLegend._div.innerHTML = `<strong>Damaged Buildings</strong><div class="map-proportional-legend-nested">${svg}</div>`;
   };
 
   // --------------------------------------------------------------------

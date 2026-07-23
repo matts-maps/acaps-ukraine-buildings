@@ -10,7 +10,7 @@
 
 let rawDamageCSV = [];
 let geoJSONData = null;
-let leafletGeoLayer = null;
+let leafletCircleLayer = null;
 let mapInstance = null;
 
 // The full-country view, captured once the boundary geoJSON first loads, so
@@ -252,8 +252,8 @@ function processMapVisualisations() {
 
   if (totalEl) totalEl.textContent = Object.values(counts).reduce((a, b) => a + b, 0).toLocaleString();
 
-  const breaks = MapCore.computeDynamicBreaks(counts);
-  MapCore.updateLegend(breaks);
+  const radiusInfo = MapCore.computeRadiusScale(counts);
+  MapCore.updateProportionalLegend(radiusInfo);
 
   const chartSeries = MapCore.buildSummaryCharts({
     entityCounts: counts,
@@ -288,30 +288,36 @@ function processMapVisualisations() {
     chartSeries
   };
 
-  if (leafletGeoLayer) mapInstance.removeLayer(leafletGeoLayer);
+  if (leafletCircleLayer) mapInstance.removeLayer(leafletCircleLayer);
 
-  leafletGeoLayer = L.geoJSON(geoJSONData, {
-    style: f => {
-      const rawGeoName = f.properties.adm2_name || "";
-      const geoName = normalizeRaionName(rawGeoName);
-      const isSelected = activeFilter && activeFilter.dimension === "raion" && activeFilter.value === geoName;
-      return {
-        fillColor: MapCore.getThematicColor(counts[geoName] || 0, breaks),
-        weight: isSelected ? 3 : 1,
-        color: isSelected ? "#1a3a5c" : "#666",
-        fillOpacity: 0.7
-      };
-    },
-    onEachFeature: (f, l) => {
-      const rawGeoName = f.properties.adm2_name || "";
-      const geoName = normalizeRaionName(rawGeoName);
+  const circleMarkers = geoJSONData.features.map(f => {
+    const rawGeoName = f.properties.adm2_name || "";
+    const geoName = normalizeRaionName(rawGeoName);
+    const value = counts[geoName] || 0;
+    const radius = radiusInfo.scale(value);
+    if (radius <= 0) return null;
 
-      l.on("mouseover", e => {
-        window.mapInfoPanel._div.innerHTML = `<h4>${rawGeoName}</h4><b>Damages:</b> ${(counts[geoName] || 0).toLocaleString()}`;
-      });
-      l.on("click", e => {
-        MapCore.setActiveFilter("raion", geoName);
-      });
-    }
-  }).addTo(mapInstance);
+    const isSelected = activeFilter && activeFilter.dimension === "raion" && activeFilter.value === geoName;
+    const center = L.geoJSON(f).getBounds().getCenter();
+
+    const marker = L.circleMarker(center, {
+      radius,
+      pane: MapCore.DAMAGE_CIRCLES_PANE,
+      fillColor: MapCore.PROPORTIONAL_CIRCLE_COLOR,
+      color: isSelected ? "#1a3a5c" : "#00512f",
+      weight: isSelected ? 3 : 1,
+      fillOpacity: 0.75
+    });
+
+    marker.on("mouseover", () => {
+      window.mapInfoPanel._div.innerHTML = `<h4>${rawGeoName}</h4><b>Damages:</b> ${value.toLocaleString()}`;
+    });
+    marker.on("click", () => {
+      MapCore.setActiveFilter("raion", geoName);
+    });
+
+    return marker;
+  }).filter(Boolean);
+
+  leafletCircleLayer = L.layerGroup(circleMarkers).addTo(mapInstance);
 }

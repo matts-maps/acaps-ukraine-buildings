@@ -43,6 +43,11 @@
   <main id="map-wrapper-card">
     <h2 id="map-view-title">Damaged buildings per Oblast</h2>
     <div id="map-container"></div>
+
+    <div id="map-below-panels">
+      <div id="map-legend-panel" class="map-legend-col"><strong>Damaged Buildings</strong><br>Loading&hellip;</div>
+      <div id="map-layers-panel" class="map-layers-col"></div>
+    </div>
   </main>
 </div>
 
@@ -73,6 +78,7 @@
 </script>
 
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
+<script src="https://unpkg.com/esri-leaflet@3.0.12/dist/esri-leaflet.js" defer></script>
 <script src="{{ '/assets/js/papaparse.min.js' | relative_url }}" defer></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2" defer></script>

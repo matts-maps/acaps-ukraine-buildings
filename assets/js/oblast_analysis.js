@@ -9,7 +9,7 @@
 
 let rawDamageCSV = [];
 let geoJSONData = null;
-let leafletGeoLayer = null;
+let leafletCircleLayer = null;
 let mapInstance = null;
 
 // A handful of oblast names differ between the geoJSON boundary properties
@@ -127,8 +127,8 @@ function processMapVisualisations() {
 
   if (totalEl) totalEl.textContent = Object.values(counts).reduce((a, b) => a + b, 0).toLocaleString();
 
-  const breaks = MapCore.computeDynamicBreaks(counts);
-  MapCore.updateLegend(breaks);
+  const radiusInfo = MapCore.computeRadiusScale(counts);
+  MapCore.updateProportionalLegend(radiusInfo);
 
   const chartSeries = MapCore.buildSummaryCharts({
     entityCounts: counts,
@@ -154,30 +154,36 @@ function processMapVisualisations() {
     chartSeries
   };
 
-  if (leafletGeoLayer) mapInstance.removeLayer(leafletGeoLayer);
+  if (leafletCircleLayer) mapInstance.removeLayer(leafletCircleLayer);
 
-  leafletGeoLayer = L.geoJSON(geoJSONData, {
-    style: f => {
-      const rawGeoName = (f.properties.adm1_name || f.properties.ADM1_EN || "");
-      const geoName = normalizeOblastName(rawGeoName);
-      const isSelected = MapCore.activeFilter && MapCore.activeFilter.dimension === "oblast" && MapCore.activeFilter.value === geoName;
-      return {
-        fillColor: MapCore.getThematicColor(counts[geoName] || 0, breaks),
-        weight: isSelected ? 3 : 1,
-        color: isSelected ? "#1a3a5c" : "#666",
-        fillOpacity: 0.7
-      };
-    },
-    onEachFeature: (f, l) => {
-      const rawGeoName = (f.properties.adm1_name || f.properties.ADM1_EN || "");
-      const geoName = normalizeOblastName(rawGeoName);
+  const circleMarkers = geoJSONData.features.map(f => {
+    const rawGeoName = (f.properties.adm1_name || f.properties.ADM1_EN || "");
+    const geoName = normalizeOblastName(rawGeoName);
+    const value = counts[geoName] || 0;
+    const radius = radiusInfo.scale(value);
+    if (radius <= 0) return null;
 
-      l.on("mouseover", e => {
-        window.mapInfoPanel._div.innerHTML = `<h4>${f.properties.adm1_name}</h4><b>Damages:</b> ${(counts[geoName] || 0).toLocaleString()}`;
-      });
-      l.on("click", e => {
-        MapCore.setActiveFilter("oblast", geoName);
-      });
-    }
-  }).addTo(mapInstance);
+    const isSelected = MapCore.activeFilter && MapCore.activeFilter.dimension === "oblast" && MapCore.activeFilter.value === geoName;
+    const center = L.geoJSON(f).getBounds().getCenter();
+
+    const marker = L.circleMarker(center, {
+      radius,
+      pane: MapCore.DAMAGE_CIRCLES_PANE,
+      fillColor: MapCore.PROPORTIONAL_CIRCLE_COLOR,
+      color: isSelected ? "#1a3a5c" : "#00512f",
+      weight: isSelected ? 3 : 1,
+      fillOpacity: 0.75
+    });
+
+    marker.on("mouseover", () => {
+      window.mapInfoPanel._div.innerHTML = `<h4>${rawGeoName}</h4><b>Damages:</b> ${value.toLocaleString()}`;
+    });
+    marker.on("click", () => {
+      MapCore.setActiveFilter("oblast", geoName);
+    });
+
+    return marker;
+  }).filter(Boolean);
+
+  leafletCircleLayer = L.layerGroup(circleMarkers).addTo(mapInstance);
 }
