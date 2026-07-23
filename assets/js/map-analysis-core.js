@@ -82,7 +82,25 @@
     onRerender: function () {},
     chartInstances: { entity: null, infra: null, extent: null, timeline: null },
     minDataDate: null,
-    maxDataDate: null
+    maxDataDate: null,
+    // Plain-data mirror of the circle markers currently on the map (center,
+    // radius, style), rebuilt by oblast_analysis.js/raion_analysis.js
+    // alongside the real L.circleMarker layer. Exists so the PDF export
+    // renderer (map-pdf-renderer.js) can redraw the same circles onto its
+    // own canvas without reaching into the page script's private closure.
+    damageCircleData: []
+  };
+
+  // Single source of truth for a damage circle's non-size styling, shared
+  // between the live L.circleMarker options and the plain-data record in
+  // MapCore.damageCircleData, so the two can't drift apart.
+  MapCore.damageCircleStyle = function (isSelected) {
+    return {
+      fillColor: PROPORTIONAL_CIRCLE_COLOR,
+      strokeColor: isSelected ? "#1a3a5c" : "#00512f",
+      strokeWeight: isSelected ? 3 : 1,
+      fillOpacity: 0.75
+    };
   };
 
   // Calculate min and max dates from the CSV data for real date ranges in dropdowns
@@ -152,7 +170,11 @@
     const instance = L.map("map-container", { zoomSnap: 0.5 }).setView([48.3794, 31.1656], 6);
     window.__leafletMap = instance;
     L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
-      attribution: "&copy; OpenStreetMap", maxZoom: 20
+      attribution: "&copy; OpenStreetMap", maxZoom: 20,
+      // Needed so the PDF export renderer (map-pdf-renderer.js) can draw
+      // these tile images onto its own canvas without tainting it -
+      // CartoDB's tile CDN sends Access-Control-Allow-Origin: *.
+      crossOrigin: true
     }).addTo(instance);
     createSyncedPane(instance, MapCore.DAMAGE_CIRCLES_PANE, DAMAGE_CIRCLES_Z_INDEX);
 
@@ -191,11 +213,12 @@
   const FRONTLINE_ADVANCES_COLOR = "#cbb98a";
   const FRONTLINE_HATCH_PATTERN_ID = "isw-pre2022-hatch-pattern";
 
-  // The legend swatch background: a small PNG rasterized on a scratch
-  // <canvas> at load time, rather than a CSS repeating-linear-gradient or
-  // an SVG data URI - html2canvas (used for the PDF export) turned out not
-  // to render either of those reliably as a background-image, but a plain
-  // raster image behaves like any other <img> source and captures fine.
+  // The on-page legend swatch background (#map-layers-panel checkboxes): a
+  // small PNG rasterized on a scratch <canvas> at load time, rather than a
+  // CSS repeating-linear-gradient or an SVG data URI, for simple reliable
+  // cross-browser rendering as a background-image. (The PDF export builds
+  // its own areas-of-control legend directly - see map-pdf-renderer.js's
+  // buildAreasOfControlLegendSvg - and doesn't use this value at all.)
   function buildHatchSwatchDataUrl() {
     const tile = document.createElement("canvas");
     tile.width = 8;
@@ -245,6 +268,10 @@
       paneZIndex: 410
     }
   ];
+  // Exposed (not just used internally) so the PDF export renderer
+  // (map-pdf-renderer.js) can draw each layer's fill/pattern in the same
+  // order and colors as the live map, without a second copy of this config.
+  MapCore.FRONTLINE_LAYERS = FRONTLINE_LAYERS;
 
   MapCore.frontlineLayerInstances = {};
 
@@ -252,12 +279,12 @@
   // layer's fillColor (a plain "url(#id)" is valid as an SVG fill value).
   // Injected once into a standalone hidden <svg>, independent of Leaflet's
   // own SVG renderer root, since SVG id references resolve document-wide.
-  // Exposed on MapCore (not just called internally) because the PDF export
-  // clones the map into a detached document via html2canvas, which only
-  // carries over descendants of the captured element — this same function
-  // is called again there (see report-generator-core.js) targeting the
-  // clone, so the pattern definition travels with it and the hatch renders
-  // identically in the PDF instead of needing a separate simplified style.
+  // Exposed on MapCore (not just called internally) - and accepts an
+  // optional targetDocument - because map-pdf-renderer.js's areas-of-control
+  // legend needs this same pattern definition self-contained inside a
+  // standalone SVG it builds for the PDF (svg2pdf.js may not resolve a
+  // url(#id) reference across document/embed boundaries), rather than
+  // relying on this page-wide hidden <svg>.
   MapCore.ensureFrontlineHatchPattern = function (targetDocument) {
     const doc = targetDocument || document;
     if (doc.getElementById(FRONTLINE_HATCH_PATTERN_ID)) return;

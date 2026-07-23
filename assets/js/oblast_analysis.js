@@ -156,6 +156,8 @@ function processMapVisualisations() {
 
   if (leafletCircleLayer) mapInstance.removeLayer(leafletCircleLayer);
 
+  MapCore.damageCircleData = [];
+
   const circleMarkers = geoJSONData.features.map(f => {
     const rawGeoName = (f.properties.adm1_name || f.properties.ADM1_EN || "");
     const geoName = normalizeOblastName(rawGeoName);
@@ -165,14 +167,15 @@ function processMapVisualisations() {
 
     const isSelected = MapCore.activeFilter && MapCore.activeFilter.dimension === "oblast" && MapCore.activeFilter.value === geoName;
     const center = L.geoJSON(f).getBounds().getCenter();
+    const style = MapCore.damageCircleStyle(isSelected);
 
     const marker = L.circleMarker(center, {
       radius,
       pane: MapCore.DAMAGE_CIRCLES_PANE,
-      fillColor: MapCore.PROPORTIONAL_CIRCLE_COLOR,
-      color: isSelected ? "#1a3a5c" : "#00512f",
-      weight: isSelected ? 3 : 1,
-      fillOpacity: 0.75
+      fillColor: style.fillColor,
+      color: style.strokeColor,
+      weight: style.strokeWeight,
+      fillOpacity: style.fillOpacity
     });
 
     marker.on("mouseover", () => {
@@ -181,6 +184,8 @@ function processMapVisualisations() {
     marker.on("click", () => {
       MapCore.setActiveFilter("oblast", geoName);
     });
+
+    MapCore.damageCircleData.push({ lat: center.lat, lng: center.lng, radius, ...style });
 
     return marker;
   }).filter(Boolean);

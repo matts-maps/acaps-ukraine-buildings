@@ -13,15 +13,18 @@
    1. Add the hook in the page's analysis script so window.__mapReportState
       is populated with the real numbers behind the current view.
 
-   2. Add these CDN libraries to the page, then this file, then the page's
-      config file, all AFTER the existing Leaflet / Chart.js / analysis
-      scripts. svg2pdf.js embeds the vector SVG charts built below directly
-      into the PDF (no rasterization); html2canvas is still used only for
-      the Leaflet basemap capture, which has no vector equivalent:
+   2. Add these CDN libraries to the page, then map-pdf-renderer.js, then
+      this file, then the page's config file, all AFTER the existing
+      Leaflet / Chart.js / analysis scripts. svg2pdf.js embeds every piece
+      of vector content built below - the four summary charts, and (via
+      map-pdf-renderer.js) the map's legends - directly into the PDF, no
+      rasterization; the map image itself is composited onto a canvas by
+      map-pdf-renderer.js from source data, not screenshotted, so no DOM
+      screenshotting library is needed at all:
 
-        <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js" defer></script>
         <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
         <script src="https://cdn.jsdelivr.net/npm/svg2pdf.js@2/dist/svg2pdf.umd.min.js" defer></script>
+        <script src="{{ '/assets/js/map-pdf-renderer.js' | relative_url }}" defer></script>
         <script src="{{ '/assets/js/report-generator-core.js' | relative_url }}" defer></script>
         <script src="{{ '/assets/js/oblast-report-generator.js' | relative_url }}" defer></script>
 
@@ -33,10 +36,6 @@
   "use strict";
 
   const IDS_BASE = {
-    // The whole map card (Leaflet map + the two-column legend/"areas of
-    // control" panel directly beneath it), so the PDF capture includes the
-    // legend rather than just the bare map.
-    mapContainer: "map-wrapper-card",
     yearSelect: "map-year-select",
     aggSelect: "map-aggregation-select",
     startSelect: "map-period-start-select",
@@ -502,197 +501,38 @@
     return new Set([activeFilter.value]);
   }
 
-  function neutralizeLeafletSvgOffsets(mapEl) {
-    const svgs = mapEl.querySelectorAll(".leaflet-overlay-pane svg");
-    const restoreFns = [];
-    svgs.forEach((svg) => {
-      const viewBoxAttr = svg.getAttribute("viewBox");
-      if (!viewBoxAttr) return;
-      const parts = viewBoxAttr.trim().split(/[\s,]+/).map(Number);
-      if (parts.length !== 4 || parts.some(Number.isNaN)) return;
-      const [vx, vy, vw, vh] = parts;
-      if (!vx && !vy) return;
-      const originalViewBox = viewBoxAttr;
-      const originalTransform = svg.style.transform;
-      svg.setAttribute("viewBox", `0 0 ${vw} ${vh}`);
-      svg.style.transform = "translate3d(0px, 0px, 0px)";
-      restoreFns.push(() => {
-        svg.setAttribute("viewBox", originalViewBox);
-        svg.style.transform = originalTransform;
-      });
-    });
-    return function restoreAll() {
-      restoreFns.forEach((fn) => fn());
-    };
+  // Delegates to MapPdfRenderer (map-pdf-renderer.js), which redraws the
+  // map directly from source data (loaded tile images, esri-leaflet GeoJSON
+  // geometry, damage-circle data) in explicit bottom-to-top order, rather
+  // than screenshotting the live DOM with html2canvas - see that file for
+  // why. Kept as its own async function returning a PNG data URL (or null
+  // on failure) so the call site and addImageWithHeading below need no
+  // changes.
+  async function captureMapImage() {
+    if (!window.MapPdfRenderer) {
+      console.error("map-pdf-renderer.js is not loaded.");
+      return null;
+    }
+    return MapPdfRenderer.renderMapCanvas(2);
   }
 
-  async function captureMap(mapEl) {
-    if (!mapEl) return null;
-    if (typeof html2canvas === "undefined") {
-      console.error("html2canvas is not loaded.");
-      return null;
+  // Renders an svg2pdf.js-embeddable legend SVG at its own natural aspect
+  // ratio inside a (maxWidth, maxHeight) box, rather than stretching it to
+  // fill the box outright the way addSvgWithHeading's chart callers do
+  // (those charts are built with a matching aspect ratio already; these
+  // legend SVGs carry their own fixed proportions and would distort -
+  // circles into ellipses, swatches into rectangles - if stretched).
+  async function addFittedSvgWithHeading(doc, heading, svgElement, y, margin, pageWidth, pageHeight, maxWidth, maxHeight, explicitX) {
+    const naturalWidth = parseFloat(svgElement.getAttribute("width")) || maxWidth;
+    const naturalHeight = parseFloat(svgElement.getAttribute("height")) || maxHeight;
+    const aspect = naturalWidth / naturalHeight;
+    let boxWidth = maxWidth;
+    let boxHeight = maxWidth / aspect;
+    if (boxHeight > maxHeight) {
+      boxHeight = maxHeight;
+      boxWidth = maxHeight * aspect;
     }
-    const mapInstance = window.__leafletMap || (window.map instanceof L.Map ? window.map : null);
-    let originalCenter = null;
-    let originalZoom = null;
-    if (mapInstance) {
-      originalCenter = mapInstance.getCenter();
-      originalZoom = mapInstance.getZoom();
-      let targetBounds = null;
-      mapInstance.eachLayer((layer) => {
-        if (layer.getBounds && typeof layer.getBounds === "function" && layer.feature) {
-          if (!targetBounds) {
-            targetBounds = layer.getBounds();
-          } else {
-            targetBounds.extend(layer.getBounds());
-          }
-        }
-      });
-      if (targetBounds && targetBounds.isValid()) {
-        await new Promise((resolve) => {
-          mapInstance.once("moveend", () => {
-            setTimeout(resolve, 500);
-          });
-          mapInstance.fitBounds(targetBounds, { padding: [20, 20], animate: false });
-        });
-      }
-    }
-
-    // fitBounds() just above re-centres/re-zooms the map, which sends the
-    // ISW FeatureLayers off to re-query their grid cells for the new view
-    // over the network. The fixed 500ms above is usually enough for that to
-    // settle, but not always - if the capture (and the manual hatch overlay
-    // below, which reads each feature's raw geometry directly) runs while a
-    // layer is mid-refresh, it can end up drawing stale or partial geometry
-    // at the wrong place. Waiting on each layer's own request count is the
-    // actual completion signal, not a guess at how long the network takes.
-    if (window.MapCore && MapCore.frontlineLayerInstances) {
-      const layers = Object.values(MapCore.frontlineLayerInstances);
-      const start = Date.now();
-      while (layers.some(l => l._activeRequests > 0) && Date.now() - start < 4000) {
-        await new Promise(resolve => setTimeout(resolve, 150));
-      }
-    }
-
-    const restoreSvgOffsets = neutralizeLeafletSvgOffsets(mapEl);
-    const captureScale = 2;
-
-    // html2canvas has no support for SVG <pattern> fills (confirmed: even
-    // with the pattern def present in the captured subtree, it renders
-    // nothing) - so the pre-2022 hatch layer would otherwise be invisible
-    // in the PDF. Canvas 2D natively supports pattern fills, so instead the
-    // hatch is drawn a second time, directly onto html2canvas's output
-    // canvas, using the layer's real screen coordinates. This keeps the PDF
-    // showing the same diagonal-hatch look as the live map rather than a
-    // simplified substitute style.
-    function drawHatchOverlay(canvas) {
-      const map = window.__leafletMap;
-      const hatchLayer = window.MapCore && MapCore.frontlineLayerInstances && MapCore.frontlineLayerInstances.pre2022;
-      if (!map || !hatchLayer) return;
-
-      const mapContainerEl = document.getElementById("map-container");
-      if (!mapContainerEl) return;
-
-      // #map-view-title is hidden (see onclone below) for the real capture,
-      // which shifts #map-container up within mapEl's layout - toggle the
-      // same hide here (briefly, on the live page) so this offset
-      // measurement matches what html2canvas actually rendered.
-      const titleEl = document.getElementById("map-view-title");
-      const originalDisplay = titleEl ? titleEl.style.display : null;
-      if (titleEl) titleEl.style.setProperty("display", "none", "important");
-      const mapRect = mapContainerEl.getBoundingClientRect();
-      const wrapperRect = mapEl.getBoundingClientRect();
-      if (titleEl) titleEl.style.display = originalDisplay;
-
-      const offsetX = (mapRect.left - wrapperRect.left) * captureScale;
-      const offsetY = (mapRect.top - wrapperRect.top) * captureScale;
-
-      // Small tile of diagonal red lines, used as a repeating Canvas
-      // pattern fill - the raster equivalent of the on-page SVG pattern.
-      const tileSize = 8 * captureScale;
-      const tile = document.createElement("canvas");
-      tile.width = tileSize;
-      tile.height = tileSize;
-      const tctx = tile.getContext("2d");
-      tctx.strokeStyle = "#EF0000";
-      tctx.lineWidth = 3 * captureScale;
-      tctx.beginPath();
-      [-1, 0, 1].forEach(k => {
-        tctx.moveTo(k * tileSize - tileSize, tileSize * 2);
-        tctx.lineTo(k * tileSize + tileSize, -tileSize);
-      });
-      tctx.stroke();
-
-      const ctx = canvas.getContext("2d");
-      ctx.save();
-      ctx.fillStyle = ctx.createPattern(tile, "repeat");
-      ctx.beginPath();
-      Object.values(hatchLayer._layers).forEach(sublayer => {
-        const geometry = sublayer.feature && sublayer.feature.geometry;
-        if (!geometry) return;
-        const polygons = geometry.type === "MultiPolygon" ? geometry.coordinates : [geometry.coordinates];
-        polygons.forEach(rings => {
-          rings.forEach(ring => {
-            ring.forEach(([lng, lat], i) => {
-              const pt = map.latLngToContainerPoint([lat, lng]);
-              const x = pt.x * captureScale + offsetX;
-              const y = pt.y * captureScale + offsetY;
-              if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-            });
-            ctx.closePath();
-          });
-        });
-      });
-      ctx.fill();
-      ctx.restore();
-    }
-
-    try {
-      const canvas = await html2canvas(mapEl, {
-        useCORS: true,
-        backgroundColor: "#ffffff",
-        scale: captureScale,
-        logging: false,
-        onclone: (clonedDoc) => {
-          const selectorsToHide = [
-            ".leaflet-control-zoom",
-            ".map-info-panel",
-            ".leaflet-control-attribution",
-            // The page's own <h2> title is skipped since the PDF already
-            // writes its own heading (config.mapImageHeading) above this
-            // captured image via addImageWithHeading.
-            "#map-view-title"
-          ];
-          selectorsToHide.forEach(selector => {
-            const element = clonedDoc.querySelector(selector);
-            if (element) {
-              element.style.setProperty("display", "none", "important");
-            }
-          });
-
-          const style = clonedDoc.createElement("style");
-          style.textContent =
-            // The "Areas of control" checkboxes are an on-page toggle
-            // control, not something the static PDF legend needs - the
-            // swatch + label alone convey what's shown on the map.
-            "#map-layers-panel input[type=\"checkbox\"] { display: none !important; }";
-          clonedDoc.head.appendChild(style);
-        }
-      });
-      drawHatchOverlay(canvas);
-      if (mapInstance && originalCenter !== null && originalZoom !== null) {
-        mapInstance.setView(originalCenter, originalZoom, { animate: false });
-      }
-      return canvas.toDataURL("image/png", 1.0);
-    } catch (e) {
-      console.error("Map capture failed due to CORS or rendering issues:", e);
-      if (mapInstance && originalCenter !== null && originalZoom !== null) {
-        mapInstance.setView(originalCenter, originalZoom, { animate: false });
-      }
-      return null;
-    } finally {
-      restoreSvgOffsets();
-    }
+    return addSvgWithHeading(doc, heading, svgElement, y, margin, pageWidth, pageHeight, boxWidth, explicitX, boxHeight, null);
   }
 
   function addImageWithHeading(doc, heading, imgDataUrl, y, margin, pageWidth, pageHeight, targetWidth, explicitX = null, maxHeight = null) {
@@ -897,14 +737,13 @@
         doc.setTextColor(26, 58, 92);
         doc.text(`Total Buildings Impacted: ${state.nationalTotal}`, margin + 20, y + statBoxHeight - 15);
         y += statBoxHeight + 25;
-        const mapEl = document.getElementById(IDS.mapContainer);
-        const mapImg = await captureMap(mapEl);
+        const mapImg = await captureMapImage();
         if (mapImg) {
-          // The captured image now includes the legend below the map, so
-          // it's taller than the map alone - explicitly cap it to whatever
-          // vertical space is left on this page, rather than letting
-          // addImageWithHeading's own overflow check push it to page 2.
-          // The map (and its legend) must stay on the report's first page.
+          // The map image alone (legend is embedded separately, below, as
+          // vector graphics) - explicitly cap it to whatever vertical space
+          // is left on this page, rather than letting addImageWithHeading's
+          // own overflow check push it to page 2. The map and its legend
+          // must stay on the report's first page.
           const mapTargetWidth = pageWidth - margin * 2;
           const mapHeadingHeight = measureHeadingHeight(doc, config.mapImageHeading, mapTargetWidth);
           const availableMapHeight = Math.max(150, pageHeight - margin - y - mapHeadingHeight - 20);
@@ -916,6 +755,43 @@
           doc.text("(Map image unavailable)", margin, y);
           y += 25;
         }
+
+        // Vector legend: the "Damaged Buildings" bubble legend (already a
+        // real <svg>, built by MapCore.updateProportionalLegend) plus the
+        // "Areas of control" swatches (built fresh by MapPdfRenderer, since
+        // the live version's swatches are plain CSS backgrounds, not SVG),
+        // embedded directly as vector graphics rather than screenshotted
+        // along with the map - this is what previously produced the blank
+        // legend swatch / gradient-background bugs.
+        const damageLegendSvg = document.querySelector("#map-legend-panel svg");
+        const areasLegendSvg = window.MapPdfRenderer ? MapPdfRenderer.buildAreasOfControlLegendSvg() : null;
+        if (damageLegendSvg || areasLegendSvg) {
+          const legendGap = 16;
+          const legendColWidth = (pageWidth - margin * 2 - legendGap) / 2;
+          const LEGEND_MAX_HEIGHT = 90;
+          const legendRowY = y;
+          let legendRowHeight = 0;
+          if (damageLegendSvg) {
+            // Must clone: addSvgWithHeading/embedSvgChart appends the node
+            // it's given to document.body then removes it again once done -
+            // passing the live node would permanently rip the on-page
+            // legend out from under the user.
+            const nextY = await addFittedSvgWithHeading(
+              doc, "Damaged Buildings", damageLegendSvg.cloneNode(true),
+              legendRowY, margin, pageWidth, pageHeight, legendColWidth, LEGEND_MAX_HEIGHT, margin
+            );
+            legendRowHeight = Math.max(legendRowHeight, nextY - legendRowY);
+          }
+          if (areasLegendSvg) {
+            const nextY = await addFittedSvgWithHeading(
+              doc, "Areas of control", areasLegendSvg,
+              legendRowY, margin, pageWidth, pageHeight, legendColWidth, LEGEND_MAX_HEIGHT, margin + legendColWidth + legendGap
+            );
+            legendRowHeight = Math.max(legendRowHeight, nextY - legendRowY);
+          }
+          y = legendRowY + legendRowHeight;
+        }
+
         doc.addPage();
         y = margin + 15;
         const series = state.chartSeries || {};
