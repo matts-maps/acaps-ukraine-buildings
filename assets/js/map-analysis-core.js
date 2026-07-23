@@ -182,6 +182,15 @@
       url: "https://services5.arcgis.com/SaBe5HMtmnbqSWlu/arcgis/rest/services/VIEW_Russian_controlled_Ukrainian_Territory_before_February_24_2022/FeatureServer/36",
       swatchCss: `repeating-linear-gradient(45deg, ${FRONTLINE_HATCH_COLOR} 0, ${FRONTLINE_HATCH_COLOR} 2px, transparent 2px, transparent 6px)`,
       style: { stroke: false, fillColor: `url(#${FRONTLINE_HATCH_PATTERN_ID})`, fillOpacity: 1 },
+      // html2canvas (used for the PDF export) can't resolve an SVG
+      // <pattern> fill referenced via url(#id), so the hatch is invisible
+      // there. Swapped in for capture only: a dashed line, which html2canvas
+      // renders fine. Uses a stronger red than the on-page hatch colour
+      // (which is too close to the "occupied" fill's pink to read against
+      // it once it's a thin line rather than a textured area) so the
+      // boundary stays visible wherever the two layers overlap (e.g.
+      // Crimea). See MapCore.applyFrontlinePdfStyles/restoreFrontlineStyles.
+      pdfStyle: { stroke: true, color: "#c0392b", weight: 2.5, opacity: 1, dashArray: "5 3", fill: false },
       pane: "isw-pre2022-pane",
       paneZIndex: 430
     },
@@ -206,6 +215,26 @@
   ];
 
   MapCore.frontlineLayerInstances = {};
+
+  // Swaps any frontline layer that has a pdfStyle (currently just the
+  // pre-2022 hatch) to its PDF-safe rendering, and back. Called by the
+  // report generator around the map capture; a no-op for layers that
+  // aren't currently toggled on.
+  MapCore.applyFrontlinePdfStyles = function () {
+    FRONTLINE_LAYERS.forEach(l => {
+      if (!l.pdfStyle) return;
+      const inst = MapCore.frontlineLayerInstances[l.key];
+      if (inst && typeof inst.setStyle === "function") inst.setStyle(l.pdfStyle);
+    });
+  };
+
+  MapCore.restoreFrontlineStyles = function () {
+    FRONTLINE_LAYERS.forEach(l => {
+      if (!l.pdfStyle) return;
+      const inst = MapCore.frontlineLayerInstances[l.key];
+      if (inst && typeof inst.setStyle === "function") inst.setStyle(l.style);
+    });
+  };
 
   // Defines the diagonal-stripe SVG pattern used by the "before 24 Feb 2022"
   // layer's fillColor (a plain "url(#id)" is valid as an SVG fill value).

@@ -558,6 +558,12 @@
       }
     }
     const restoreSvgOffsets = neutralizeLeafletSvgOffsets(mapEl);
+    // The pre-2022 hatch layer's fill is an SVG <pattern> reference, which
+    // html2canvas can't resolve (it renders invisible) - swap it to a
+    // PDF-safe dashed outline for the duration of the capture only.
+    if (window.MapCore && typeof MapCore.applyFrontlinePdfStyles === "function") {
+      MapCore.applyFrontlinePdfStyles();
+    }
     try {
       const canvas = await html2canvas(mapEl, {
         useCORS: true,
@@ -580,6 +586,21 @@
               element.style.setProperty("display", "none", "important");
             }
           });
+
+          const style = clonedDoc.createElement("style");
+          style.textContent = [
+            // The "Areas of control" checkboxes are an on-page toggle
+            // control, not something the static PDF legend needs - the
+            // swatch + label alone convey what's shown on the map.
+            "#map-layers-panel input[type=\"checkbox\"] { display: none !important; }",
+            // html2canvas rasterizes each Leaflet basemap tile <img>
+            // slightly short of its true size, leaving hairline gaps
+            // ("tile seams") between adjacent tiles. Oversizing each tile
+            // by a fraction of a pixel closes that gap without a visible
+            // quality loss.
+            ".leaflet-tile-container img { width: 257px !important; height: 257px !important; }"
+          ].join("\n");
+          clonedDoc.head.appendChild(style);
         }
       });
       if (mapInstance && originalCenter !== null && originalZoom !== null) {
@@ -594,6 +615,9 @@
       return null;
     } finally {
       restoreSvgOffsets();
+      if (window.MapCore && typeof MapCore.restoreFrontlineStyles === "function") {
+        MapCore.restoreFrontlineStyles();
+      }
     }
   }
 
