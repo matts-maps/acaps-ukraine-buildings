@@ -207,8 +207,15 @@
   }
 
   // Renders the map (basemap + ISW layers + damage circles, bottom-to-top,
-  // in the order required) onto a fresh offscreen canvas and returns it as
-  // a PNG data URL, ready to hand straight to jsPDF's addImage().
+  // in the order required) onto a fresh offscreen canvas and returns
+  // { dataUrl, cssWidth, cssHeight } - cssWidth/cssHeight (the *unscaled*
+  // #map-container dimensions the circles/geometry were drawn against, not
+  // the canvas's own exportScale-multiplied pixel size) let the caller work
+  // out exactly how much the map got scaled down when it was placed into
+  // the PDF, so the "Damaged Buildings" legend's reference circles - built
+  // from those same CSS-pixel radii - can be drawn at the identical scale
+  // and actually match the map's own circle sizes, instead of being fit
+  // into an unrelated legend-box size independently.
   async function renderMapCanvas(exportScale = 2) {
     const map = window.__leafletMap;
     if (!map) return null;
@@ -240,7 +247,7 @@
 
       renderDamageCircles(ctx, exportScale);
 
-      return canvas.toDataURL("image/png", 1.0);
+      return { dataUrl: canvas.toDataURL("image/png", 1.0), cssWidth: rect.width, cssHeight: rect.height };
     } catch (e) {
       console.error("MapPdfRenderer: failed to render map canvas", e);
       return null;

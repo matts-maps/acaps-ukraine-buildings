@@ -505,9 +505,8 @@
   // map directly from source data (loaded tile images, esri-leaflet GeoJSON
   // geometry, damage-circle data) in explicit bottom-to-top order, rather
   // than screenshotting the live DOM with html2canvas - see that file for
-  // why. Kept as its own async function returning a PNG data URL (or null
-  // on failure) so the call site and addImageWithHeading below need no
-  // changes.
+  // why. Returns { dataUrl, cssWidth, cssHeight } (or null on failure) -
+  // cssWidth is needed below to scale the damage-circle legend to match.
   async function captureMapImage() {
     if (!window.MapPdfRenderer) {
       console.error("map-pdf-renderer.js is not loaded.");
@@ -535,6 +534,10 @@
     return addSvgWithHeading(doc, heading, svgElement, y, margin, pageWidth, pageHeight, boxWidth, explicitX, boxHeight, null);
   }
 
+  // Returns { y, imgWidth, imgHeight } rather than a bare y - the caller
+  // needs the actual placed imgWidth to work out how much this image got
+  // scaled down relative to its source (see the mapCssToPtScale use below),
+  // not just where to continue drawing next.
   function addImageWithHeading(doc, heading, imgDataUrl, y, margin, pageWidth, pageHeight, targetWidth, explicitX = null, maxHeight = null) {
     const xPos = explicitX !== null ? explicitX : margin;
     const props = doc.getImageProperties(imgDataUrl);
@@ -568,7 +571,7 @@
     });
     y += 6;
     doc.addImage(imgDataUrl, "PNG", drawX, y, imgWidth, imgHeight);
-    return y + boxHeight + 30;
+    return { y: y + boxHeight + 30, imgWidth, imgHeight };
   }
 
   // --------------------------------------------------------------------
@@ -770,8 +773,17 @@
           ? legendHeadingHeight + BLOCK_OVERHEAD + LEGEND_MAX_HEIGHT + LAYOUT_SAFETY_MARGIN
           : 0;
 
-        const mapImg = await captureMapImage();
-        if (mapImg) {
+        // Set once the map image is placed below, to whatever factor its
+        // source CSS pixels ended up scaled by in the PDF (PDF points per
+        // CSS pixel) - the damage-circle legend's reference circles are
+        // built from those same CSS-pixel radii, so drawing them at this
+        // identical scale is what makes them actually match the size of
+        // the circles seen on the map image, instead of each being sized
+        // independently to fill its own box.
+        let mapCssToPtScale = null;
+
+        const mapResult = await captureMapImage();
+        if (mapResult) {
           // Cap the map to whatever vertical space is left on this page
           // once the legend row below it has already been reserved, rather
           // than letting addImageWithHeading's own overflow check push it
@@ -780,7 +792,9 @@
           const mapTargetWidth = pageWidth - margin * 2;
           const mapHeadingHeight = measureHeadingHeight(doc, config.mapImageHeading, mapTargetWidth);
           const availableMapHeight = Math.max(150, pageHeight - margin - y - mapHeadingHeight - BLOCK_OVERHEAD - legendReserve);
-          y = addImageWithHeading(doc, config.mapImageHeading, mapImg, y, margin, pageWidth, pageHeight, mapTargetWidth, null, availableMapHeight);
+          const placed = addImageWithHeading(doc, config.mapImageHeading, mapResult.dataUrl, y, margin, pageWidth, pageHeight, mapTargetWidth, null, availableMapHeight);
+          y = placed.y;
+          mapCssToPtScale = placed.imgWidth / mapResult.cssWidth;
         } else {
           doc.setFont("helvetica", "italic");
           doc.setFontSize(10);
@@ -808,9 +822,20 @@
             // it's given to document.body then removes it again once done -
             // passing the live node would permanently rip the on-page
             // legend out from under the user.
-            const nextY = await addFittedSvgWithHeading(
-              doc, "Damaged Buildings", damageLegendSvg.cloneNode(true),
-              legendRowY, margin, pageWidth, pageHeight, legendColWidth, LEGEND_MAX_HEIGHT, margin
+            const clone = damageLegendSvg.cloneNode(true);
+            // Drawn at mapCssToPtScale - the exact factor the map image
+            // itself got scaled by - rather than independently fit to the
+            // legend column's box, so a reference circle here is the same
+            // physical size in the PDF as the same-value circle on the
+            // map. (Falls back to fitting the column width if the map
+            // capture failed, so the legend still renders at some
+            // reasonable size rather than not at all.)
+            const naturalWidth = parseFloat(clone.getAttribute("width")) || legendColWidth;
+            const naturalHeight = parseFloat(clone.getAttribute("height")) || LEGEND_MAX_HEIGHT;
+            const scale = mapCssToPtScale || (legendColWidth / naturalWidth);
+            const nextY = await addSvgWithHeading(
+              doc, "Damaged Buildings", clone,
+              legendRowY, margin, pageWidth, pageHeight, naturalWidth * scale, margin, naturalHeight * scale, null
             );
             legendRowHeight = Math.max(legendRowHeight, nextY - legendRowY);
           }
