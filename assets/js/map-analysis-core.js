@@ -191,6 +191,28 @@
   const FRONTLINE_ADVANCES_COLOR = "#cbb98a";
   const FRONTLINE_HATCH_PATTERN_ID = "isw-pre2022-hatch-pattern";
 
+  // The legend swatch background: a small PNG rasterized on a scratch
+  // <canvas> at load time, rather than a CSS repeating-linear-gradient or
+  // an SVG data URI - html2canvas (used for the PDF export) turned out not
+  // to render either of those reliably as a background-image, but a plain
+  // raster image behaves like any other <img> source and captures fine.
+  function buildHatchSwatchDataUrl() {
+    const tile = document.createElement("canvas");
+    tile.width = 8;
+    tile.height = 8;
+    const ctx = tile.getContext("2d");
+    ctx.strokeStyle = FRONTLINE_HATCH_COLOR;
+    ctx.lineWidth = 2;
+    [-8, 0, 8].forEach(k => {
+      ctx.beginPath();
+      ctx.moveTo(k, 8);
+      ctx.lineTo(k + 8, 0);
+      ctx.stroke();
+    });
+    return tile.toDataURL("image/png");
+  }
+  const FRONTLINE_HATCH_SWATCH_CSS = `url(${buildHatchSwatchDataUrl()}) repeat`;
+
   // Pane z-indices place these, in order, directly beneath the damaged-
   // buildings pane (440) and above the basemap's tilePane (200) — see the
   // draw-order comment by MapCore.DAMAGE_CIRCLES_PANE above.
@@ -199,7 +221,7 @@
       key: "pre2022",
       label: "Russian controlled Ukrainian territory before 24 February 2022",
       url: "https://services5.arcgis.com/SaBe5HMtmnbqSWlu/arcgis/rest/services/VIEW_Russian_controlled_Ukrainian_Territory_before_February_24_2022/FeatureServer/36",
-      swatchCss: `repeating-linear-gradient(45deg, ${FRONTLINE_HATCH_COLOR} 0, ${FRONTLINE_HATCH_COLOR} 2px, transparent 2px, transparent 6px)`,
+      swatchCss: FRONTLINE_HATCH_SWATCH_CSS,
       style: { stroke: false, fillColor: `url(#${FRONTLINE_HATCH_PATTERN_ID})`, fillOpacity: 1 },
       pane: "isw-pre2022-pane",
       paneZIndex: 430

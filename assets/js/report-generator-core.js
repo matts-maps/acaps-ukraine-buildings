@@ -557,6 +557,23 @@
         });
       }
     }
+
+    // fitBounds() just above re-centres/re-zooms the map, which sends the
+    // ISW FeatureLayers off to re-query their grid cells for the new view
+    // over the network. The fixed 500ms above is usually enough for that to
+    // settle, but not always - if the capture (and the manual hatch overlay
+    // below, which reads each feature's raw geometry directly) runs while a
+    // layer is mid-refresh, it can end up drawing stale or partial geometry
+    // at the wrong place. Waiting on each layer's own request count is the
+    // actual completion signal, not a guess at how long the network takes.
+    if (window.MapCore && MapCore.frontlineLayerInstances) {
+      const layers = Object.values(MapCore.frontlineLayerInstances);
+      const start = Date.now();
+      while (layers.some(l => l._activeRequests > 0) && Date.now() - start < 4000) {
+        await new Promise(resolve => setTimeout(resolve, 150));
+      }
+    }
+
     const restoreSvgOffsets = neutralizeLeafletSvgOffsets(mapEl);
     const captureScale = 2;
 
