@@ -558,17 +558,83 @@
       }
     }
     const restoreSvgOffsets = neutralizeLeafletSvgOffsets(mapEl);
-    // The pre-2022 hatch layer's fill is an SVG <pattern> reference, which
-    // html2canvas can't resolve (it renders invisible) - swap it to a
-    // PDF-safe dashed outline for the duration of the capture only.
-    if (window.MapCore && typeof MapCore.applyFrontlinePdfStyles === "function") {
-      MapCore.applyFrontlinePdfStyles();
+    const captureScale = 2;
+
+    // html2canvas has no support for SVG <pattern> fills (confirmed: even
+    // with the pattern def present in the captured subtree, it renders
+    // nothing) - so the pre-2022 hatch layer would otherwise be invisible
+    // in the PDF. Canvas 2D natively supports pattern fills, so instead the
+    // hatch is drawn a second time, directly onto html2canvas's output
+    // canvas, using the layer's real screen coordinates. This keeps the PDF
+    // showing the same diagonal-hatch look as the live map rather than a
+    // simplified substitute style.
+    function drawHatchOverlay(canvas) {
+      const map = window.__leafletMap;
+      const hatchLayer = window.MapCore && MapCore.frontlineLayerInstances && MapCore.frontlineLayerInstances.pre2022;
+      if (!map || !hatchLayer) return;
+
+      const mapContainerEl = document.getElementById("map-container");
+      if (!mapContainerEl) return;
+
+      // #map-view-title is hidden (see onclone below) for the real capture,
+      // which shifts #map-container up within mapEl's layout - toggle the
+      // same hide here (briefly, on the live page) so this offset
+      // measurement matches what html2canvas actually rendered.
+      const titleEl = document.getElementById("map-view-title");
+      const originalDisplay = titleEl ? titleEl.style.display : null;
+      if (titleEl) titleEl.style.setProperty("display", "none", "important");
+      const mapRect = mapContainerEl.getBoundingClientRect();
+      const wrapperRect = mapEl.getBoundingClientRect();
+      if (titleEl) titleEl.style.display = originalDisplay;
+
+      const offsetX = (mapRect.left - wrapperRect.left) * captureScale;
+      const offsetY = (mapRect.top - wrapperRect.top) * captureScale;
+
+      // Small tile of diagonal red lines, used as a repeating Canvas
+      // pattern fill - the raster equivalent of the on-page SVG pattern.
+      const tileSize = 8 * captureScale;
+      const tile = document.createElement("canvas");
+      tile.width = tileSize;
+      tile.height = tileSize;
+      const tctx = tile.getContext("2d");
+      tctx.strokeStyle = "#EF0000";
+      tctx.lineWidth = 3 * captureScale;
+      tctx.beginPath();
+      [-1, 0, 1].forEach(k => {
+        tctx.moveTo(k * tileSize - tileSize, tileSize * 2);
+        tctx.lineTo(k * tileSize + tileSize, -tileSize);
+      });
+      tctx.stroke();
+
+      const ctx = canvas.getContext("2d");
+      ctx.save();
+      ctx.fillStyle = ctx.createPattern(tile, "repeat");
+      ctx.beginPath();
+      Object.values(hatchLayer._layers).forEach(sublayer => {
+        const geometry = sublayer.feature && sublayer.feature.geometry;
+        if (!geometry) return;
+        const polygons = geometry.type === "MultiPolygon" ? geometry.coordinates : [geometry.coordinates];
+        polygons.forEach(rings => {
+          rings.forEach(ring => {
+            ring.forEach(([lng, lat], i) => {
+              const pt = map.latLngToContainerPoint([lat, lng]);
+              const x = pt.x * captureScale + offsetX;
+              const y = pt.y * captureScale + offsetY;
+              if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+            });
+            ctx.closePath();
+          });
+        });
+      });
+      ctx.fill();
+      ctx.restore();
     }
+
     try {
       const canvas = await html2canvas(mapEl, {
         useCORS: true,
         backgroundColor: "#ffffff",
-        scale: 2,
+        scale: captureScale,
         logging: false,
         onclone: (clonedDoc) => {
           const selectorsToHide = [
@@ -588,21 +654,15 @@
           });
 
           const style = clonedDoc.createElement("style");
-          style.textContent = [
+          style.textContent =
             // The "Areas of control" checkboxes are an on-page toggle
             // control, not something the static PDF legend needs - the
             // swatch + label alone convey what's shown on the map.
-            "#map-layers-panel input[type=\"checkbox\"] { display: none !important; }",
-            // html2canvas rasterizes each Leaflet basemap tile <img>
-            // slightly short of its true size, leaving hairline gaps
-            // ("tile seams") between adjacent tiles. Oversizing each tile
-            // by a fraction of a pixel closes that gap without a visible
-            // quality loss.
-            ".leaflet-tile-container img { width: 257px !important; height: 257px !important; }"
-          ].join("\n");
+            "#map-layers-panel input[type=\"checkbox\"] { display: none !important; }";
           clonedDoc.head.appendChild(style);
         }
       });
+      drawHatchOverlay(canvas);
       if (mapInstance && originalCenter !== null && originalZoom !== null) {
         mapInstance.setView(originalCenter, originalZoom, { animate: false });
       }
@@ -615,9 +675,6 @@
       return null;
     } finally {
       restoreSvgOffsets();
-      if (window.MapCore && typeof MapCore.restoreFrontlineStyles === "function") {
-        MapCore.restoreFrontlineStyles();
-      }
     }
   }
 

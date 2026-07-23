@@ -127,6 +127,25 @@
   MapCore.DAMAGE_CIRCLES_PANE = "map-damage-circles-pane";
   const DAMAGE_CIRCLES_Z_INDEX = 440;
 
+  // Leaflet's built-in panes (tilePane, overlayPane, markerPane, ...) get the
+  // "leaflet-zoom-animated" class automatically, which is what makes them
+  // track the map smoothly during a zoom gesture. A pane created via
+  // map.createPane() does NOT get that class unless you add it yourself —
+  // without it, that pane's content stays frozen at its pre-zoom pixel
+  // position while the basemap animates underneath it, which reads as the
+  // layer being "offset" from the map (it self-corrects once the zoom
+  // settles, but looks wrong throughout the gesture, and can leave things
+  // misaligned if a capture/screenshot happens mid-animation). Every custom
+  // pane in this app should be created through this helper, not
+  // map.createPane() directly.
+  function createSyncedPane(map, name, zIndex) {
+    if (map.getPane(name)) return map.getPane(name);
+    const pane = map.createPane(name);
+    pane.classList.add("leaflet-zoom-animated");
+    pane.style.zIndex = zIndex;
+    return pane;
+  }
+
   MapCore.initMapElement = function (infoPanelTitle) {
     // Start on a reasonable default view; this gets replaced by fitBounds()
     // once the boundary geoJSON has loaded.
@@ -135,7 +154,7 @@
     L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
       attribution: "&copy; OpenStreetMap", maxZoom: 20
     }).addTo(instance);
-    instance.createPane(MapCore.DAMAGE_CIRCLES_PANE).style.zIndex = DAMAGE_CIRCLES_Z_INDEX;
+    createSyncedPane(instance, MapCore.DAMAGE_CIRCLES_PANE, DAMAGE_CIRCLES_Z_INDEX);
 
     // UI: Info Panel
     window.mapInfoPanel = L.control({ position: "topright" });
@@ -167,7 +186,7 @@
   // damage patterns can be read against the current front line. Each layer
   // is off by default and fetched live from Esri on toggle — there's no
   // local copy, since front-line control is reassessed daily.
-  const FRONTLINE_HATCH_COLOR = "#f2b6b6";
+  const FRONTLINE_HATCH_COLOR = "#EF0000";
   const FRONTLINE_OCCUPIED_COLOR = "#f4b8b7";
   const FRONTLINE_ADVANCES_COLOR = "#cbb98a";
   const FRONTLINE_HATCH_PATTERN_ID = "isw-pre2022-hatch-pattern";
@@ -182,15 +201,6 @@
       url: "https://services5.arcgis.com/SaBe5HMtmnbqSWlu/arcgis/rest/services/VIEW_Russian_controlled_Ukrainian_Territory_before_February_24_2022/FeatureServer/36",
       swatchCss: `repeating-linear-gradient(45deg, ${FRONTLINE_HATCH_COLOR} 0, ${FRONTLINE_HATCH_COLOR} 2px, transparent 2px, transparent 6px)`,
       style: { stroke: false, fillColor: `url(#${FRONTLINE_HATCH_PATTERN_ID})`, fillOpacity: 1 },
-      // html2canvas (used for the PDF export) can't resolve an SVG
-      // <pattern> fill referenced via url(#id), so the hatch is invisible
-      // there. Swapped in for capture only: a dashed line, which html2canvas
-      // renders fine. Uses a stronger red than the on-page hatch colour
-      // (which is too close to the "occupied" fill's pink to read against
-      // it once it's a thin line rather than a textured area) so the
-      // boundary stays visible wherever the two layers overlap (e.g.
-      // Crimea). See MapCore.applyFrontlinePdfStyles/restoreFrontlineStyles.
-      pdfStyle: { stroke: true, color: "#c0392b", weight: 2.5, opacity: 1, dashArray: "5 3", fill: false },
       pane: "isw-pre2022-pane",
       paneZIndex: 430
     },
@@ -216,34 +226,21 @@
 
   MapCore.frontlineLayerInstances = {};
 
-  // Swaps any frontline layer that has a pdfStyle (currently just the
-  // pre-2022 hatch) to its PDF-safe rendering, and back. Called by the
-  // report generator around the map capture; a no-op for layers that
-  // aren't currently toggled on.
-  MapCore.applyFrontlinePdfStyles = function () {
-    FRONTLINE_LAYERS.forEach(l => {
-      if (!l.pdfStyle) return;
-      const inst = MapCore.frontlineLayerInstances[l.key];
-      if (inst && typeof inst.setStyle === "function") inst.setStyle(l.pdfStyle);
-    });
-  };
-
-  MapCore.restoreFrontlineStyles = function () {
-    FRONTLINE_LAYERS.forEach(l => {
-      if (!l.pdfStyle) return;
-      const inst = MapCore.frontlineLayerInstances[l.key];
-      if (inst && typeof inst.setStyle === "function") inst.setStyle(l.style);
-    });
-  };
-
   // Defines the diagonal-stripe SVG pattern used by the "before 24 Feb 2022"
   // layer's fillColor (a plain "url(#id)" is valid as an SVG fill value).
   // Injected once into a standalone hidden <svg>, independent of Leaflet's
   // own SVG renderer root, since SVG id references resolve document-wide.
-  function ensureFrontlineHatchPattern() {
-    if (document.getElementById(FRONTLINE_HATCH_PATTERN_ID)) return;
+  // Exposed on MapCore (not just called internally) because the PDF export
+  // clones the map into a detached document via html2canvas, which only
+  // carries over descendants of the captured element — this same function
+  // is called again there (see report-generator-core.js) targeting the
+  // clone, so the pattern definition travels with it and the hatch renders
+  // identically in the PDF instead of needing a separate simplified style.
+  MapCore.ensureFrontlineHatchPattern = function (targetDocument) {
+    const doc = targetDocument || document;
+    if (doc.getElementById(FRONTLINE_HATCH_PATTERN_ID)) return;
     const svgNS = "http://www.w3.org/2000/svg";
-    const svg = document.createElementNS(svgNS, "svg");
+    const svg = doc.createElementNS(svgNS, "svg");
     svg.setAttribute("width", "0");
     svg.setAttribute("height", "0");
     svg.style.position = "absolute";
@@ -252,8 +249,8 @@
       `<rect width="8" height="8" fill="#ffffff" fill-opacity="0"></rect>` +
       `<line x1="0" y1="0" x2="0" y2="8" stroke="${FRONTLINE_HATCH_COLOR}" stroke-width="3"></line>` +
       `</pattern></defs>`;
-    document.body.appendChild(svg);
-  }
+    doc.body.appendChild(svg);
+  };
 
   MapCore.addFrontlineControl = function (map) {
     if (typeof L.esri === "undefined") return; // esri-leaflet failed to load; skip silently
@@ -261,7 +258,7 @@
     const panel = document.getElementById("map-layers-panel");
     if (!panel) return;
 
-    ensureFrontlineHatchPattern();
+    MapCore.ensureFrontlineHatchPattern();
 
     // Each layer overlaps the others (e.g. pre-2022 hatch over "occupied"
     // over Crimea), so each needs to always paint in a fixed position in the
@@ -269,9 +266,7 @@
     // per layer guarantees that without reordering DOM nodes on every
     // toggle. Z-indices are set on FRONTLINE_LAYERS itself (paneZIndex).
     FRONTLINE_LAYERS.forEach(l => {
-      if (l.pane && !map.getPane(l.pane)) {
-        map.createPane(l.pane).style.zIndex = l.paneZIndex;
-      }
+      if (l.pane) createSyncedPane(map, l.pane, l.paneZIndex);
     });
 
     let html = "<strong>Areas of control</strong>";
