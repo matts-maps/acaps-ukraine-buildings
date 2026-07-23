@@ -33,7 +33,10 @@
   "use strict";
 
   const IDS_BASE = {
-    mapContainer: "map-container",
+    // The whole map card (Leaflet map + the two-column legend/"areas of
+    // control" panel directly beneath it), so the PDF capture includes the
+    // legend rather than just the bare map.
+    mapContainer: "map-wrapper-card",
     yearSelect: "map-year-select",
     aggSelect: "map-aggregation-select",
     startSelect: "map-period-start-select",
@@ -565,7 +568,11 @@
           const selectorsToHide = [
             ".leaflet-control-zoom",
             ".map-info-panel",
-            ".leaflet-control-attribution"
+            ".leaflet-control-attribution",
+            // The page's own <h2> title is skipped since the PDF already
+            // writes its own heading (config.mapImageHeading) above this
+            // captured image via addImageWithHeading.
+            "#map-view-title"
           ];
           selectorsToHide.forEach(selector => {
             const element = clonedDoc.querySelector(selector);
@@ -795,7 +802,15 @@
         const mapEl = document.getElementById(IDS.mapContainer);
         const mapImg = await captureMap(mapEl);
         if (mapImg) {
-          y = addImageWithHeading(doc, config.mapImageHeading, mapImg, y, margin, pageWidth, pageHeight, pageWidth - margin * 2);
+          // The captured image now includes the legend below the map, so
+          // it's taller than the map alone - explicitly cap it to whatever
+          // vertical space is left on this page, rather than letting
+          // addImageWithHeading's own overflow check push it to page 2.
+          // The map (and its legend) must stay on the report's first page.
+          const mapTargetWidth = pageWidth - margin * 2;
+          const mapHeadingHeight = measureHeadingHeight(doc, config.mapImageHeading, mapTargetWidth);
+          const availableMapHeight = Math.max(150, pageHeight - margin - y - mapHeadingHeight - 20);
+          y = addImageWithHeading(doc, config.mapImageHeading, mapImg, y, margin, pageWidth, pageHeight, mapTargetWidth, null, availableMapHeight);
         } else {
           doc.setFont("helvetica", "italic");
           doc.setFontSize(10);
