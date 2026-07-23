@@ -5,21 +5,21 @@
     <div id="map-error-msg"></div>
 
     <div class="map-control-group">
-      <label for="map-year-select">Target Assessment Year:</label>
+      <label for="map-year-select">Year:</label>
       <select id="map-year-select" onchange="buildMapPeriodDropdowns()"></select>
     </div>
 
     <div class="map-control-group">
-      <label for="map-aggregation-select">Time Frame Filter Type:</label>
+      <label for="map-aggregation-select">Level of detail:</label>
       <select id="map-aggregation-select" onchange="buildMapPeriodDropdowns()">
-        <option value="7">Weekly Granularity</option>
-        <option value="14">Fortnightly Granularity</option>
-        <option value="30" selected>Monthly Granularity</option>
+        <option value="7">Weekly granularity</option>
+        <option value="14">Fortnightly granularity</option>
+        <option value="30" selected>Monthly granularity</option>
       </select>
     </div>
 
     <div class="map-control-group">
-      <label for="map-period-start-select">Select Window Frame Range:</label>
+      <label for="map-period-start-select">Time period:</label>
       <div class="map-range-row">
         <select id="map-period-start-select" onchange="processMapVisualisations()"></select>
         <span class="map-range-sep">to</span>
@@ -28,7 +28,7 @@
     </div>
 
     <div class="map-summary-box">
-      <div class="label">National Frame Total</div>
+      <div class="label">Total number of damaged buildings</div>
       <div class="value" id="map-total-value">0</div>
     </div>
 

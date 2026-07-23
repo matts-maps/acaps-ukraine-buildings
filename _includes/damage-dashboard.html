@@ -7,7 +7,7 @@
   <div id="controls">
     <div class="control-row">
       <div class="control-group">
-        <label for="period-type">Data Aggregation:</label>
+        <label for="period-type">Data aggregation:</label>
         <select id="period-type" onchange="buildPeriodDropdowns()">
           <option value="7">Weekly (7-day periods)</option>
           <option value="14" selected>Fortnightly (14-day periods)</option>
@@ -16,28 +16,26 @@
       </div>
 
       <div class="control-group year-checkbox-group">
-        <label>Years to Compare:</label>
+        <label>Years to compare:</label>
         <div id="year-checkboxes" class="year-checkbox-row"></div>
       </div>
     </div>
 
     <div class="control-row">
       <div class="control-group">
-        <label for="highlight-start">Highlight Range From:</label>
+        <label for="highlight-start">From:</label>
         <select id="highlight-start" onchange="updateChartAndStats()"></select>
       </div>
       <div class="control-group">
         <label for="highlight-end">To:</label>
         <select id="highlight-end" onchange="updateChartAndStats()"></select>
-      </div>
-      <button onclick="updateChartAndStats()">Refresh Visualisations</button>
-    </div>
+
   </div>
 
   <div id="chart-card">
     <div class="chart-header">
       <div>
-        <h2 id="chart-title">Damaged Buildings Time Series</h2>
+        <h2 id="chart-title">Timeline - Total Number of Damaged Buildings</h2>
         <div class="subtitle" id="chart-subtitle"></div>
       </div>
       <div class="export-buttons">
