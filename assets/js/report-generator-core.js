@@ -751,10 +751,27 @@
         // smaller than "all remaining space on the page" and both legends
         // land on the same page as the map, not pushed off onto their own.
         const damageLegendSvg = document.querySelector("#map-legend-panel svg");
-        const areasLegendSvg = window.MapPdfRenderer ? MapPdfRenderer.buildAreasOfControlLegendSvg() : null;
         const legendGap = 16;
-        const legendColWidth = (pageWidth - margin * 2 - legendGap) / 2;
-        const LEGEND_MAX_HEIGHT = 100;
+        const legendRowWidth = pageWidth - margin * 2 - legendGap;
+        // Damaged Buildings gets 1/3 of the row, Areas of control gets 2/3 -
+        // the latter needs the extra room since its labels are full
+        // sentences ("Russian controlled Ukrainian territory before 24
+        // February 2022") that must wrap within their column instead of
+        // running off the page as a single un-wrapped line.
+        const legendCol1Width = legendRowWidth / 3;
+        const legendCol2Width = legendRowWidth - legendCol1Width;
+        // Built here (rather than with a fixed internal width) so its
+        // label-wrapping is computed against the actual column width it
+        // will be embedded at.
+        const areasLegendSvg = window.MapPdfRenderer ? MapPdfRenderer.buildAreasOfControlLegendSvg(legendCol2Width) : null;
+        // Driven by the areas-of-control SVG's own real (wrapped) content
+        // height rather than a fixed guess, since how many lines each
+        // label wraps to - and therefore how tall the legend row needs to
+        // be - depends on the actual label text. The damage-circle legend
+        // (sized separately below, to match the map's own circle scale)
+        // is essentially always shorter than this, so it's a safe shared
+        // row height for both.
+        const LEGEND_MAX_HEIGHT = areasLegendSvg ? parseFloat(areasLegendSvg.getAttribute("height")) : 100;
         // Matches the "heading-to-content gap (6) + trailing gap (30)"
         // that addImageWithHeading/addSvgWithHeading actually advance y by
         // around their content box (their own internal overflow checks use
@@ -766,8 +783,8 @@
         const BLOCK_OVERHEAD = 36;
         const LAYOUT_SAFETY_MARGIN = 15;
         const legendHeadingHeight = Math.max(
-          damageLegendSvg ? measureHeadingHeight(doc, "Damaged Buildings", legendColWidth) : 0,
-          areasLegendSvg ? measureHeadingHeight(doc, "Areas of control", legendColWidth) : 0
+          damageLegendSvg ? measureHeadingHeight(doc, "Damaged Buildings", legendCol1Width) : 0,
+          areasLegendSvg ? measureHeadingHeight(doc, "Areas of control", legendCol2Width) : 0
         );
         const legendReserve = (damageLegendSvg || areasLegendSvg)
           ? legendHeadingHeight + BLOCK_OVERHEAD + LEGEND_MAX_HEIGHT + LAYOUT_SAFETY_MARGIN
@@ -830,9 +847,9 @@
             // map. (Falls back to fitting the column width if the map
             // capture failed, so the legend still renders at some
             // reasonable size rather than not at all.)
-            const naturalWidth = parseFloat(clone.getAttribute("width")) || legendColWidth;
+            const naturalWidth = parseFloat(clone.getAttribute("width")) || legendCol1Width;
             const naturalHeight = parseFloat(clone.getAttribute("height")) || LEGEND_MAX_HEIGHT;
-            const scale = mapCssToPtScale || (legendColWidth / naturalWidth);
+            const scale = mapCssToPtScale || (legendCol1Width / naturalWidth);
             const nextY = await addSvgWithHeading(
               doc, "Damaged Buildings", clone,
               legendRowY, margin, pageWidth, pageHeight, naturalWidth * scale, margin, naturalHeight * scale, null
@@ -842,7 +859,7 @@
           if (areasLegendSvg) {
             const nextY = await addFittedSvgWithHeading(
               doc, "Areas of control", areasLegendSvg,
-              legendRowY, margin, pageWidth, pageHeight, legendColWidth, LEGEND_MAX_HEIGHT, margin + legendColWidth + legendGap
+              legendRowY, margin, pageWidth, pageHeight, legendCol2Width, LEGEND_MAX_HEIGHT, margin + legendCol1Width + legendGap
             );
             legendRowHeight = Math.max(legendRowHeight, nextY - legendRowY);
           }

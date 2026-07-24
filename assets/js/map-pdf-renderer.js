@@ -268,22 +268,75 @@
     return el;
   }
 
+  const LEGEND_FONT_FAMILY = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
+
+  // Measures text the same way report-generator-core.js's chart-label
+  // wrapping does (a scratch <canvas> 2D context), so the label-wrapping
+  // math below doesn't need jsPDF at all - this module only ever builds
+  // SVGs, it doesn't touch the jsPDF document directly.
+  let _measureCanvas = null;
+  function measureTextWidth(text, fontSizePx) {
+    if (!_measureCanvas) _measureCanvas = document.createElement("canvas");
+    const ctx = _measureCanvas.getContext("2d");
+    ctx.font = `${fontSizePx}px ${LEGEND_FONT_FAMILY}`;
+    return ctx.measureText(text).width;
+  }
+
+  // Greedy whitespace wrapping into as many lines as needed to fit
+  // maxWidth - unlike the chart labels elsewhere in this app, these
+  // "areas of control" labels are full sentences with no natural
+  // truncation point, so every line is kept rather than capping at a
+  // fixed line count.
+  function wrapText(text, maxWidth, fontSizePx) {
+    const words = String(text).split(/\s+/).filter(Boolean);
+    if (!words.length) return [String(text)];
+    const lines = [];
+    let current = "";
+    words.forEach((word) => {
+      const candidate = current ? `${current} ${word}` : word;
+      if (current && measureTextWidth(candidate, fontSizePx) > maxWidth) {
+        lines.push(current);
+        current = word;
+      } else {
+        current = candidate;
+      }
+    });
+    if (current) lines.push(current);
+    return lines;
+  }
+
   // Builds a standalone <svg> (its own self-contained hatch <pattern> def,
   // not a reference into the page's hidden pattern <svg>, since svg2pdf.js
   // may not resolve a url(#id) reference across document/embed boundaries)
   // with one swatch + label row per areas-of-control layer that's currently
   // visible on the map (mirroring on-screen checkbox state).
-  function buildAreasOfControlLegendSvg() {
+  //
+  // maxWidth (required, in the same units the caller will embed this SVG
+  // at - typically PDF points) constrains label wrapping and is also the
+  // SVG's own width, so its longer labels ("Russian controlled Ukrainian
+  // territory before 24 February 2022") wrap onto multiple lines and stay
+  // within the column they're placed in, rather than overflowing past the
+  // page edge as one un-wrapped line.
+  function buildAreasOfControlLegendSvg(maxWidth) {
     const layers = (window.MapCore && window.MapCore.FRONTLINE_LAYERS) || [];
     const instances = (window.MapCore && window.MapCore.frontlineLayerInstances) || {};
     const visibleLayers = layers.filter((l) => instances[l.key]);
 
     const swatchSize = 14;
-    const rowHeight = 22;
-    const width = 300;
-    const height = Math.max(rowHeight, visibleLayers.length * rowHeight) + 8;
+    const fontSize = 10;
+    const lineHeight = 13;
+    const rowGap = 8;
+    const textX = swatchSize + 8;
+    const textMaxWidth = Math.max(30, maxWidth - textX);
 
-    const svg = svgEl("svg", { xmlns: SVG_NS, width, height, viewBox: `0 0 ${width} ${height}` });
+    const rows = visibleLayers.map((l) => ({
+      layer: l,
+      lines: wrapText(l.label, textMaxWidth, fontSize)
+    }));
+    const rowHeights = rows.map((r) => Math.max(swatchSize, r.lines.length * lineHeight));
+    const height = rowHeights.reduce((sum, h) => sum + h + rowGap, 4);
+
+    const svg = svgEl("svg", { xmlns: SVG_NS, width: maxWidth, height, viewBox: `0 0 ${maxWidth} ${height}` });
 
     const defs = svgEl("defs", {});
     const pattern = svgEl("pattern", {
@@ -295,9 +348,11 @@
     defs.appendChild(pattern);
     svg.appendChild(defs);
 
-    visibleLayers.forEach((l, i) => {
-      const y = 4 + i * rowHeight;
-      const rectAttrs = { x: 0, y, width: swatchSize, height: swatchSize, rx: 2 };
+    let cursorY = 4;
+    rows.forEach(({ layer: l, lines }, i) => {
+      const rowHeight = rowHeights[i];
+      const swatchY = cursorY + (rowHeight - swatchSize) / 2;
+      const rectAttrs = { x: 0, y: swatchY, width: swatchSize, height: swatchSize, rx: 2 };
       if (l.key === "pre2022") {
         rectAttrs.fill = `url(#${HATCH_SWATCH_PATTERN_ID})`;
         rectAttrs.stroke = "#EF0000";
@@ -308,12 +363,18 @@
       }
       svg.appendChild(svgEl("rect", rectAttrs));
 
-      const text = svgEl("text", {
-        x: swatchSize + 8, y: y + swatchSize - 3, "font-size": 10,
-        "font-family": "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif", fill: "#333"
+      const textBlockHeight = lines.length * lineHeight;
+      const firstBaselineY = cursorY + (rowHeight - textBlockHeight) / 2 + fontSize - 2;
+      lines.forEach((line, li) => {
+        const text = svgEl("text", {
+          x: textX, y: firstBaselineY + li * lineHeight, "font-size": fontSize,
+          "font-family": LEGEND_FONT_FAMILY, fill: "#333"
+        });
+        text.textContent = line;
+        svg.appendChild(text);
       });
-      text.textContent = l.label;
-      svg.appendChild(text);
+
+      cursorY += rowHeight + rowGap;
     });
 
     return svg;
