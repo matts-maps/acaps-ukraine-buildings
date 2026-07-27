@@ -670,7 +670,14 @@
     const fromMs = Date.parse(fromISO + "T00:00:00Z");
     const toMsExclusive = Date.parse(toISO + "T00:00:00Z") + 86400000; // "to" day is inclusive
     const order = [];
-    const labelsByKey = {}; // each value is [primaryLine, yearLine] - a 2-line tick label
+    // Each value is [primaryLine, yearLine, tooltipLine] - primaryLine is
+    // the compact axis text (blanked of its year, and reduced to a single
+    // letter for monthly), yearLine is blank except on the one bucket
+    // chosen to carry each calendar year, and tooltipLine is always a full,
+    // unambiguous description (e.g. "June 2026") independent of both -
+    // read on hover, where a bare "J" would be ambiguous between January/
+    // June/July.
+    const labelsByKey = {};
     const bucketRangeByKey = {};
 
     const fmtDay = ms => new Date(ms).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
@@ -684,7 +691,8 @@
         const monthStartMs = Date.UTC(y, m, 1);
         const monthEndMs = Date.UTC(y, m + 1, 0);
         order.push(key);
-        labelsByKey[key] = [MONTH_INITIALS[m], String(y)];
+        const fullLabel = new Date(monthStartMs).toLocaleDateString("en-GB", { month: "long", year: "numeric", timeZone: "UTC" });
+        labelsByKey[key] = [MONTH_INITIALS[m], String(y), fullLabel];
         bucketRangeByKey[key] = {
           startISO: new Date(monthStartMs).toISOString().slice(0, 10),
           endISO: new Date(monthEndMs).toISOString().slice(0, 10)
@@ -706,7 +714,8 @@
         // rare case the bucket's start year is shown, matching how the
         // bucket itself is keyed/labelled by its start date everywhere else.
         const primary = stepDays === 1 ? fmtDay(bucketStartMs) : `${fmtDay(bucketStartMs)} – ${fmtDay(endMs)}`;
-        labelsByKey[key] = [primary, String(new Date(bucketStartMs).getUTCFullYear())];
+        const yearStr = String(new Date(bucketStartMs).getUTCFullYear());
+        labelsByKey[key] = [primary, yearStr, `${primary}, ${yearStr}`];
         bucketRangeByKey[key] = { startISO: key, endISO: new Date(endMs).toISOString().slice(0, 10) };
         bucketStartMs = bucketEndExclusiveMs;
       }
@@ -1002,6 +1011,9 @@
   function timelineYearLine(label) {
     return Array.isArray(label) ? label[1] : null;
   }
+  function timelineTooltipLine(label) {
+    return Array.isArray(label) ? (label[2] || label[0]) : label;
+  }
 
   // Draws each bucket's year (where present) at its own x position,
   // entirely independent of the x-axis's own tick/autoSkip decisions -
@@ -1068,6 +1080,27 @@
         layout: { padding: { top: 26, bottom: 14 } },
         plugins: {
           legend: { display: false },
+          tooltip: {
+            callbacks: {
+              // Reads straight from the live chart's own current data
+              // (context[0].chart.data.labels), never a closed-over
+              // `labels` reference from whenever this chart was first
+              // created - the whole point being that a persisted Chart.js
+              // instance's data changes on every re-render (see the
+              // existingInstance branch below) but a plain closure
+              // variable captured at creation time would not, which is
+              // exactly what silently desynced this chart's tooltip/axis
+              // from its own bars after a date-range or granularity change.
+              // Always the full "Month Year" / "1 Jun – 7 Jun, 2026" form,
+              // never the bare single-letter axis abbreviation, which is
+              // ambiguous in isolation (e.g. "J" alone could be Jan/Jun/Jul).
+              title: (items) => {
+                if (!items.length) return "";
+                const lbl = items[0].chart.data.labels[items[0].dataIndex];
+                return timelineTooltipLine(lbl);
+              }
+            }
+          },
           // Value labels rendered just above each column, so the value
           // axis below is no longer needed to read amounts.
           datalabels: {
@@ -1102,7 +1135,24 @@
               // Ticks render the primary line only - the year is drawn
               // separately by timelineYearRowPlugin, decoupled from
               // whichever ticks autoSkip decides to keep.
-              callback: (value, index) => timelinePrimaryLine(labels[index])
+              //
+              // A plain (non-arrow) function, deliberately: Chart.js calls
+              // tick callbacks with `this` bound to the scale, which has
+              // `this.chart` - reading the label from there (the chart's
+              // own *current* data) rather than closing over the `labels`
+              // parameter above is what makes this keep working correctly
+              // after a re-render. This callback function itself is only
+              // ever created once (here, the first time this canvas's
+              // chart is built); every later filter change goes through
+              // the `existingInstance` branch below, which updates
+              // `data.labels` in place but never recreates this callback -
+              // so a closure over the original `labels` array would keep
+              // reading further and further out-of-date buckets forever,
+              // while the bars themselves (and the tooltip, fixed the same
+              // way above) moved on to the current data.
+              callback: function (value, index) {
+                return timelinePrimaryLine(this.chart.data.labels[index]);
+              }
             }
           },
           // Value axis removed - each column now carries its own label.
