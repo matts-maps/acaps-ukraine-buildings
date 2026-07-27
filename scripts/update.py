@@ -1,6 +1,8 @@
 import os
 import time
 import requests
+from requests.adapters import HTTPAdapter
+from urllib3.util.retry import Retry
 import pandas as pd
 
 API_URL = "https://api.acaps.org/api/v1/ukraine/damages/"
@@ -12,14 +14,27 @@ HEADERS = {
     "Authorization": f"Token {TOKEN}"
 }
 
+def build_session():
+    session = requests.Session()
+    retries = Retry(
+        total=5,
+        backoff_factor=2,
+        status_forcelist=[429, 500, 502, 503, 504],
+        allowed_methods=["GET"],
+    )
+    session.mount("https://", HTTPAdapter(max_retries=retries))
+    return session
+
+
 def fetch_all_records():
     records = []
     next_url = API_URL
+    session = build_session()
 
     while next_url:
         print(f"Fetching: {next_url}")
 
-        response = requests.get(
+        response = session.get(
             next_url,
             headers=HEADERS,
             timeout=60

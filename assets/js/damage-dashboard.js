@@ -7,6 +7,10 @@ let lastChartSVG = '';
 // e.g., comparisonBaselineOverrides.get(2024) = 2022
 const comparisonBaselineOverrides = new Map();
 
+// Date range tracking for real dates in dropdowns
+let minDataDate = null;
+let maxDataDate = null;
+
 const calendarMonths = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 const YEAR_COLORS = ['#1a3a5c', '#e07b39', '#2c8f7a', '#c0392b', '#8e44ad', '#2c5f8a', '#d4a017', '#555555'];
@@ -29,11 +33,34 @@ window.addEventListener('DOMContentLoaded', () => {
         return;
       }
       rawCSVData = results.data;
+      calculateDataDateRange();
       initializeDashboardOptions();
     },
     error: () => showError('Unable to route repository CSV payload array map.')
   });
 });
+
+// Calculate min and max dates from the CSV data
+function calculateDataDateRange() {
+  if (rawCSVData.length === 0) return;
+  
+  let minDate = null;
+  let maxDate = null;
+  
+  rawCSVData.forEach(row => {
+    const dateStr = (row.date_of_event || '').trim();
+    if (!dateStr) return;
+    
+    const d = new Date(dateStr);
+    if (isNaN(d)) return;
+    
+    if (!minDate || d < minDate) minDate = d;
+    if (!maxDate || d > maxDate) maxDate = d;
+  });
+  
+  minDataDate = minDate;
+  maxDataDate = maxDate;
+}
 
 function showError(msg) {
   const el = document.getElementById('error-msg');
@@ -103,9 +130,18 @@ function initializeDashboardOptions() {
   if (controls) controls.style.display = 'flex';
 }
 
+// UPDATED: Generate period labels with real dates from data
 function getPeriodLabels(daysInStep) {
   if (daysInStep === 30) return calendarMonths;
 
+  // Calculate date range if not already done
+  if (!minDataDate || !maxDataDate) {
+    calculateDataDateRange();
+  }
+
+  // Use actual data year, fallback to current year if no data
+  const referenceYear = maxDataDate ? maxDataDate.getFullYear() : new Date().getFullYear();
+  
   const labels = [];
   const totalPeriods = Math.ceil(365 / daysInStep);
   const prefix = daysInStep === 7 ? 'Week' : 'Fortnight';
@@ -115,8 +151,11 @@ function getPeriodLabels(daysInStep) {
     let endDay = startDay + daysInStep - 1;
     if (endDay > 365) endDay = 365;
 
-    const dStart = new Date(2025, 0, startDay);
-    const dEnd = new Date(2025, 0, endDay);
+    // Use actual data year instead of hardcoded 2025
+    const dStart = new Date(referenceYear, 0, startDay);
+    const dEnd = new Date(referenceYear, 0, endDay);
+    
+    // Format dates nicely (e.g., "24 Feb" instead of "Feb 24")
     const fmt = d => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
     
     labels.push(`${prefix} ${i + 1} (${fmt(dStart)} – ${fmt(dEnd)})`);
@@ -400,11 +439,19 @@ function renderStatsBoxes(selectedYears, totalsByYear, rangeDisplay) {
     
     // Get all years that are chronological ancestors of the target year
     const historicalYears = uniqueYearsList.filter(y => y < yr);
-    
-    // Retrieve the active override selection, otherwise default to the closest previous year (yr - 1)
+
+    // Retrieve the active override selection, otherwise default to the
+    // closest prior year that actually has data. (yr - 1 isn't safe to
+    // assume here - if there's a gap in the dataset, e.g. no records for
+    // one calendar year, yr - 1 may not be a real option, which used to
+    // leave the <select> showing one year while the percentage was
+    // silently computed against a different one.)
+    const closestHistoricalYear = historicalYears.length
+      ? historicalYears.reduce((a, b) => (b > a ? b : a))
+      : null;
     let selectedBaseline = comparisonBaselineOverrides.get(yr);
-    if (!selectedBaseline || !uniqueYearsList.includes(selectedBaseline)) {
-      selectedBaseline = yr - 1;
+    if (!historicalYears.includes(selectedBaseline)) {
+      selectedBaseline = closestHistoricalYear;
     }
 
     let deltaHTML = '';
@@ -433,9 +480,9 @@ function renderStatsBoxes(selectedYears, totalsByYear, rangeDisplay) {
       }
 
       deltaHTML = `
-        <div class="change font-size-small" style="margin-top: 8px; display: flex; align-items: center; justify-content: space-between; gap: 8px;">
+        <div class="change compact-row">
           ${pctHTML}
-          <select class="baseline-select" data-target-year="${yr}" style="font-size: 11px; padding: 2px 4px; border-radius: 4px; border: 1px solid #ccc; cursor: pointer;">
+          <select class="baseline-select" data-target-year="${yr}">
             ${dropdownOptions}
           </select>
         </div>`;
@@ -444,7 +491,7 @@ function renderStatsBoxes(selectedYears, totalsByYear, rangeDisplay) {
     }
 
     return `
-      <div class="stat-box" style="border-left-color:${color}; display: flex; flex-direction: column; justify-content: space-between;">
+      <div class="stat-box stat-box-with-selector" style="border-left-color:${color};">
         <div>
           <div class="label">${yr}</div>
           <div class="value" style="color:${color};">${total.toLocaleString()}</div>
