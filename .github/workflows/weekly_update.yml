@@ -2,7 +2,8 @@ name: Update Ukraine Damages
 
 on:
   schedule:
-    - cron: '0 0 * * 1'
+    # Runs daily at 00:00 UTC (was previously Mondays only).
+    - cron: '0 0 * * *'
   workflow_dispatch:
 
 permissions:
@@ -34,18 +35,30 @@ jobs:
       - name: Run summariser
         run: python scripts/summarise.py
 
-      - name: Run week-4 comparison analysis
-        run: python scripts/compare_weeks.py
-
-      - name: Sync with remote before committing
-        run: git pull --rebase --autostash origin main
+      - name: Run Oblast / Raion summaries (CSV + Shapefile, by building type)
+        run: python scripts/summarise_admin.py
 
       - name: Commit changes
-        uses: stefanzweifel/git-auto-commit-action@v5
-        with:
-          commit_message: "Weekly ACAPS updates, analytical summaries, and interactive dashboard update"
-          file_pattern: >-
-            data/ukraine-damages.csv
-            data/ukraine-damages-weekly-summary.csv
-            data/week_4_comparison.csv
-            index.html
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          # Stage raw data, summaries, static charts, and the automated dashboard interface
+          git add data/ukraine-damages.csv \
+                  data/ukraine-damages-weekly-summary.csv \
+                  data/damage-summary-oblast.csv \
+                  data/damage-summary-raion.csv \
+                  data/damage-summary-oblast-shapefile.zip \
+                  data/damage-summary-raion-shapefile.zip \
+                  index.html
+
+          if git diff --cached --quiet; then
+            echo "No changes detected in raw data, summaries, plots, or dashboard."
+          else
+            git commit -m "Daily ACAPS updates, Oblast/Raion damage summaries, and dashboard update"
+
+            # Pull any remote changes and rebase our automated commit on top of them
+            git pull --rebase origin main
+
+            git push origin main
+          fi
