@@ -36,23 +36,31 @@
   "use strict";
 
   const IDS_BASE = {
-    yearSelect: "map-year-select",
     aggSelect: "map-aggregation-select",
-    startSelect: "map-period-start-select",
-    endSelect: "map-period-end-select",
+    dateFromInput: "map-date-from",
+    dateToInput: "map-date-to",
+    infraSelect: "map-infra-select",
+    extentSelect: "map-extent-select",
     totalValue: "map-total-value",
     activeFilterGroup: "map-active-filter-group",
     activeFilterLabel: "map-active-filter-label",
   };
 
+  function formatDateLabel(iso) {
+    return new Date(iso + "T00:00:00Z").toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+  }
+
   const BUTTON_INSERT_AFTER_SELECTOR = ".map-hint";
 
+  // Vector chart drawing (buildHorizontalBarSVG/buildColumnChartSVG/
+  // buildDonutSVG + CHART_PALETTE etc.) lives in the shared
+  // chart-svg-builders.js (window.ChartSVGBuilders), loaded before this
+  // file, so the PDF's charts and the on-page "Export SVG" buttons
+  // (map-export-buttons.js) draw from the exact same functions.
+  const { buildHorizontalBarSVG, buildColumnChartSVG, buildDonutSVG, CHART_PALETTE } = window.ChartSVGBuilders;
+
   function formatPeriod(state) {
-    const range =
-      state.startLabel === state.endLabel
-        ? state.startLabel
-        : `${state.startLabel} to ${state.endLabel}`;
-    return `${state.year} - ${state.aggregationLabel} - ${range}`;
+    return `${state.granularityLabel} • ${state.dateFromLabel} – ${state.dateToLabel}`;
   }
 
   function topEntry(counts) {
@@ -60,343 +68,6 @@
     if (!entries.length) return null;
     entries.sort((a, b) => b[1] - a[1]);
     return entries[0];
-  }
-
-  // --------------------------------------------------------------------
-  // Vector chart builders
-  // --------------------------------------------------------------------
-  // The four summary charts are rebuilt here as real <svg> markup (not
-  // captured off the on-screen <canvas>), then embedded into the PDF as
-  // vector graphics via svg2pdf.js.
-  const PDF_CHART_FONT = "-apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif";
-  const CHART_PALETTE = ["#1a3a5c", "#2c5f8a", "#4a90c4", "#7cb4dd", "#a8d0e8", "#d94801", "#f16913", "#fdae6b", "#fdd0a2", "#999999"];
-  const SVG_NS = "http://www.w3.org/2000/svg";
-
-  function svgEl(tag, attrs) {
-    const el = document.createElementNS(SVG_NS, tag);
-    Object.entries(attrs || {}).forEach(([k, v]) => {
-      if (v !== undefined && v !== null) el.setAttribute(k, v);
-    });
-    return el;
-  }
-
-  // Measures how wide a label would render at a given font size/weight,
-  // using an offscreen canvas - used to decide when a label needs to be
-  // wrapped, skipped, or thinned so it never overlaps a neighbour.
-  let _measureCanvas = null;
-  function measureTextWidth(text, fontSizePx, fontWeight = "400") {
-    if (!_measureCanvas) _measureCanvas = document.createElement("canvas");
-    const ctx = _measureCanvas.getContext("2d");
-    ctx.font = `${fontWeight} ${fontSizePx}px ${PDF_CHART_FONT}`;
-    return ctx.measureText(text).width;
-  }
-
-  // Splits a label into wrappable tokens: breaks on whitespace (discarding
-  // it) and also right after a "/" (keeping the slash attached, no space
-  // inserted afterwards) - so long slash-joined phrases like
-  // "Industrial/Business/Enterprise facilities" can wrap at the slashes,
-  // not just at the one space in the whole string.
-  function tokenizeLabel(text) {
-    const tokens = [];
-    let current = "";
-    for (const ch of text) {
-      if (/\s/.test(ch)) {
-        if (current) {
-          tokens.push(current);
-          current = "";
-        }
-      } else {
-        current += ch;
-        if (ch === "/") {
-          tokens.push(current);
-          current = "";
-        }
-      }
-    }
-    if (current) tokens.push(current);
-    return tokens;
-  }
-
-  // Joins already-wrapped line fragments back together, respecting the
-  // same no-space-after-slash rule tokenizeLabel/wrapLabelText use.
-  function joinLineFragments(fragments) {
-    return fragments.reduce((acc, line) => {
-      if (!acc) return line;
-      const sep = acc.endsWith("/") ? "" : " ";
-      return `${acc}${sep}${line}`;
-    }, "");
-  }
-
-  // Trims text to the longest prefix that fits maxWidth with a trailing
-  // "…" appended.
-  function truncateWithEllipsis(text, maxWidth, fontSizePx) {
-    if (measureTextWidth(text, fontSizePx) <= maxWidth) return text;
-    let low = 0;
-    let high = text.length;
-    while (low < high) {
-      const mid = Math.ceil((low + high) / 2);
-      const candidate = `${text.slice(0, mid).trimEnd()}…`;
-      if (measureTextWidth(candidate, fontSizePx) <= maxWidth) {
-        low = mid;
-      } else {
-        high = mid - 1;
-      }
-    }
-    return `${text.slice(0, low).trimEnd()}…`;
-  }
-
-  // Greedily wraps a label into the fewest lines that each fit maxWidth,
-  // capped at maxLines - any remainder beyond that is merged into the
-  // final line and truncated with an ellipsis rather than adding more lines.
-  function wrapLabelText(text, maxWidth, fontSizePx, maxLines = 2) {
-    const tokens = tokenizeLabel(String(text));
-    if (!tokens.length) return [String(text)];
-
-    const lines = [];
-    let current = "";
-    tokens.forEach((token) => {
-      // No space is inserted between a token and the next if the token
-      // already ends in "/" (e.g. "Industrial/" followed by "Business/").
-      const sep = current && !current.endsWith("/") ? " " : "";
-      const candidate = current ? `${current}${sep}${token}` : token;
-      if (current && measureTextWidth(candidate, fontSizePx) > maxWidth) {
-        lines.push(current);
-        current = token;
-      } else {
-        current = candidate;
-      }
-    });
-    if (current) lines.push(current);
-
-    if (lines.length <= maxLines) return lines;
-
-    const kept = lines.slice(0, maxLines - 1);
-    const overflowText = joinLineFragments(lines.slice(maxLines - 1));
-    kept.push(truncateWithEllipsis(overflowText, maxWidth, fontSizePx));
-    return kept;
-  }
-
-  function newSvgRoot(width, height) {
-    return svgEl("svg", { xmlns: SVG_NS, width, height, viewBox: `0 0 ${width} ${height}` });
-  }
-
-  // Horizontal bar chart (Top Oblasts/Raions / Infra Type)
-  function buildHorizontalBarSVG(labels, values, width, height, highlightSet) {
-    const svg = newSvgRoot(width, height);
-    if (!labels.length) return svg;
-
-    const max = Math.max(1, ...values);
-    const rowH = height / labels.length;
-    const barH = Math.min(20, rowH * 0.55);
-    const labelColW = Math.min(width * 0.34, 150);
-    const valueColW = 50;
-    const barAreaW = Math.max(20, width - labelColW - valueColW - 10);
-
-    labels.forEach((label, i) => {
-      const cy = rowH * i + rowH / 2;
-      const barW = Math.max((values[i] / max) * barAreaW, 1);
-      const isHighlighted = Boolean(highlightSet && highlightSet.has(label));
-
-      // Wrap the category label onto as many lines as it needs to fit the
-      // label column, rather than letting long labels (e.g. infrastructure
-      // type names) overflow or run into the bar.
-      const maxLabelWidth = labelColW - 8;
-      const fontSize = 8;
-      const lineHeight = fontSize + 2.5;
-      const lines = wrapLabelText(label, maxLabelWidth, fontSize);
-      const firstLineY = cy - ((lines.length - 1) * lineHeight) / 2;
-
-      lines.forEach((line, li) => {
-        const catText = svgEl("text", {
-          x: labelColW - 8, y: firstLineY + li * lineHeight, "text-anchor": "end", "dominant-baseline": "middle",
-          "font-size": String(fontSize), "font-family": PDF_CHART_FONT, fill: "#444"
-        });
-        catText.textContent = line;
-        svg.appendChild(catText);
-      });
-
-      svg.appendChild(svgEl("rect", {
-        x: labelColW, y: cy - barH / 2, width: barW, height: barH, rx: 4, ry: 4,
-        fill: isHighlighted ? "#d94801" : "#1a3a5c"
-      }));
-
-      const valText = svgEl("text", {
-        x: labelColW + barW + 8, y: cy, "text-anchor": "start", "dominant-baseline": "middle",
-        "font-size": "8", "font-family": PDF_CHART_FONT, "font-weight": "600", fill: "#1a3a5c"
-      });
-      valText.textContent = values[i].toLocaleString();
-      svg.appendChild(valText);
-    });
-
-    return svg;
-  }
-
-  // Vertical column chart (Timeline)
-  function buildColumnChartSVG(labels, values, width, height) {
-    const svg = newSvgRoot(width, height);
-    if (!labels.length) return svg;
-
-    const max = Math.max(1, ...values);
-    const topPad = 22;
-    const bottomPad = 34;
-    const plotH = height - topPad - bottomPad;
-    const colW = width / labels.length;
-    const barW = Math.min(26, colW * 0.6);
-    const fontSize = 8;
-
-    // Keep axis labels horizontal at all times (matching the webpage's
-    // Chart.js timeline) by thinning them out - showing only every Nth
-    // label - rather than rotating them when there are too many to fit.
-    // This mirrors Chart.js's own autoSkip behaviour for category axes.
-    let step = 1;
-    while (step < labels.length) {
-      let widest = 0;
-      for (let i = 0; i < labels.length; i += step) {
-        widest = Math.max(widest, measureTextWidth(labels[i], fontSize));
-      }
-      if (widest <= colW * step * 0.85) break;
-      step++;
-    }
-
-    labels.forEach((label, i) => {
-      const cx = colW * i + colW / 2;
-      const value = values[i];
-
-      if (value > 0) {
-        const barH = Math.max((value / max) * plotH, 1);
-        const barY = topPad + (plotH - barH);
-        svg.appendChild(svgEl("rect", {
-          x: cx - barW / 2, y: barY, width: barW, height: barH, rx: 3, ry: 3, fill: "#1a3a5c"
-        }));
-
-        // Updated to match web: size 8, weight 600. Skipped if the column
-        // is too narrow to fit the label without touching its neighbours
-        // (matches the webpage's Chart.js timeline behaviour).
-        const valueText = value.toLocaleString();
-        if (measureTextWidth(valueText, 8, "600") <= colW * 0.85) {
-          const valText = svgEl("text", {
-            x: cx, y: barY - 6, "text-anchor": "middle",
-            "font-size": "8", "font-family": PDF_CHART_FONT, "font-weight": "600", fill: "#1a3a5c"
-          });
-          valText.textContent = valueText;
-          svg.appendChild(valText);
-        }
-      }
-
-      if (i % step !== 0) return;
-
-      const lblY = height - bottomPad + 14;
-      const lbl = svgEl("text", {
-        x: cx, y: lblY, "text-anchor": "middle",
-        "font-size": String(fontSize), "font-family": PDF_CHART_FONT, fill: "#666"
-      });
-      lbl.textContent = label;
-      svg.appendChild(lbl);
-    });
-
-    return svg;
-  }
-
-  function polarPoint(cx, cy, r, angle) {
-    return { x: cx + r * Math.cos(angle), y: cy + r * Math.sin(angle) };
-  }
-
-  function donutSlicePath(cx, cy, innerR, outerR, startAngle, endAngle) {
-    const largeArc = endAngle - startAngle > Math.PI ? 1 : 0;
-    const p1 = polarPoint(cx, cy, outerR, startAngle);
-    const p2 = polarPoint(cx, cy, outerR, endAngle);
-    const p3 = polarPoint(cx, cy, innerR, endAngle);
-    const p4 = polarPoint(cx, cy, innerR, startAngle);
-    return `M ${p1.x} ${p1.y} A ${outerR} ${outerR} 0 ${largeArc} 1 ${p2.x} ${p2.y} ` +
-      `L ${p3.x} ${p3.y} A ${innerR} ${innerR} 0 ${largeArc} 0 ${p4.x} ${p4.y} Z`;
-  }
-
-  // Doughnut chart (Level of Damage)
-  function buildDonutSVG(labels, values, width, height, palette) {
-    const svg = newSvgRoot(width, height);
-    const total = values.reduce((a, b) => a + b, 0);
-    if (!total) return svg;
-
-    const cx = width / 2;
-    const cy = height / 2;
-    const outerR = Math.max(30, Math.min(width, height) / 2 - 62);
-    const innerR = outerR * 0.55;
-
-    // Minimum vertical gap enforced between two label lines on the same
-    // side of the ring, so neighbouring slices with similar angles never
-    // draw text on top of each other.
-    const LINE_HEIGHT = 13;
-    const leftLabels = [];
-    const rightLabels = [];
-
-    let angle = -Math.PI / 2;
-    labels.forEach((label, i) => {
-      const value = values[i];
-      const frac = value / total;
-      const startAngle = angle;
-      const endAngle = angle + frac * Math.PI * 2;
-      angle = endAngle;
-      if (!value) return;
-
-      svg.appendChild(svgEl("path", {
-        d: donutSlicePath(cx, cy, innerR, outerR, startAngle, endAngle),
-        fill: palette[i % palette.length]
-      }));
-
-      const mid = (startAngle + endAngle) / 2;
-      const isRight = Math.cos(mid) >= 0;
-      const lineStart = polarPoint(cx, cy, outerR + 2, mid);
-      const bend = polarPoint(cx, cy, outerR + 16, mid);
-      const textX = bend.x + (isRight ? 14 : -14);
-      const pct = Math.round(frac * 100);
-      const text = `${label}: ${value.toLocaleString()} (${pct}%)`;
-
-      const entry = { lineStart, bend, textX, textY: bend.y, text, isRight };
-      (isRight ? rightLabels : leftLabels).push(entry);
-    });
-
-    // Within each side, walk top-to-bottom pushing any label too close to
-    // the one above it further down; if that runs the stack past the
-    // bottom of the chart, compress gaps upward from the bottom instead so
-    // the whole stack stays on screen.
-    function declutter(list) {
-      list.sort((a, b) => a.textY - b.textY);
-      for (let i = 1; i < list.length; i++) {
-        if (list[i].textY - list[i - 1].textY < LINE_HEIGHT) {
-          list[i].textY = list[i - 1].textY + LINE_HEIGHT;
-        }
-      }
-      const maxY = height - 4;
-      if (list.length && list[list.length - 1].textY > maxY) {
-        list[list.length - 1].textY = maxY;
-        for (let i = list.length - 2; i >= 0; i--) {
-          if (list[i + 1].textY - list[i].textY < LINE_HEIGHT) {
-            list[i].textY = list[i + 1].textY - LINE_HEIGHT;
-          }
-        }
-      }
-    }
-
-    declutter(leftLabels);
-    declutter(rightLabels);
-
-    [...leftLabels, ...rightLabels].forEach(({ lineStart, bend, textX, textY, text, isRight }) => {
-      svg.appendChild(svgEl("polyline", {
-        // Elbow at the slice's natural angle first, then a vertical run to
-        // the label's (possibly decluttered) final height.
-        points: `${lineStart.x},${lineStart.y} ${bend.x},${bend.y} ${bend.x},${textY} ${textX + (isRight ? -4 : 4)},${textY}`,
-        fill: "none", stroke: "#999", "stroke-width": "1"
-      }));
-
-      const textEl = svgEl("text", {
-        x: textX, y: textY, "text-anchor": isRight ? "start" : "end", "dominant-baseline": "middle",
-        "font-size": "8", "font-family": PDF_CHART_FONT, fill: "#333"
-      });
-      textEl.textContent = text;
-      svg.appendChild(textEl);
-    });
-
-    return svg;
   }
 
   // Rasterizes an <svg> element as a fallback
@@ -496,9 +167,8 @@
     return y + boxHeight + 30;
   }
 
-  function highlightSetFor(dimension, activeFilter) {
-    if (!activeFilter || activeFilter.dimension !== dimension) return null;
-    return new Set([activeFilter.value]);
+  function highlightSetFor(value) {
+    return value ? new Set([value]) : null;
   }
 
   // Delegates to MapPdfRenderer (map-pdf-renderer.js), which redraws the
@@ -538,24 +208,21 @@
   // needs the actual placed imgWidth to work out how much this image got
   // scaled down relative to its source (see the mapCssToPtScale use below),
   // not just where to continue drawing next.
-  function addImageWithHeading(doc, heading, imgDataUrl, y, margin, pageWidth, pageHeight, targetWidth, explicitX = null, maxHeight = null) {
+  //
+  // Always draws at the full targetWidth (imgHeight follows from the
+  // image's own aspect ratio) - the map must render edge-to-edge on the
+  // page rather than being shrunk-and-centered to squeeze under a height
+  // budget, which is what a maxHeight cap here previously did. If that
+  // means the map + legends no longer fit page 1, the overflow check just
+  // below (and the legend row's own, separate overflow check right after
+  // this function's caller) push the overflow onto page 2 instead.
+  function addImageWithHeading(doc, heading, imgDataUrl, y, margin, pageWidth, pageHeight, targetWidth, explicitX = null) {
     const xPos = explicitX !== null ? explicitX : margin;
     const props = doc.getImageProperties(imgDataUrl);
     const naturalAspect = props.width / props.height;
-    let imgWidth = targetWidth;
-    let imgHeight = targetWidth / naturalAspect;
-    if (maxHeight) {
-      const boxAspect = targetWidth / maxHeight;
-      if (naturalAspect > boxAspect) {
-        imgWidth = targetWidth;
-        imgHeight = targetWidth / naturalAspect;
-      } else {
-        imgHeight = maxHeight;
-        imgWidth = maxHeight * naturalAspect;
-      }
-    }
-    const drawX = xPos + (targetWidth - imgWidth) / 2;
-    const boxHeight = maxHeight || imgHeight;
+    const imgWidth = targetWidth;
+    const imgHeight = targetWidth / naturalAspect;
+    const boxHeight = imgHeight;
     doc.setFont("helvetica", "bold");
     doc.setFontSize(10);
     doc.setTextColor(26, 58, 92);
@@ -570,8 +237,92 @@
       y += 13;
     });
     y += 6;
-    doc.addImage(imgDataUrl, "PNG", drawX, y, imgWidth, imgHeight);
+    doc.addImage(imgDataUrl, "PNG", xPos, y, imgWidth, imgHeight);
     return { y: y + boxHeight + 30, imgWidth, imgHeight };
+  }
+
+  // Draws the area x damage-level summary table (the same data/shape as
+  // the on-page table and its CSV/XLSX export) as its own PDF page, using
+  // the same hand-rolled doc.rect/doc.text primitives as the rest of this
+  // file rather than a jspdf-autotable dependency - paginating if the row
+  // count (up to ~136 raions) overflows a single page.
+  function addSummaryTablePage(doc, state, margin, pageWidth, pageHeight) {
+    const t = state.summaryTable;
+    if (!t || !t.rows.length) return;
+
+    doc.addPage();
+    let y = margin + 15;
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(13);
+    doc.setTextColor(26, 58, 92);
+    doc.text(`Damage Summary by ${t.areaLabel}`, margin, y);
+    y += 20;
+
+    const cols = [t.areaLabel, ...t.columns, "Total"];
+    const colWidth = (pageWidth - margin * 2) / cols.length;
+    const cellPadding = 6;
+    const baseRowHeight = 16;
+    const wrappedLineHeight = 11;
+    // The area/raion-name column wraps onto multiple lines rather than
+    // overflowing into the next column when a name is too long for its
+    // column width (e.g. "Autonomous Republic of Crimea").
+    const areaColTextWidth = colWidth - cellPadding * 2;
+
+    function drawHeaderRow(yy) {
+      doc.setFillColor(26, 58, 92);
+      doc.rect(margin, yy, pageWidth - margin * 2, baseRowHeight, "F");
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9);
+      doc.setTextColor(255, 255, 255);
+      cols.forEach((c, i) => {
+        const x = margin + i * colWidth;
+        // First column (area/raion name) is left-aligned; every numeric
+        // column (each damage level + Total) is right-aligned, matching
+        // the on-page table and the numbers it holds.
+        if (i === 0) {
+          doc.text(String(c), x + cellPadding, yy + baseRowHeight - 5);
+        } else {
+          doc.text(String(c), x + colWidth - cellPadding, yy + baseRowHeight - 5, { align: "right" });
+        }
+      });
+      return yy + baseRowHeight;
+    }
+
+    y = drawHeaderRow(y);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    t.rows.forEach((r, i) => {
+      const areaLines = doc.splitTextToSize(r.area, areaColTextWidth);
+      const rowHeight = Math.max(baseRowHeight, areaLines.length * wrappedLineHeight + 5);
+
+      if (y + rowHeight > pageHeight - margin) {
+        doc.addPage();
+        y = margin + 15;
+        y = drawHeaderRow(y);
+      }
+      if (i % 2 === 1) {
+        doc.setFillColor(240, 244, 248);
+        doc.rect(margin, y, pageWidth - margin * 2, rowHeight, "F");
+      }
+
+      doc.setFont("helvetica", "normal");
+      doc.setTextColor(51, 51, 51);
+      areaLines.forEach((line, li) => {
+        doc.text(line, margin + cellPadding, y + 11 + li * wrappedLineHeight);
+      });
+
+      const numericValues = [...t.columns.map(c => (r.cols[c] || 0).toLocaleString()), r.total.toLocaleString()];
+      const numericY = y + rowHeight / 2 + 3; // vertically centred within the (possibly taller, wrapped) row
+      numericValues.forEach((v, ci) => {
+        const isTotal = ci === numericValues.length - 1;
+        const colIndex = ci + 1; // +1 to skip the area-name column
+        const x = margin + colIndex * colWidth + colWidth - cellPadding;
+        doc.setFont("helvetica", isTotal ? "bold" : "normal");
+        doc.text(String(v), x, numericY, { align: "right" });
+      });
+
+      y += rowHeight;
+    });
   }
 
   // --------------------------------------------------------------------
@@ -593,10 +344,11 @@
 
     function getReportState() {
       const state = window.__mapReportState;
-      const yearEl = document.getElementById(IDS.yearSelect);
+      const dateFromEl = document.getElementById(IDS.dateFromInput);
+      const dateToEl = document.getElementById(IDS.dateToInput);
       const aggEl = document.getElementById(IDS.aggSelect);
-      const startEl = document.getElementById(IDS.startSelect);
-      const endEl = document.getElementById(IDS.endSelect);
+      const infraEl = document.getElementById(IDS.infraSelect);
+      const extentEl = document.getElementById(IDS.extentSelect);
       const totalEl = document.getElementById(IDS.totalValue);
       const filterGroup = document.getElementById(IDS.activeFilterGroup);
       const filterLabel = document.getElementById(IDS.activeFilterLabel);
@@ -608,33 +360,42 @@
 
       if (state) {
         return {
-          year: state.year,
-          aggregationLabel: state.aggregationLabel,
-          startLabel: state.startLabel,
-          endLabel: state.endLabel,
+          dateFromLabel: state.dateFromLabel,
+          dateToLabel: state.dateToLabel,
+          granularityLabel: state.granularityLabel,
+          infraFilter: state.infraFilter || null,
+          extentFilter: state.extentFilter || null,
           nationalTotal: state.nationalTotal.toLocaleString(),
           activeFilterText,
+          entityFilterValue: state[config.entityFilterKey] || null,
           [config.entityCountsKey]: state[config.entityCountsKey] || {},
           infraCounts: state.infraCounts || {},
           extentCounts: state.extentCounts || {},
           chartSeries: state.chartSeries || null,
-          activeFilter: state.activeFilter || null,
+          summaryTable: state.summaryTable || null,
+          safeFilenameDate: `${state.dateFrom}_to_${state.dateTo}`,
           ...config.getExtraStateFromHook(state),
         };
       }
 
       return {
-        year: yearEl ? yearEl.value : "N/A",
-        aggregationLabel: aggEl ? aggEl.options[aggEl.selectedIndex]?.text : "N/A",
-        startLabel: startEl ? startEl.options[startEl.selectedIndex]?.text : "N/A",
-        endLabel: endEl ? endEl.options[endEl.selectedIndex]?.text : "N/A",
+        dateFromLabel: dateFromEl && dateFromEl.value ? formatDateLabel(dateFromEl.value) : "N/A",
+        dateToLabel: dateToEl && dateToEl.value ? formatDateLabel(dateToEl.value) : "N/A",
+        granularityLabel: aggEl ? aggEl.options[aggEl.selectedIndex]?.text : "N/A",
+        infraFilter: infraEl && infraEl.value ? infraEl.value : null,
+        extentFilter: extentEl && extentEl.value ? extentEl.value : null,
         nationalTotal: totalEl ? totalEl.textContent.trim() : "0",
         activeFilterText,
+        entityFilterValue: (() => {
+          const el = document.getElementById(config.entitySelectId);
+          return el && el.value ? el.value : null;
+        })(),
         [config.entityCountsKey]: {},
         infraCounts: {},
         extentCounts: {},
         chartSeries: null,
-        activeFilter: null,
+        summaryTable: null,
+        safeFilenameDate: "report",
         ...config.getExtraStateFallback(),
       };
     }
@@ -781,14 +542,10 @@
         // undershoots by 16pt and the legend row ends up rolling onto its
         // own page anyway).
         const BLOCK_OVERHEAD = 36;
-        const LAYOUT_SAFETY_MARGIN = 15;
         const legendHeadingHeight = Math.max(
           damageLegendSvg ? measureHeadingHeight(doc, "Damaged Buildings", legendCol1Width) : 0,
           areasLegendSvg ? measureHeadingHeight(doc, "Areas of control", legendCol2Width) : 0
         );
-        const legendReserve = (damageLegendSvg || areasLegendSvg)
-          ? legendHeadingHeight + BLOCK_OVERHEAD + LEGEND_MAX_HEIGHT + LAYOUT_SAFETY_MARGIN
-          : 0;
 
         // Set once the map image is placed below, to whatever factor its
         // source CSS pixels ended up scaled by in the PDF (PDF points per
@@ -801,15 +558,12 @@
 
         const mapResult = await captureMapImage();
         if (mapResult) {
-          // Cap the map to whatever vertical space is left on this page
-          // once the legend row below it has already been reserved, rather
-          // than letting addImageWithHeading's own overflow check push it
-          // to page 2. The map and its legends must stay on the report's
-          // first page.
+          // Always full page width (see addImageWithHeading) - if that,
+          // combined with the legend row reserved above, doesn't fit page
+          // 1, the legend row's own overflow check (below) pushes it to
+          // page 2 rather than the map being shrunk to squeeze both in.
           const mapTargetWidth = pageWidth - margin * 2;
-          const mapHeadingHeight = measureHeadingHeight(doc, config.mapImageHeading, mapTargetWidth);
-          const availableMapHeight = Math.max(150, pageHeight - margin - y - mapHeadingHeight - BLOCK_OVERHEAD - legendReserve);
-          const placed = addImageWithHeading(doc, config.mapImageHeading, mapResult.dataUrl, y, margin, pageWidth, pageHeight, mapTargetWidth, null, availableMapHeight);
+          const placed = addImageWithHeading(doc, config.mapImageHeading, mapResult.dataUrl, y, margin, pageWidth, pageHeight, mapTargetWidth);
           y = placed.y;
           mapCssToPtScale = placed.imgWidth / mapResult.cssWidth;
         } else {
@@ -890,12 +644,12 @@
           rowYStart = margin + 15;
         }
         if (entitySeries && entitySeries.labels.length) {
-          const entitySvg = buildHorizontalBarSVG(entitySeries.labels, entitySeries.values, colChartWidth, SUMMARY_CHART_HEIGHT_PX, highlightSetFor(config.entityDimension, state.activeFilter));
+          const entitySvg = buildHorizontalBarSVG(entitySeries.labels, entitySeries.values, colChartWidth, SUMMARY_CHART_HEIGHT_PX, highlightSetFor(state.entityFilterValue));
           const nextY = await addSvgWithHeading(doc, entityChart.label, entitySvg, rowYStart, margin, pageWidth, pageHeight, colChartWidth, margin, SUMMARY_CHART_HEIGHT_PX, entityChart.id);
           maxRowHeight = Math.max(maxRowHeight, nextY - rowYStart);
         }
         if (series.infra && series.infra.labels.length) {
-          const infraSvg = buildHorizontalBarSVG(series.infra.labels, series.infra.values, colChartWidth, SUMMARY_CHART_HEIGHT_PX, highlightSetFor("infra", state.activeFilter));
+          const infraSvg = buildHorizontalBarSVG(series.infra.labels, series.infra.values, colChartWidth, SUMMARY_CHART_HEIGHT_PX, highlightSetFor(state.infraFilter));
           const nextY = await addSvgWithHeading(doc, IDS.charts.infra.label, infraSvg, rowYStart, margin, pageWidth, pageHeight, colChartWidth, margin + colChartWidth + gridGap, SUMMARY_CHART_HEIGHT_PX, IDS.charts.infra.id);
           maxRowHeight = Math.max(maxRowHeight, nextY - rowYStart);
         }
@@ -905,6 +659,9 @@
           const centerX = (pageWidth - colChartWidth) / 2;
           y = await addSvgWithHeading(doc, IDS.charts.extent.label, extentSvg, y, margin, pageWidth, pageHeight, colChartWidth, centerX, SUMMARY_CHART_HEIGHT_PX, IDS.charts.extent.id);
         }
+
+        addSummaryTablePage(doc, state, margin, pageWidth, pageHeight);
+
         const pageCount = doc.internal.getNumberOfPages();
         for (let i = 1; i <= pageCount; i++) {
           doc.setPage(i);
@@ -913,8 +670,8 @@
           doc.text("E-PACC Ukraine Project - Created by MapAction and ACAPS. Data sourced from ACAPS.", margin, pageHeight - 20);
           doc.text(`Page ${i} of ${pageCount}`, pageWidth - margin - 45, pageHeight - 20);
         }
-        const safeYear = String(state.year || "report").replace(/\s+/g, "_");
-        doc.save(`${config.filenamePrefix}_${safeYear}.pdf`);
+        const safeDateRange = String(state.safeFilenameDate || "report").replace(/\s+/g, "_");
+        doc.save(`${config.filenamePrefix}_${safeDateRange}.pdf`);
       } catch (err) {
         console.error("Report generation failed:", err);
         alert("Something went wrong generating the report.");

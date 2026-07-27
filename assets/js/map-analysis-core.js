@@ -3,34 +3,40 @@
    ============================================================================
    This file holds everything that was previously duplicated verbatim (or
    near-verbatim) between oblast_analysis.js and raion_analysis.js: map/
-   legend setup, the cross-filter state machine, period dropdown building,
-   time-bucket seeding, and chart rendering (including the "value labels
-   drawn on the chart itself" style, via chartjs-plugin-datalabels, that
-   previously only the Raion page used — both pages render identically now).
+   legend setup, the date-range bucket engine, filter-control helpers, and
+   chart rendering (including the "value labels drawn on the chart itself"
+   style, via chartjs-plugin-datalabels).
+
+   Every filter (date range, granularity, area, building type, damage
+   level) lives in exactly one DOM control - there is no separate
+   cross-filter state object. Clicking a map circle or a chart bar/slice
+   just writes a value into the relevant <select> (via MapCore.selectOrToggle)
+   or the date inputs (via MapCore.selectDateRangeBucket) and dispatches a
+   change, so the control itself is always the single source of truth.
 
    What deliberately stays OUT of this file, because it's genuinely
    different per page rather than duplicated:
      - CSV parsing / geoJSON name matching (oblast uses a "ska"-suffix
        strip + name map, raion uses RAION_NAME_MAP)
      - The Oblast/Raion cascading dropdown filters (raion-only feature)
-       and the scoped map zoom-to-selection behaviour that goes with it
      - The row-filtering loop in processMapVisualisations() itself, since
        the two pages filter/match on different CSV columns
 
    USAGE (see oblast_analysis.js / raion_analysis.js for the full pattern):
-     MapCore.init({
-       dimensionLabels: { oblast: 'Oblast', infra: 'Infrastructure Type', ... },
-       onRerender: processMapVisualisations   // page's own re-render function
-     });
+     MapCore.init({ onRerender: processMapVisualisations });
      mapInstance = MapCore.initMapElement('Oblast Metric Profile');
      ...
-     MapCore.buildYearOptions(rawDamageCSV);
+     MapCore.initDateRangeControls(rawDamageCSV);
      ...
+     const buckets = MapCore.buildDateBuckets(fromISO, toISO, granularity);
      const radiusInfo = MapCore.computeRadiusScale(counts);
      MapCore.updateProportionalLegend(radiusInfo);
      const chartSeries = MapCore.buildSummaryCharts({
-       entityCounts: counts, entityDimension: 'oblast', entityKey: 'topOblasts',
-       infraCounts, extentCounts, timeCounts, labelsList
+       entityCounts: counts, entityKey: 'topOblasts',
+       entitySelectedValue: oblastFilter, onEntityClick: label => MapCore.selectOrToggle('map-oblast-select', label),
+       infraCounts, infraSelectedValue: infraFilter, onInfraClick: label => MapCore.selectOrToggle('map-infra-select', label),
+       extentCounts, extentSelectedValue: extentFilter, onExtentClick: label => MapCore.selectOrToggle('map-extent-select', label),
+       timeCounts, labelsList, onTimelineClick: (label, index) => { ... }
      });
 
    INSTALL: include this script (deferred, after Chart.js and
@@ -69,20 +75,23 @@
   // not hue, carries the value).
   const PROPORTIONAL_CIRCLE_COLOR = "#00734C";
 
-  const monthsList = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
-
   const MapCore = {
     CHART_PALETTE,
     FILTER_HIGHLIGHT_COLOR,
     PROPORTIONAL_CIRCLE_COLOR,
-    monthsList,
-    activeFilter: null, // { dimension: string, value: string | number } | null
     mapInstance: null,
-    dimensionLabels: {},
     onRerender: function () {},
     chartInstances: { entity: null, infra: null, extent: null, timeline: null },
     minDataDate: null,
     maxDataDate: null,
+    // The full-country view, captured once the boundary geoJSON first loads
+    // on either page, so applyZoomForScope() can zoom back out to it when
+    // an area filter is cleared.
+    nationalBounds: null,
+    // Tracks which area scope the map is currently zoomed to, so
+    // applyZoomForScope() only re-fits the view when that scope actually
+    // changes (not on every re-render triggered by e.g. a date change).
+    lastZoomScopeKey: "",
     // Plain-data mirror of the circle markers currently on the map (center,
     // radius, style), rebuilt by oblast_analysis.js/raion_analysis.js
     // alongside the real L.circleMarker layer. Exists so the PDF export
@@ -129,11 +138,37 @@
   // Setup
   // --------------------------------------------------------------------
   // Called once by the page script before anything else, so the shared
-  // filter/legend machinery knows how to label the active-filter dimension
-  // and how to trigger a page-specific re-render.
+  // filter/legend machinery knows how to trigger a page-specific re-render.
   MapCore.init = function (config) {
-    MapCore.dimensionLabels = (config && config.dimensionLabels) || {};
     MapCore.onRerender = (config && config.onRerender) || function () {};
+  };
+
+  // --------------------------------------------------------------------
+  // Zoom-to-scope
+  // --------------------------------------------------------------------
+  // Shared by both pages: the Raion page has always zoomed the map to the
+  // selected Oblast/Raion; the Oblast page now gets the same behaviour for
+  // its own new Oblast select. computeBoundsFn is page-local (oblast/raion
+  // boundary-geoJSON name matching genuinely differs per page).
+  MapCore.setNationalBounds = function (bounds) {
+    MapCore.nationalBounds = bounds;
+  };
+
+  MapCore.applyZoomForScope = function (scopeKey, computeBoundsFn) {
+    if (scopeKey === MapCore.lastZoomScopeKey) return; // scope hasn't changed, leave the user's current pan/zoom alone
+    MapCore.lastZoomScopeKey = scopeKey;
+
+    // animate: false - an animated zoom transition that doesn't complete
+    // (e.g. a backgrounded/inactive tab pausing the animation) would
+    // silently leave the map at the wrong scope with no visible error, so
+    // every automatic map fit in this app snaps directly to its target
+    // instead of relying on the animation finishing.
+    const scopedBounds = computeBoundsFn();
+    if (scopedBounds) {
+      MapCore.mapInstance.fitBounds(scopedBounds, { padding: [30, 30], maxZoom: 10, animate: false });
+    } else if (MapCore.nationalBounds) {
+      MapCore.mapInstance.fitBounds(MapCore.nationalBounds, { padding: [15, 15], animate: false });
+    }
   };
 
   // Draw order (top to bottom): damaged-building circles, then the ISW
@@ -325,17 +360,50 @@
     html += '<span class="map-frontline-attribution">Source: <a href="https://storymaps.arcgis.com/stories/36a7f6a6f5a9448496de641cf64bd375" target="_blank" rel="noopener noreferrer">ISW &amp; CTP</a></span>';
     panel.innerHTML = html;
 
+    // These layers are fetched live from Esri with no local fallback (see
+    // the module header) - occasionally the underlying request just stalls
+    // (neither "load" nor "requesterror" ever fires) rather than failing
+    // outright, leaving the layer permanently empty with no visible error.
+    // A single stall-recovery retry (remove + recreate the layer once)
+    // resolves this in practice; capped at one retry so a genuinely
+    // unreachable service doesn't loop forever.
+    const FRONTLINE_STALL_TIMEOUT_MS = 8000;
+
+    function createFrontlineLayer(l, isRetry) {
+      const layerOptions = {
+        url: l.url,
+        style: () => l.style,
+        simplifyFactor: 0.5,
+        precision: 5
+      };
+      if (l.pane) layerOptions.pane = l.pane;
+
+      const layer = L.esri.featureLayer(layerOptions);
+      MapCore.frontlineLayerInstances[l.key] = layer;
+
+      let settled = false;
+      layer.once("load requesterror", () => { settled = true; });
+
+      layer.addTo(map);
+
+      if (!isRetry) {
+        setTimeout(() => {
+          // Only recover if this is still the current instance for the
+          // layer (it wasn't toggled off/on again in the meantime) and it
+          // never actually settled.
+          if (!settled && MapCore.frontlineLayerInstances[l.key] === layer) {
+            map.removeLayer(layer);
+            console.warn(`MapCore: "${l.key}" areas-of-control layer stalled loading; retrying once.`);
+            createFrontlineLayer(l, true);
+          }
+        }, FRONTLINE_STALL_TIMEOUT_MS);
+      }
+    }
+
     function setFrontlineLayerVisible(l, visible) {
       if (visible) {
         if (MapCore.frontlineLayerInstances[l.key]) return;
-        const layerOptions = {
-          url: l.url,
-          style: () => l.style,
-          simplifyFactor: 0.5,
-          precision: 5
-        };
-        if (l.pane) layerOptions.pane = l.pane;
-        MapCore.frontlineLayerInstances[l.key] = L.esri.featureLayer(layerOptions).addTo(map);
+        createFrontlineLayer(l, false);
       } else if (MapCore.frontlineLayerInstances[l.key]) {
         map.removeLayer(MapCore.frontlineLayerInstances[l.key]);
         delete MapCore.frontlineLayerInstances[l.key];
@@ -457,39 +525,36 @@
   };
 
   // --------------------------------------------------------------------
-  // Cross-filter state machine
+  // Filter-control helpers
   // --------------------------------------------------------------------
-  // Sets (or, if the same value is clicked again, clears) the active
-  // cross-filter selection, then asks the page to re-render everything.
-  MapCore.setActiveFilter = function (dimension, value) {
-    if (MapCore.activeFilter && MapCore.activeFilter.dimension === dimension && MapCore.activeFilter.value === value) {
-      MapCore.activeFilter = null;
-    } else {
-      MapCore.activeFilter = { dimension, value };
-    }
-    MapCore.updateActiveFilterUI();
-    MapCore.onRerender();
+  // Every filter lives in exactly one DOM control (the date inputs, the
+  // granularity select, and one <select> per area/building-type/damage-
+  // level dimension). A map-circle or chart click just writes into the
+  // relevant control and dispatches change - no separate cross-filter
+  // state object, so combining filters is just "more than one control has
+  // a non-default value" rather than something MapCore has to arbitrate.
+
+  // Toggles a <select>'s value: sets it to `value`, or clears it back to
+  // "" (its "All"/"Total" default option) if it's already set to `value` -
+  // matching the old cross-filter's "click again to clear" behaviour.
+  MapCore.selectOrToggle = function (selectId, value) {
+    const el = document.getElementById(selectId);
+    if (!el) return;
+    el.value = (el.value === value) ? "" : value;
+    el.dispatchEvent(new Event("change"));
   };
 
-  MapCore.clearMapFilter = function () {
-    MapCore.activeFilter = null;
-    MapCore.updateActiveFilterUI();
+  // Timeline-bar clicks narrow the date range to that bucket directly,
+  // rather than setting a dimension/value pair - there's no other control
+  // a "period" click could write into once periods are arbitrary date
+  // buckets instead of a fixed Week-N/Fortnight-N/Month label.
+  MapCore.selectDateRangeBucket = function (startISO, endISO) {
+    const fromEl = document.getElementById("map-date-from");
+    const toEl = document.getElementById("map-date-to");
+    if (!fromEl || !toEl) return;
+    fromEl.value = startISO;
+    toEl.value = endISO;
     MapCore.onRerender();
-  };
-
-  MapCore.updateActiveFilterUI = function () {
-    const group = document.getElementById("map-active-filter-group");
-    const label = document.getElementById("map-active-filter-label");
-    if (!group || !label) return;
-
-    const af = MapCore.activeFilter;
-    if (af) {
-      const labels = MapCore.dimensionLabels;
-      label.textContent = (labels[af.dimension] || af.dimension) + ": " + af.value;
-      group.style.display = "flex";
-    } else {
-      group.style.display = "none";
-    }
   };
 
   MapCore.isFilterableLabel = function (label) {
@@ -503,98 +568,178 @@
     return INFRA_LABEL_MAP[trimmed] || trimmed;
   };
 
-  // --------------------------------------------------------------------
-  // Dropdown / time-bucket helpers
-  // --------------------------------------------------------------------
-  // Populates #map-year-select from whatever years exist in the CSV, then
-  // builds the period dropdowns for the currently-selected aggregation.
-  MapCore.buildYearOptions = function (rawDamageCSV) {
-    const yearSel = document.getElementById("map-year-select");
-    if (!yearSel) return;
-    const years = [...new Set(rawDamageCSV.map(r => r.date_of_event?.slice(0, 4)).filter(y => y))].sort((a, b) => b - a);
-    yearSel.innerHTML = years.map(y => `<option value="${y}">${y}</option>`).join("");
-    
-    // Calculate date range when years are loaded
-    MapCore.calculateDataDateRange(rawDamageCSV);
-    MapCore.buildMapPeriodDropdowns();
+  // Maps a raw extent_of_damage CSV value to its display label. Extracted
+  // out of the two pages' identical `r.extent_of_damage?.trim() || "Unspecified"`
+  // expression so it's defined once.
+  MapCore.normalizeExtentLabel = function (raw) {
+    const trimmed = raw ? raw.trim() : "";
+    return trimmed || "Unspecified";
   };
 
-  // UPDATED: Generate period labels with real dates from data
-  MapCore.buildMapPeriodDropdowns = function () {
-    const aggType = document.getElementById("map-aggregation-select").value;
-    const startSel = document.getElementById("map-period-start-select");
-    const endSel = document.getElementById("map-period-end-select");
-    if (!startSel || !endSel) return;
+  // Builds the "Building type"/"Damage level" <select> options from
+  // whatever distinct normalized labels are actually present in the CSV,
+  // each page calling this identically for its own <select> id.
+  MapCore.buildFilterSelectOptions = function (selectId, defaultLabel, values) {
+    const sel = document.getElementById(selectId);
+    if (!sel) return;
+    const sorted = [...new Set(values)].sort();
+    sel.innerHTML = `<option value="">${defaultLabel}</option>` +
+      sorted.map(v => `<option value="${v}">${v}</option>`).join("");
+  };
 
-    // Use the year currently selected in the "Target Assessment Year"
-    // dropdown so period labels reflect that year's actual calendar (this
-    // matters across leap-year boundaries); fall back to the max year seen
-    // in the data, then to the current year, before the selector has options.
-    const yearSel = document.getElementById("map-year-select");
-    const selectedYear = yearSel && yearSel.value ? parseInt(yearSel.value, 10) : NaN;
-    const referenceYear = !isNaN(selectedYear)
-      ? selectedYear
-      : (MapCore.maxDataDate ? MapCore.maxDataDate.getFullYear() : new Date().getFullYear());
+  MapCore.updateActiveFiltersSummary = function (parts) {
+    const group = document.getElementById("map-active-filter-group");
+    const label = document.getElementById("map-active-filter-label");
+    if (!group || !label) return;
 
-    let options = "";
-    if (aggType === "30") {
-      // Months - show actual date ranges
-      options = monthsList.map((m, i) => {
-        const dStart = new Date(referenceYear, i, 1);
-        const dEnd = new Date(referenceYear, i + 1, 0);
-        const fmt = d => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-        const dateRange = `${fmt(dStart)} – ${fmt(dEnd)}`;
-        return `<option value="${i}">${m} (${dateRange})</option>`;
-      }).join("");
+    if (parts && parts.length) {
+      label.textContent = parts.join(" · ");
+      group.style.display = "flex";
     } else {
-      // Weeks or Fortnights - calculate with real dates
-      const periodDays = parseInt(aggType);
-      const totalPeriods = Math.ceil(365 / periodDays);
-      const prefix = aggType === "7" ? "Week" : "Fortnight";
-      
-      for (let i = 0; i < totalPeriods; i++) {
-        const startDay = i * periodDays + 1;
-        let endDay = startDay + periodDays - 1;
-        if (endDay > 365) endDay = 365;
-        
-        const dStart = new Date(referenceYear, 0, startDay);
-        const dEnd = new Date(referenceYear, 0, endDay);
-        const fmt = d => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
-        const dateRange = `${fmt(dStart)} – ${fmt(dEnd)}`;
-        
-        options += `<option value="${i}">${prefix} ${i + 1} (${dateRange})</option>`;
-      }
+      group.style.display = "none";
     }
+  };
 
-    startSel.innerHTML = options;
-    endSel.innerHTML = options;
+  // Resets every filter back to its default (full date range, no area/
+  // building-type/damage-level filter). extraSelectIds lets each page pass
+  // its own area select id(s) ("map-oblast-select", or both oblast+raion
+  // on the Raion page) without MapCore hardcoding page-specific ids.
+  MapCore.resetAllFilters = function (extraSelectIds) {
+    const fromEl = document.getElementById("map-date-from");
+    const toEl = document.getElementById("map-date-to");
+    if (fromEl && MapCore.minDataDate) fromEl.value = MapCore.minDataDate.toISOString().slice(0, 10);
+    if (toEl && MapCore.maxDataDate) toEl.value = MapCore.maxDataDate.toISOString().slice(0, 10);
 
-    // Default to a single-window range
-    startSel.selectedIndex = 0;
-    endSel.selectedIndex = 0;
+    ["map-infra-select", "map-extent-select", ...(extraSelectIds || [])].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.value = "";
+    });
+
+    MapCore.onRerender();
+  };
+  window.resetAllFilters = MapCore.resetAllFilters;
+
+  // Small file-download helper shared by every export button (map PNG,
+  // per-chart PNG/SVG, summary-table CSV/XLSX).
+  MapCore.downloadUrl = function (url, filename, revoke) {
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    if (revoke) setTimeout(() => URL.revokeObjectURL(url), 1000);
+  };
+
+  // --------------------------------------------------------------------
+  // Date-range controls / bucket engine
+  // --------------------------------------------------------------------
+  // Populates the #map-date-from/#map-date-to inputs' min/max/default
+  // value from whatever date range actually exists in the CSV, defaulting
+  // to the full range (the "no filter" starting point).
+  MapCore.initDateRangeControls = function (rawDamageCSV) {
+    MapCore.calculateDataDateRange(rawDamageCSV);
+    const fromEl = document.getElementById("map-date-from");
+    const toEl = document.getElementById("map-date-to");
+    if (!fromEl || !toEl || !MapCore.minDataDate || !MapCore.maxDataDate) return;
+
+    const iso = d => d.toISOString().slice(0, 10);
+    fromEl.min = toEl.min = iso(MapCore.minDataDate);
+    fromEl.max = toEl.max = iso(MapCore.maxDataDate);
+    fromEl.value = iso(MapCore.minDataDate);
+    toEl.value = iso(MapCore.maxDataDate);
 
     MapCore.onRerender();
   };
 
-  // Seeds the time-series tracker keys within the active dashboard range,
-  // so every period in the window is represented even if it has zero rows.
-  MapCore.computeTimeBuckets = function (step, startPeriod, endPeriod) {
-    const timeCounts = {};
-    const labelsList = [];
-    if (step === 30) {
-      for (let i = startPeriod; i <= endPeriod; i++) {
-        timeCounts[monthsList[i]] = 0;
-        labelsList.push(monthsList[i]);
+  // Builds the ordered list of date buckets covering [fromISO, toISO]
+  // (inclusive of the whole "to" day) at the given granularity - "1"/"7"/
+  // "14" for a fixed day-step, or "monthly" for real calendar months, so a
+  // range can read "Jul 2026, Aug 2026, ..." across a year boundary
+  // instead of resetting to January. All arithmetic is done on UTC
+  // timestamps (Date.parse(iso + "T00:00:00Z") / Date.UTC(...)) throughout
+  // - never mixing in a locally-constructed `new Date(y, m, d)` - so bucket
+  // boundaries can't drift by a day depending on the browser's timezone.
+  // Single-letter month initials (J F M A M J J A S O N D) for the
+  // timeline's monthly-granularity axis, per the agreed compact style -
+  // the year (shown on its own row, see below) is what actually
+  // disambiguates repeated letters across a multi-year range.
+  const MONTH_INITIALS = ["J", "F", "M", "A", "M", "J", "J", "A", "S", "O", "N", "D"];
+
+  MapCore.buildDateBuckets = function (fromISO, toISO, granularity) {
+    const fromMs = Date.parse(fromISO + "T00:00:00Z");
+    const toMsExclusive = Date.parse(toISO + "T00:00:00Z") + 86400000; // "to" day is inclusive
+    const order = [];
+    const labelsByKey = {}; // each value is [primaryLine, yearLine] - a 2-line tick label
+    const bucketRangeByKey = {};
+
+    const fmtDay = ms => new Date(ms).toLocaleDateString("en-GB", { day: "numeric", month: "short", timeZone: "UTC" });
+
+    if (granularity === "monthly") {
+      let cursor = Date.UTC(new Date(fromMs).getUTCFullYear(), new Date(fromMs).getUTCMonth(), 1);
+      while (cursor < toMsExclusive) {
+        const y = new Date(cursor).getUTCFullYear();
+        const m = new Date(cursor).getUTCMonth();
+        const key = `${y}-${String(m + 1).padStart(2, "0")}`;
+        const monthStartMs = Date.UTC(y, m, 1);
+        const monthEndMs = Date.UTC(y, m + 1, 0);
+        order.push(key);
+        labelsByKey[key] = [MONTH_INITIALS[m], String(y)];
+        bucketRangeByKey[key] = {
+          startISO: new Date(monthStartMs).toISOString().slice(0, 10),
+          endISO: new Date(monthEndMs).toISOString().slice(0, 10)
+        };
+        cursor = Date.UTC(y, m + 1, 1);
       }
     } else {
-      const prefix = step === 7 ? "Week" : "Fortnight";
-      for (let i = startPeriod; i <= endPeriod; i++) {
-        const key = `${prefix} ${i + 1}`;
-        timeCounts[key] = 0;
-        labelsList.push(key);
+      const stepDays = parseInt(granularity, 10);
+      const stepMs = stepDays * 86400000;
+      let bucketStartMs = fromMs;
+      while (bucketStartMs < toMsExclusive) {
+        const bucketEndExclusiveMs = Math.min(bucketStartMs + stepMs, toMsExclusive);
+        const key = new Date(bucketStartMs).toISOString().slice(0, 10);
+        const endMs = bucketEndExclusiveMs - 86400000;
+        order.push(key);
+        // The year always renders on its own second row (see
+        // renderTimelineBarChart / buildColumnChartSVG), even for a bucket
+        // that straddles a year boundary (e.g. 27 Dec - 2 Jan) - in that
+        // rare case the bucket's start year is shown, matching how the
+        // bucket itself is keyed/labelled by its start date everywhere else.
+        const primary = stepDays === 1 ? fmtDay(bucketStartMs) : `${fmtDay(bucketStartMs)} – ${fmtDay(endMs)}`;
+        labelsByKey[key] = [primary, String(new Date(bucketStartMs).getUTCFullYear())];
+        bucketRangeByKey[key] = { startISO: key, endISO: new Date(endMs).toISOString().slice(0, 10) };
+        bucketStartMs = bucketEndExclusiveMs;
       }
     }
-    return { timeCounts, labelsList };
+
+    const keyForTimestamp = rowMs => {
+      if (rowMs === null || isNaN(rowMs) || rowMs < fromMs || rowMs >= toMsExclusive) return null;
+      if (granularity === "monthly") {
+        const d = new Date(rowMs);
+        return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+      }
+      const stepMs = parseInt(granularity, 10) * 86400000;
+      const bucketStartMs = fromMs + Math.floor((rowMs - fromMs) / stepMs) * stepMs;
+      return new Date(bucketStartMs).toISOString().slice(0, 10);
+    };
+
+    // One year label per year, not one per bucket: blank out every
+    // bucket's year line except the one nearest the middle of that year's
+    // run of buckets, so the year reads once, roughly centered under its
+    // own group of bars, instead of repeating under every single bar.
+    const indicesByYear = {};
+    order.forEach((key, i) => {
+      const yr = labelsByKey[key][1];
+      (indicesByYear[yr] = indicesByYear[yr] || []).push(i);
+    });
+    Object.values(indicesByYear).forEach(indices => {
+      const centerIdx = indices[Math.floor((indices.length - 1) / 2)];
+      indices.forEach(i => {
+        if (i !== centerIdx) labelsByKey[order[i]][1] = "";
+      });
+    });
+
+    return { order, labelsByKey, bucketRangeByKey, keyForTimestamp };
   };
 
   // --------------------------------------------------------------------
@@ -630,11 +775,28 @@
 
       // Minimum vertical gap enforced between two label lines on the same
       // side of the ring, so neighbouring slices with similar angles never
-      // draw text on top of each other.
-      const LINE_HEIGHT = 14;
+      // draw text on top of each other. Generous on purpose - this is the
+      // main defence against a cluttered-looking label stack.
+      const LINE_HEIGHT = 22;
+      // Slices whose mid-angles are this close together (e.g. several tiny
+      // slivers bunched at the seam where the ring wraps back to its
+      // start) keep whichever side the previous one landed on, rather than
+      // being independently split left/right by a hair's-width angle
+      // difference - that's what previously sent their leader lines
+      // criss-crossing each other and the ring itself.
+      const SAME_SIDE_ANGLE_THRESHOLD = 8 * (Math.PI / 180);
+      // Each subsequent label stacked on the same side reaches out this
+      // much further before turning toward its text than the previous one
+      // - fanning the elbows out instead of bunching them at a single
+      // point right off the ring, which is what made tightly-clustered
+      // slivers' leader lines look tangled even when they didn't literally
+      // cross.
+      const BEND_RADIUS_STEP = 10;
 
-      const leftLabels = [];
-      const rightLabels = [];
+      const leftEntries = [];
+      const rightEntries = [];
+      let lastMidAngle = null;
+      let lastIsRight = null;
 
       meta.data.forEach((arc, i) => {
         const value = dataset.data[i];
@@ -645,18 +807,34 @@
         const midAngle = (startAngle + endAngle) / 2;
         const cos = Math.cos(midAngle);
         const sin = Math.sin(midAngle);
-        const isRight = cos >= 0;
+        let isRight = cos >= 0;
+        if (lastMidAngle !== null && Math.abs(midAngle - lastMidAngle) < SAME_SIDE_ANGLE_THRESHOLD) {
+          isRight = lastIsRight;
+        }
+        lastMidAngle = midAngle;
+        lastIsRight = isRight;
 
-        const lineStart = { x: x + cos * (outerRadius + 2), y: y + sin * (outerRadius + 2) };
-        const bend = { x: x + cos * (outerRadius + 16), y: y + sin * (outerRadius + 16) };
-        const textX = bend.x + (isRight ? 14 : -14);
-
-        const pct = Math.round((value / total) * 100);
-        const text = `${chart.data.labels[i]}: ${value.toLocaleString()} (${pct}%)`;
-
-        const entry = { lineStart, bend, textX, textY: bend.y, text, isRight };
-        (isRight ? rightLabels : leftLabels).push(entry);
+        const text = `${chart.data.labels[i]}: ${value.toLocaleString()}`;
+        const entry = { x, y, cos, sin, outerRadius, text };
+        (isRight ? rightEntries : leftEntries).push(entry);
       });
+
+      // Builds each side's label geometry after grouping, so the elbow
+      // (bend) radius can be staggered by position within the stack -
+      // fanning same-side leader lines out from the ring instead of
+      // routing them all to the same distance before turning.
+      function buildSideLabels(entries, isRight) {
+        return entries.map((e, idx) => {
+          const bendRadius = e.outerRadius + 22 + idx * BEND_RADIUS_STEP;
+          const lineStart = { x: e.x + e.cos * (e.outerRadius + 4), y: e.y + e.sin * (e.outerRadius + 4) };
+          const bend = { x: e.x + e.cos * bendRadius, y: e.y + e.sin * bendRadius };
+          const textX = bend.x + (isRight ? 16 : -16);
+          return { lineStart, bend, textX, textY: bend.y, text: e.text, isRight };
+        });
+      }
+
+      const leftLabels = buildSideLabels(leftEntries, false);
+      const rightLabels = buildSideLabels(rightEntries, true);
 
       // Within each side, walk top-to-bottom and push any label that's too
       // close to the one above it further down. If that runs the stack past
@@ -706,13 +884,12 @@
     }
   };
 
-  function renderBarChart(canvasId, existingInstance, labels, data, dimension) {
+  function renderBarChart(canvasId, existingInstance, labels, data, selectedValue, onClickLabel) {
     const canvas = document.getElementById(canvasId);
     if (!canvas) return existingInstance;
 
     const backgroundColor = labels.map(l =>
-      (MapCore.activeFilter && MapCore.activeFilter.dimension === dimension && MapCore.activeFilter.value === l)
-        ? FILTER_HIGHLIGHT_COLOR : CHART_PALETTE[0]
+      (selectedValue && l === selectedValue) ? FILTER_HIGHLIGHT_COLOR : CHART_PALETTE[0]
     );
 
     if (existingInstance) {
@@ -753,10 +930,10 @@
           y: { grid: { display: false } }
         },
         onClick: (evt, elements, chart) => {
-          if (!elements.length) return;
+          if (!elements.length || !onClickLabel) return;
           const label = chart.data.labels[elements[0].index];
           if (!MapCore.isFilterableLabel(label)) return;
-          MapCore.setActiveFilter(dimension, label);
+          onClickLabel(label, elements[0].index);
         },
         onHover: (evt, elements) => {
           evt.native.target.style.cursor = elements.length ? "pointer" : "default";
@@ -765,13 +942,11 @@
     });
   }
 
-  function renderDoughnutChart(canvasId, existingInstance, labels, data, dimension) {
+  function renderDoughnutChart(canvasId, existingInstance, labels, data, selectedValue, onClickLabel) {
     const canvas = document.getElementById(canvasId);
     if (!canvas) return existingInstance;
 
-    const borderWidth = labels.map(l =>
-      (MapCore.activeFilter && MapCore.activeFilter.dimension === dimension && MapCore.activeFilter.value === l) ? 4 : 0
-    );
+    const borderWidth = labels.map(l => (selectedValue && l === selectedValue) ? 4 : 0);
 
     if (existingInstance) {
       existingInstance.data.labels = labels;
@@ -792,16 +967,19 @@
         responsive: true,
         maintainAspectRatio: false,
         // Extra room on every side for the outside labels + leader lines
-        // drawn by outsideDoughnutLabelsPlugin.
-        layout: { padding: { top: 36, bottom: 36, left: 84, right: 84 } },
+        // drawn by outsideDoughnutLabelsPlugin. Widened further than the
+        // labels alone strictly need, since staggering same-side leader
+        // lines' elbow radius (to fan out clustered slivers) pushes the
+        // outermost ones further out than a single fixed radius would.
+        layout: { padding: { top: 40, bottom: 40, left: 100, right: 100 } },
         // The legend is dropped in favour of the outside labels, which
-        // already carry the category name, value, and percentage.
+        // already carry the category name and value.
         plugins: { legend: { display: false }, datalabels: { display: false } },
         onClick: (evt, elements, chart) => {
-          if (!elements.length) return;
+          if (!elements.length || !onClickLabel) return;
           const label = chart.data.labels[elements[0].index];
           if (!MapCore.isFilterableLabel(label)) return;
-          MapCore.setActiveFilter(dimension, label);
+          onClickLabel(label, elements[0].index);
         },
         onHover: (evt, elements) => {
           evt.native.target.style.cursor = elements.length ? "pointer" : "default";
@@ -810,19 +988,67 @@
     });
   }
 
-  function renderTimelineBarChart(canvasId, existingInstance, labels, data, dimension) {
+  // Timeline bucket labels are either a plain string or a 2-element
+  // [primaryLine, yearLine] array (MapCore.buildDateBuckets always uses the
+  // latter - one non-empty yearLine per calendar year, blank everywhere
+  // else). Both renderers (this one and buildColumnChartSVG) treat the
+  // year row as fully independent of whichever primary labels end up
+  // visually thinned/skipped for space - so the year is never silently
+  // dropped just because autoSkip (or the SVG's own thinning step) didn't
+  // happen to land on that particular bucket's index.
+  function timelinePrimaryLine(label) {
+    return Array.isArray(label) ? label[0] : label;
+  }
+  function timelineYearLine(label) {
+    return Array.isArray(label) ? label[1] : null;
+  }
+
+  // Draws each bucket's year (where present) at its own x position,
+  // entirely independent of the x-axis's own tick/autoSkip decisions -
+  // registered as a per-chart plugin so it participates in the normal
+  // draw cycle (and therefore redraws automatically on every .update()).
+  const timelineYearRowPlugin = {
+    id: "timelineYearRow",
+    afterDraw(chart) {
+      const xScale = chart.scales.x;
+      const labels = chart.data.labels;
+      if (!xScale || !labels) return;
+      const { ctx } = chart;
+      ctx.save();
+      ctx.font = '600 9px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
+      ctx.fillStyle = "#666";
+      ctx.textAlign = "center";
+      ctx.textBaseline = "top";
+      labels.forEach((label, i) => {
+        const year = timelineYearLine(label);
+        if (!year) return;
+        const x = xScale.getPixelForValue(i);
+        ctx.fillText(year, x, xScale.bottom + 2);
+      });
+      ctx.restore();
+    }
+  };
+
+  function renderTimelineBarChart(canvasId, existingInstance, labels, data, onClickIndex) {
     const canvas = document.getElementById(canvasId);
     if (!canvas) return existingInstance;
 
-    const backgroundColor = labels.map(l =>
-      (MapCore.activeFilter && MapCore.activeFilter.dimension === dimension && MapCore.activeFilter.value === l)
-        ? FILTER_HIGHLIGHT_COLOR : CHART_PALETTE[0]
-    );
+    // The timeline has no "selected bucket" concept to highlight - clicking
+    // a bar narrows the date range itself, so every other bar disappears on
+    // the next render rather than staying visible-but-highlighted.
+    const backgroundColor = labels.map(() => CHART_PALETTE[0]);
+    // Monthly-granularity primary labels are single letters (J F M A M J J
+    // A S O N D) - narrow enough to always show in full, so autoSkip is
+    // only left on for the longer date-range labels the other
+    // granularities use, where thinning is genuinely needed to avoid
+    // overlap.
+    const showAllPrimaryLabels = labels.every(l => timelinePrimaryLine(l).length <= 2);
 
     if (existingInstance) {
       existingInstance.data.labels = labels;
       existingInstance.data.datasets[0].data = data;
       existingInstance.data.datasets[0].backgroundColor = backgroundColor;
+      existingInstance.options.scales.x.ticks.autoSkip = !showAllPrimaryLabels;
       existingInstance.update();
       return existingInstance;
     }
@@ -833,10 +1059,13 @@
         labels,
         datasets: [{ data, backgroundColor, borderRadius: 4 }]
       },
+      plugins: [timelineYearRowPlugin],
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        layout: { padding: { top: 26 } },
+        // Extra bottom room for the year row the plugin above draws below
+        // the x-axis's own tick labels.
+        layout: { padding: { top: 26, bottom: 14 } },
         plugins: {
           legend: { display: false },
           // Value labels rendered just above each column, so the value
@@ -866,14 +1095,22 @@
           }
         },
         scales: {
-          x: { grid: { drawOnChartArea: false, drawTicks: true } },
+          x: {
+            grid: { drawOnChartArea: false, drawTicks: true },
+            ticks: {
+              autoSkip: !showAllPrimaryLabels,
+              // Ticks render the primary line only - the year is drawn
+              // separately by timelineYearRowPlugin, decoupled from
+              // whichever ticks autoSkip decides to keep.
+              callback: (value, index) => timelinePrimaryLine(labels[index])
+            }
+          },
           // Value axis removed - each column now carries its own label.
           y: { display: false, beginAtZero: true, grace: "18%" }
         },
         onClick: (evt, elements, chart) => {
-          if (!elements.length) return;
-          const label = chart.data.labels[elements[0].index];
-          MapCore.setActiveFilter(dimension, label);
+          if (!elements.length || !onClickIndex) return;
+          onClickIndex(elements[0].index);
         },
         onHover: (evt, elements) => {
           evt.native.target.style.cursor = elements.length ? "pointer" : "default";
@@ -883,20 +1120,30 @@
   }
 
   // Renders/updates all four summary charts from one call, and returns the
-  // exact series each was drawn with, so the PDF report can rebuild
-  // identical vector charts without re-deriving the Top-N / "Other"
-  // bucketing / sort order logic a second time.
+  // exact series each was drawn with, so the PDF report (and the on-page
+  // per-chart SVG export buttons) can rebuild identical vector charts
+  // without re-deriving the Top-N / "Other" bucketing / sort order logic a
+  // second time.
   //
-  //   entityDimension - 'oblast' | 'raion', used for cross-filter matching
-  //   entityKey       - 'topOblasts' | 'topRaions', the key name the PDF
-  //                     report generator expects in the returned object
-  MapCore.buildSummaryCharts = function ({ entityCounts, entityDimension, entityKey, infraCounts, extentCounts, timeCounts, labelsList }) {
+  //   entityKey - 'topOblasts' | 'topRaions', the key name the PDF report
+  //               generator (and the exports) expect in the returned object
+  //   entitySelectedValue/infraSelectedValue/extentSelectedValue - the
+  //               current value of the corresponding <select>, so the
+  //               matching bar/slice can be highlighted
+  //   onEntityClick/onInfraClick/onExtentClick - (label) => void, called on
+  //               a bar/slice click; onTimelineClick - (index) => void
+  MapCore.buildSummaryCharts = function ({
+    entityCounts, entityKey, entitySelectedValue, onEntityClick,
+    infraCounts, infraSelectedValue, onInfraClick,
+    extentCounts, extentSelectedValue, onExtentClick,
+    timelineLabels, timelineValues, onTimelineClick
+  }) {
     if (typeof Chart === "undefined") return null;
 
     const topEntity = Object.entries(entityCounts).sort((a, b) => b[1] - a[1]).slice(0, 8);
     MapCore.chartInstances.entity = renderBarChart(
       "map-top-oblasts-chart", MapCore.chartInstances.entity,
-      topEntity.map(e => e[0]), topEntity.map(e => e[1]), entityDimension
+      topEntity.map(e => e[0]), topEntity.map(e => e[1]), entitySelectedValue, onEntityClick
     );
 
     const infraEntries = Object.entries(infraCounts).sort((a, b) => b[1] - a[1]);
@@ -908,32 +1155,53 @@
       infraLabels.push("Other");
       infraValues.push(otherInfraTotal);
     }
-    MapCore.chartInstances.infra = renderBarChart("map-infra-type-chart", MapCore.chartInstances.infra, infraLabels, infraValues, "infra");
+    MapCore.chartInstances.infra = renderBarChart(
+      "map-infra-type-chart", MapCore.chartInstances.infra,
+      infraLabels, infraValues, infraSelectedValue, onInfraClick
+    );
 
     const extentEntries = Object.entries(extentCounts).sort((a, b) => b[1] - a[1]);
     MapCore.chartInstances.extent = renderDoughnutChart(
       "map-extent-chart", MapCore.chartInstances.extent,
-      extentEntries.map(e => e[0]), extentEntries.map(e => e[1]), "extent"
+      extentEntries.map(e => e[0]), extentEntries.map(e => e[1]), extentSelectedValue, onExtentClick
     );
 
-    const timelineValues = labelsList.map(lbl => timeCounts[lbl] || 0);
     MapCore.chartInstances.timeline = renderTimelineBarChart(
       "map-timeline-chart", MapCore.chartInstances.timeline,
-      labelsList, timelineValues, "period"
+      timelineLabels, timelineValues, onTimelineClick
     );
 
     return {
       [entityKey]: { labels: topEntity.map(e => e[0]), values: topEntity.map(e => e[1]) },
       infra: { labels: infraLabels, values: infraValues },
       extent: { labels: extentEntries.map(e => e[0]), values: extentEntries.map(e => e[1]) },
-      timeline: { labels: labelsList, values: timelineValues }
+      timeline: { labels: timelineLabels, values: timelineValues }
     };
   };
 
-  window.MapCore = MapCore;
+  // --------------------------------------------------------------------
+  // Summary table
+  // --------------------------------------------------------------------
+  // Renders the area x damage-level matrix built by each page's
+  // processMapVisualisations() into a plain HTML table. Shared since the
+  // layout is identical between the two pages - only areaLabel differs.
+  MapCore.renderSummaryTable = function (containerId, { areaLabel, rows, columns }) {
+    const el = document.getElementById(containerId);
+    if (!el) return;
 
-  // The pages' HTML calls these as bare globals via inline onclick/onchange
-  // attributes, so keep them available at window scope too.
-  window.clearMapFilter = MapCore.clearMapFilter;
-  window.buildMapPeriodDropdowns = MapCore.buildMapPeriodDropdowns;
+    if (!rows.length) {
+      el.innerHTML = "<p>No data for the current filters.</p>";
+      return;
+    }
+
+    const thead = `<thead><tr><th>${areaLabel}</th>${columns.map(c => `<th>${c}</th>`).join("")}<th>Total</th></tr></thead>`;
+    const tbody = rows.map(r => {
+      const cells = columns.map(c => `<td>${(r.cols[c] || 0).toLocaleString()}</td>`).join("");
+      return `<tr><td>${r.area}</td>${cells}<td class="total-col">${r.total.toLocaleString()}</td></tr>`;
+    }).join("");
+
+    el.innerHTML = `<table class="map-summary-table">${thead}<tbody>${tbody}</tbody></table>`;
+  };
+
+  window.MapCore = MapCore;
 })();

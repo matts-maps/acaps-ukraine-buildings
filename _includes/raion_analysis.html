@@ -5,11 +5,6 @@
     <div id="map-error-msg"></div>
 
     <div class="map-control-group">
-      <label for="map-year-select">Year:</label>
-      <select id="map-year-select" onchange="buildMapPeriodDropdowns()"></select>
-    </div>
-
-    <div class="map-control-group">
       <label for="map-oblast-select">Oblast:</label>
       <select id="map-oblast-select" onchange="onOblastFilterChange()">
         <option value="">All Oblasts</option>
@@ -24,20 +19,35 @@
     </div>
 
     <div class="map-control-group">
-      <label for="map-aggregation-select">Level of detail:</label>
-      <select id="map-aggregation-select" onchange="buildMapPeriodDropdowns()">
-        <option value="7">Weekly granularity</option>
-        <option value="14">Fortnightly granularity</option>
-        <option value="30" selected>Monthly granularity</option>
+      <label for="map-infra-select">Building type:</label>
+      <select id="map-infra-select" onchange="processMapVisualisations()">
+        <option value="">Total</option>
       </select>
     </div>
 
     <div class="map-control-group">
-      <label for="map-period-start-select">Time period:</label>
+      <label for="map-extent-select">Damage level:</label>
+      <select id="map-extent-select" onchange="processMapVisualisations()">
+        <option value="">All</option>
+      </select>
+    </div>
+
+    <div class="map-control-group">
+      <label for="map-aggregation-select">Level of detail:</label>
+      <select id="map-aggregation-select" onchange="processMapVisualisations()">
+        <option value="1">Daily granularity</option>
+        <option value="7">Weekly granularity</option>
+        <option value="14">Fortnightly granularity</option>
+        <option value="monthly" selected>Monthly granularity</option>
+      </select>
+    </div>
+
+    <div class="map-control-group">
+      <label for="map-date-from">Date range:</label>
       <div class="map-range-row">
-        <select id="map-period-start-select" onchange="processMapVisualisations()"></select>
+        <input type="date" id="map-date-from" onchange="processMapVisualisations()">
         <span class="map-range-sep">to</span>
-        <select id="map-period-end-select" onchange="processMapVisualisations()"></select>
+        <input type="date" id="map-date-to" onchange="processMapVisualisations()">
       </div>
     </div>
 
@@ -48,10 +58,11 @@
 
     <div id="map-active-filter-group" style="display:none;">
       <span id="map-active-filter-label"></span>
-      <button type="button" id="map-clear-filter-btn" onclick="clearMapFilter()">Clear</button>
+      <button type="button" id="map-clear-filter-btn" onclick="resetAllFilters(['map-oblast-select','map-raion-select'])">Clear</button>
     </div>
 
     <p class="map-hint">Click a raion on the map, or a bar/segment/point in the charts below, to filter everything to that selection.</p>
+    <button type="button" id="map-download-png-btn" onclick="downloadMapPng()">Download Map (PNG)</button>
   </aside>
 
 
@@ -68,22 +79,62 @@
 
 <section id="map-charts-section">
   <div class="map-chart-card timeline-card">
-    <h3>Timeline - total number of damaged buildings</h3>
+    <div class="chart-header">
+      <h3>Timeline - total number of damaged buildings</h3>
+      <div class="export-buttons">
+        <span class="export-label">Export:</span>
+        <button type="button" onclick="exportMapChart('timeline','png')">PNG</button>
+        <button type="button" onclick="exportMapChart('timeline','svg')">SVG</button>
+      </div>
+    </div>
     <div class="chart-wrap"><canvas id="map-timeline-chart"></canvas></div>
   </div>
 
   <div class="map-chart-card">
-    <h3>Top Raions by Reported Damage</h3>
+    <div class="chart-header">
+      <h3>Top Raions by Reported Damage</h3>
+      <div class="export-buttons">
+        <span class="export-label">Export:</span>
+        <button type="button" onclick="exportMapChart('entity','png')">PNG</button>
+        <button type="button" onclick="exportMapChart('entity','svg')">SVG</button>
+      </div>
+    </div>
     <div class="chart-wrap"><canvas id="map-top-oblasts-chart"></canvas></div>
   </div>
   <div class="map-chart-card">
-    <h3>Damage by Infrastructure Type</h3>
+    <div class="chart-header">
+      <h3>Damage by Infrastructure Type</h3>
+      <div class="export-buttons">
+        <span class="export-label">Export:</span>
+        <button type="button" onclick="exportMapChart('infra','png')">PNG</button>
+        <button type="button" onclick="exportMapChart('infra','svg')">SVG</button>
+      </div>
+    </div>
     <div class="chart-wrap"><canvas id="map-infra-type-chart"></canvas></div>
   </div>
   <div class="map-chart-card">
-    <h3>Extent of Damage</h3>
+    <div class="chart-header">
+      <h3>Extent of Damage</h3>
+      <div class="export-buttons">
+        <span class="export-label">Export:</span>
+        <button type="button" onclick="exportMapChart('extent','png')">PNG</button>
+        <button type="button" onclick="exportMapChart('extent','svg')">SVG</button>
+      </div>
+    </div>
     <div class="chart-wrap"><canvas id="map-extent-chart"></canvas></div>
   </div>
+</section>
+
+<section id="map-summary-table-section" class="map-chart-card">
+  <div class="chart-header">
+    <h3>Damage Summary by Raion</h3>
+    <div class="export-buttons">
+      <span class="export-label">Export:</span>
+      <button type="button" onclick="exportSummaryTable('csv')">CSV</button>
+      <button type="button" onclick="exportSummaryTable('xlsx')">XLSX</button>
+    </div>
+  </div>
+  <div id="map-summary-table-wrap" class="map-summary-table-wrap"></div>
 </section>
 
 <script>
@@ -96,8 +147,11 @@
 <script src="{{ '/assets/js/papaparse.min.js' | relative_url }}" defer></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels@2" defer></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js" defer></script>
+<script src="{{ '/assets/js/chart-svg-builders.js' | relative_url }}" defer></script>
 <script src="{{ '/assets/js/map-analysis-core.js' | relative_url }}" defer></script>
 <script src="{{ '/assets/js/raion_analysis.js' | relative_url }}" defer></script>
+<script src="{{ '/assets/js/map-export-buttons.js' | relative_url }}" defer></script>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js" defer></script>
 <script src="https://cdn.jsdelivr.net/npm/svg2pdf.js@2/dist/svg2pdf.umd.min.js" defer></script>

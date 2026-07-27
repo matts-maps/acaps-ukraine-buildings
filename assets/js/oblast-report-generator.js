@@ -12,7 +12,8 @@
   "use strict";
 
   window.EPACCReportGenerator.init({
-    entityDimension: "oblast",
+    entityFilterKey: "oblastFilter",
+    entitySelectId: "map-oblast-select",
     entityCountsKey: "oblastCounts",
     entitySeriesKey: "topOblasts",
     entityChartLabel: "Top Oblasts by Reported Damage",
@@ -22,17 +23,20 @@
 
     buildSummaryLeftLines(state) {
       return [
-        `Active filter: ${state.activeFilterText}`,
+        `Oblast coverage: ${state.oblastLabel}`,
+        `Building type filter: ${state.infraFilter || "Total"}`,
+        `Damage level filter: ${state.extentFilter || "All"}`,
         `Affected Oblasts: ${Object.keys(state.oblastCounts).length}`
       ];
     },
 
-    getExtraStateFromHook() {
-      return {};
+    getExtraStateFromHook(state) {
+      return { oblastLabel: state.oblastFilter || "All Oblasts" };
     },
 
     getExtraStateFallback() {
-      return {};
+      const oblastEl = document.getElementById("map-oblast-select");
+      return { oblastLabel: oblastEl && oblastEl.value ? oblastEl.value : "All Oblasts" };
     },
   });
 })();

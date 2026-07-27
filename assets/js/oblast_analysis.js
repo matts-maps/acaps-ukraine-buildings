@@ -19,27 +19,23 @@ function normalizeOblastName(raw) {
   return raw ? raw.replace("ska", "") : raw;
 }
 
+function formatDateLabel(iso) {
+  return new Date(iso + "T00:00:00Z").toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
+}
+
 // Runs immediately: this script is loaded with `defer`, so the DOM is
 // already parsed and the Leaflet/PapaParse/MapCore scripts before it in the
 // page have already executed. Waiting for the "load" event instead (which
-// also waits on map tile images) left a window where a user could click the
-// period dropdown or "Clear" filter button before MapCore.init() had wired
-// up MapCore.onRerender, silently no-op'ing the interaction.
+// also waits on map tile images) left a window where a user could click a
+// filter control before MapCore.init() had wired up MapCore.onRerender,
+// silently no-op'ing the interaction.
 (() => {
   const csvPath = window.MAP_CSV_PATH || "/data/ukraine-damages.csv";
   const geojsonPath = window.MAP_GEOJSON_PATH || "/data/ukr_admn_ad1_py_s0_fieldmaps_pp_oblast.json";
 
   if (typeof L === "undefined" || typeof Papa === "undefined") return;
 
-  MapCore.init({
-    dimensionLabels: {
-      oblast: "Oblast",
-      infra: "Infrastructure Type",
-      extent: "Extent of Damage",
-      period: "Time Period"
-    },
-    onRerender: processMapVisualisations
-  });
+  MapCore.init({ onRerender: processMapVisualisations });
   mapInstance = MapCore.initMapElement("Oblast Metric Profile");
 
   Promise.all([
@@ -60,98 +56,195 @@ function normalizeOblastName(raw) {
     // the whole of Ukraine is visible, regardless of screen size.
     const bounds = L.geoJSON(geoData).getBounds();
     if (bounds.isValid()) {
-      mapInstance.fitBounds(bounds, { padding: [15, 15] });
+      MapCore.setNationalBounds(bounds);
+      // animate: false - this runs automatically on page load, before any
+      // user interaction, so there's nothing to gain from an animated pan
+      // and (unlike a user-triggered fitBounds) no one is watching for it
+      // to fail: an animated zoom transition that doesn't complete (e.g. a
+      // backgrounded/inactive tab pausing the animation) would silently
+      // leave the map at its pre-fit default view instead of the country.
+      mapInstance.fitBounds(bounds, { padding: [15, 15], animate: false });
     }
 
-    MapCore.buildYearOptions(rawDamageCSV);
+    buildOblastFilterOptions();
+    MapCore.buildFilterSelectOptions("map-infra-select", "Total", rawDamageCSV.map(r => MapCore.normalizeInfraLabel(r.type_of_infrastructure)));
+    MapCore.buildFilterSelectOptions("map-extent-select", "All", rawDamageCSV.map(r => MapCore.normalizeExtentLabel(r.extent_of_damage)));
+
+    // Triggers the first render once the date inputs have real min/max/
+    // default values.
+    MapCore.initDateRangeControls(rawDamageCSV);
   });
 })();
+
+// Builds the Oblast dropdown (all unique oblasts, alphabetical). Called
+// once after the CSV loads.
+function buildOblastFilterOptions() {
+  const oblastSel = document.getElementById("map-oblast-select");
+  if (!oblastSel) return;
+
+  const oblasts = [...new Set(
+    rawDamageCSV.map(r => normalizeOblastName(r.oblast?.trim())).filter(Boolean)
+  )].sort();
+
+  oblastSel.innerHTML = '<option value="">All Oblasts</option>' +
+    oblasts.map(o => `<option value="${o}">${o}</option>`).join("");
+}
+
+function onOblastFilterChange() {
+  processMapVisualisations();
+}
+window.onOblastFilterChange = onOblastFilterChange;
+
+// Computes the Leaflet bounds covering the given oblast selection ('' = no
+// spatial narrowing, caller should fall back to MapCore.nationalBounds).
+function computeScopedBoundsForOblast(oblastValue) {
+  if (!geoJSONData || !oblastValue) return null;
+
+  const matched = geoJSONData.features.filter(f => {
+    const rawGeoName = f.properties.adm1_name || f.properties.ADM1_EN || "";
+    return normalizeOblastName(rawGeoName) === oblastValue;
+  });
+
+  if (!matched.length) return null;
+  const bounds = L.geoJSON({ type: "FeatureCollection", features: matched }).getBounds();
+  return bounds.isValid() ? bounds : null;
+}
 
 function processMapVisualisations() {
   if (!geoJSONData || !rawDamageCSV) return;
 
-  const yearEl = document.getElementById("map-year-select");
-  const startEl = document.getElementById("map-period-start-select");
-  const endEl = document.getElementById("map-period-end-select");
+  const fromEl = document.getElementById("map-date-from");
+  const toEl = document.getElementById("map-date-to");
   const aggEl = document.getElementById("map-aggregation-select");
+  const oblastEl = document.getElementById("map-oblast-select");
+  const infraEl = document.getElementById("map-infra-select");
+  const extentEl = document.getElementById("map-extent-select");
   const totalEl = document.getElementById("map-total-value");
 
-  if (!yearEl || !startEl || !endEl || !aggEl) return;
+  if (!fromEl || !toEl || !aggEl || !fromEl.value || !toEl.value) return;
 
-  const targetYear = parseInt(yearEl.value);
-  let startPeriod = parseInt(startEl.value);
-  let endPeriod = parseInt(endEl.value);
-  if (startPeriod > endPeriod) [startPeriod, endPeriod] = [endPeriod, startPeriod];
-  const step = parseInt(aggEl.value);
+  const granularity = aggEl.value;
+  const oblastFilter = oblastEl ? oblastEl.value : "";
+  const infraFilter = infraEl ? infraEl.value : "";
+  const extentFilter = extentEl ? extentEl.value : "";
+
+  const buckets = MapCore.buildDateBuckets(fromEl.value, toEl.value, granularity);
 
   const counts = {};
   const infraCounts = {};
   const extentCounts = {};
+  const timeCounts = {};
+  buckets.order.forEach(k => { timeCounts[k] = 0; });
 
-  const { timeCounts, labelsList } = MapCore.computeTimeBuckets(step, startPeriod, endPeriod);
+  // Area x damage-level matrix for the new summary table - eligible once a
+  // row passes the date/oblast/building-type filters, but NOT the damage-
+  // level filter itself, so every column the data actually has is
+  // populated before the damage-level filter (if any) selectively zeroes
+  // out the columns that don't match it below.
+  const tableMatrix = {};
+  const tableColumns = new Set();
 
   rawDamageCSV.forEach(r => {
     const rawOblast = r.oblast?.trim();
     if (!rawOblast) return;
-
-    const d = new Date(r.date_of_event);
-    if (isNaN(d) || d.getFullYear() !== targetYear) return;
-
-    const day = Math.floor((d - new Date(d.getFullYear(), 0, 0)) / 86400000);
-    const p = step === 30 ? d.getMonth() : Math.floor((day - 1) / step);
-    if (p < startPeriod || p > endPeriod) return;
-
     const name = normalizeOblastName(rawOblast);
+    if (oblastFilter && name !== oblastFilter) return;
+
+    const rowMs = Date.parse(r.date_of_event + "T00:00:00Z");
+    const bucketKey = buckets.keyForTimestamp(rowMs);
+    if (bucketKey === null) return;
+
     const infraType = MapCore.normalizeInfraLabel(r.type_of_infrastructure);
-    const extent = r.extent_of_damage?.trim() || "Unspecified";
+    if (infraFilter && infraType !== infraFilter) return;
 
-    const timeLabel = step === 30 ? MapCore.monthsList[p] : `${step === 7 ? "Week" : "Fortnight"} ${p + 1}`;
+    const extent = MapCore.normalizeExtentLabel(r.extent_of_damage);
 
-    // Cross-filter evaluation:
-    const activeFilter = MapCore.activeFilter;
-    if (activeFilter) {
-      if (activeFilter.dimension === "oblast" && name !== activeFilter.value) return;
-      if (activeFilter.dimension === "infra" && infraType !== activeFilter.value) return;
-      if (activeFilter.dimension === "extent" && extent !== activeFilter.value) return;
-      if (activeFilter.dimension === "period" && timeLabel !== activeFilter.value) return;
-    }
+    if (!tableMatrix[name]) tableMatrix[name] = {};
+    tableMatrix[name][extent] = (tableMatrix[name][extent] || 0) + 1;
+    tableColumns.add(extent);
+
+    if (extentFilter && extent !== extentFilter) return;
 
     counts[name] = (counts[name] || 0) + 1;
     infraCounts[infraType] = (infraCounts[infraType] || 0) + 1;
     extentCounts[extent] = (extentCounts[extent] || 0) + 1;
-
-    if (timeCounts[timeLabel] !== undefined) {
-      timeCounts[timeLabel] += 1;
-    }
+    timeCounts[bucketKey] += 1;
   });
+
+  // If a damage-level filter is active, the table should only show that
+  // one column as non-zero, matching the fact the rest of the view is
+  // fully filtered to it.
+  if (extentFilter) {
+    Object.values(tableMatrix).forEach(cols => {
+      Object.keys(cols).forEach(c => { if (c !== extentFilter) cols[c] = 0; });
+    });
+  }
+
+  const tableColumnsList = [...tableColumns].sort();
+  const summaryRows = Object.entries(tableMatrix)
+    .map(([area, cols]) => ({ area, cols, total: Object.values(cols).reduce((a, b) => a + b, 0) }))
+    .filter(r => r.total > 0)
+    .sort((a, b) => b.total - a.total);
 
   if (totalEl) totalEl.textContent = Object.values(counts).reduce((a, b) => a + b, 0).toLocaleString();
 
   const radiusInfo = MapCore.computeRadiusScale(counts);
   MapCore.updateProportionalLegend(radiusInfo);
 
+  const timelineLabels = buckets.order.map(k => buckets.labelsByKey[k]);
+  const timelineValues = buckets.order.map(k => timeCounts[k] || 0);
+
   const chartSeries = MapCore.buildSummaryCharts({
     entityCounts: counts,
-    entityDimension: "oblast",
     entityKey: "topOblasts",
-    infraCounts, extentCounts, timeCounts, labelsList
+    entitySelectedValue: oblastFilter,
+    onEntityClick: label => MapCore.selectOrToggle("map-oblast-select", label),
+    infraCounts,
+    infraSelectedValue: infraFilter,
+    onInfraClick: label => MapCore.selectOrToggle("map-infra-select", label),
+    extentCounts,
+    extentSelectedValue: extentFilter,
+    onExtentClick: label => MapCore.selectOrToggle("map-extent-select", label),
+    timelineLabels,
+    timelineValues,
+    onTimelineClick: index => {
+      const key = buckets.order[index];
+      const range = buckets.bucketRangeByKey[key];
+      if (range) MapCore.selectDateRangeBucket(range.startISO, range.endISO);
+    }
   });
 
+  MapCore.renderSummaryTable("map-summary-table-wrap", { areaLabel: "Oblast", rows: summaryRows, columns: tableColumnsList });
+
+  // Zoom the map to the selected oblast (falls back to the national view
+  // once cleared).
+  MapCore.applyZoomForScope(oblastFilter, () => computeScopedBoundsForOblast(oblastFilter));
+
+  const filterParts = [];
+  if (oblastFilter) filterParts.push(`Oblast: ${oblastFilter}`);
+  if (infraFilter) filterParts.push(`Building type: ${infraFilter}`);
+  if (extentFilter) filterParts.push(`Damage level: ${extentFilter}`);
+  MapCore.updateActiveFiltersSummary(filterParts);
+
   // Expose the current filter state + underlying numbers for anything
-  // outside this module that needs them (e.g. the PDF report generator).
+  // outside this module that needs them (e.g. the PDF report generator,
+  // the export buttons).
   window.__mapReportState = {
-    year: targetYear,
-    aggregationLabel: aggEl.options[aggEl.selectedIndex]?.text || "",
-    startLabel: startEl.options[startEl.selectedIndex]?.text || "",
-    endLabel: endEl.options[endEl.selectedIndex]?.text || "",
-    activeFilter: MapCore.activeFilter ? { ...MapCore.activeFilter } : null,
+    dateFrom: fromEl.value,
+    dateTo: toEl.value,
+    dateFromLabel: formatDateLabel(fromEl.value),
+    dateToLabel: formatDateLabel(toEl.value),
+    granularity,
+    granularityLabel: aggEl.options[aggEl.selectedIndex]?.text || "",
+    oblastFilter: oblastFilter || null,
+    infraFilter: infraFilter || null,
+    extentFilter: extentFilter || null,
     nationalTotal: Object.values(counts).reduce((a, b) => a + b, 0),
     oblastCounts: { ...counts },
     infraCounts: { ...infraCounts },
     extentCounts: { ...extentCounts },
-    timeCounts: { ...timeCounts },
-    labelsList: [...labelsList],
-    chartSeries
+    chartSeries,
+    summaryTable: { areaLabel: "Oblast", columns: tableColumnsList, rows: summaryRows }
   };
 
   if (leafletCircleLayer) mapInstance.removeLayer(leafletCircleLayer);
@@ -165,7 +258,7 @@ function processMapVisualisations() {
     const radius = radiusInfo.scale(value);
     if (radius <= 0) return null;
 
-    const isSelected = MapCore.activeFilter && MapCore.activeFilter.dimension === "oblast" && MapCore.activeFilter.value === geoName;
+    const isSelected = Boolean(oblastFilter) && oblastFilter === geoName;
     const center = L.geoJSON(f).getBounds().getCenter();
     const style = MapCore.damageCircleStyle(isSelected);
 
@@ -182,7 +275,7 @@ function processMapVisualisations() {
       window.mapInfoPanel._div.innerHTML = `<h4>${rawGeoName}</h4><b>Damages:</b> ${value.toLocaleString()}`;
     });
     marker.on("click", () => {
-      MapCore.setActiveFilter("oblast", geoName);
+      MapCore.selectOrToggle("map-oblast-select", geoName);
     });
 
     MapCore.damageCircleData.push({ lat: center.lat, lng: center.lng, radius, ...style });

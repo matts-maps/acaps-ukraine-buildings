@@ -12,7 +12,8 @@
   "use strict";
 
   window.EPACCReportGenerator.init({
-    entityDimension: "raion",
+    entityFilterKey: "raionFilter",
+    entitySelectId: "map-raion-select",
     entityCountsKey: "raionCounts",
     entitySeriesKey: "topRaions",
     entityChartLabel: "Top Raions by Reported Damage",
@@ -24,6 +25,8 @@
       return [
         `Oblast coverage: ${state.oblastLabel}`,
         `Raion coverage: ${state.raionLabel}`,
+        `Building type filter: ${state.infraFilter || "Total"}`,
+        `Damage level filter: ${state.extentFilter || "All"}`,
         `Affected Raions: ${Object.keys(state.raionCounts).length}`
       ];
     },

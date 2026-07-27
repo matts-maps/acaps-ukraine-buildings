@@ -133,7 +133,10 @@
 /* Form elements */
 #controls select,
 #map-controls select,
-select {
+select,
+#controls input[type="date"],
+#map-controls input[type="date"],
+input[type="date"] {
   padding: 8px 12px;
   border: 1px solid var(--border-light);
   border-radius: 6px;
@@ -145,11 +148,13 @@ select {
   transition: border-color 0.2s;
 }
 
-select:hover {
+select:hover,
+input[type="date"]:hover {
   border-color: var(--primary-dark);
 }
 
-select:focus {
+select:focus,
+input[type="date"]:focus {
   outline: none;
   border-color: var(--primary-dark);
   box-shadow: 0 0 0 2px rgba(26, 58, 92, 0.1);
@@ -454,6 +459,67 @@ main#map-wrapper-card {
 }
 
 /* ============================================================================
+   SUMMARY TABLE
+   ============================================================================ */
+
+.map-summary-table-wrap {
+  max-height: 480px;
+  overflow-y: auto;
+  overflow-x: auto;
+  border: 1px solid var(--border-light);
+  border-radius: 8px;
+}
+
+.map-summary-table {
+  width: 100%;
+  /* Fixed layout so columns keep a predictable width and the area/raion
+     name wraps onto multiple lines instead of the table just growing
+     wider to fit the longest name on one line. */
+  table-layout: fixed;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.map-summary-table thead th,
+.map-summary-table td {
+  overflow-wrap: break-word;
+  word-break: break-word;
+}
+
+.map-summary-table thead th {
+  position: sticky;
+  top: 0;
+  background: var(--primary-dark);
+  color: #fff;
+  padding: 8px 12px;
+  text-align: right;
+}
+
+.map-summary-table thead th:first-child,
+.map-summary-table td:first-child {
+  text-align: left;
+  /* Gives the name column more room than an equal split would under
+     table-layout: fixed, since it holds the longest/least predictable
+     text - remaining columns (damage levels + Total) share what's left. */
+  width: 28%;
+}
+
+.map-summary-table td {
+  padding: 6px 12px;
+  text-align: right;
+  border-bottom: 1px solid var(--border-light);
+}
+
+.map-summary-table tbody tr:nth-child(even) {
+  background: var(--bg-light);
+}
+
+.map-summary-table td.total-col {
+  font-weight: 700;
+  color: var(--primary-dark);
+}
+
+/* ============================================================================
    SUMMARY BOXES
    ============================================================================ */
 
@@ -619,6 +685,15 @@ main#map-wrapper-card {
     flex-direction: column;
     gap: 12px;
   }
+
+  .map-summary-table {
+    font-size: 11px;
+  }
+
+  .map-summary-table td,
+  .map-summary-table th {
+    padding: 5px 6px;
+  }
 }
 
 @media (max-width: 480px) {
@@ -637,7 +712,8 @@ main#map-wrapper-card {
     font-size: 12px;
   }
 
-  select {
+  select,
+  input[type="date"] {
     font-size: 12px;
     padding: 6px 10px;
   }
