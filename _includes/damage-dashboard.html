@@ -7,10 +7,10 @@
   <div id="controls">
     <div class="control-row">
       <div class="control-group">
-        <label for="period-type">Data aggregation:</label>
+        <label for="period-type">Summarised by:</label>
         <select id="period-type" onchange="buildPeriodDropdowns()">
-          <option value="7">Weekly (7-day periods)</option>
-          <option value="14" selected>Fortnightly (14-day periods)</option>
+          <option value="7">Weekly</option>
+          <option value="14" selected>Fortnightly</option>
           <option value="30">Monthly</option>
         </select>
       </div>
@@ -35,7 +35,7 @@
   <div id="chart-card">
     <div class="chart-header">
       <div>
-        <h2 id="chart-title">Timeline - Total Number of Damaged Buildings</h2>
+        <h2 id="chart-title">Timeline - Total number of damaged buildings</h2>
         <div class="subtitle" id="chart-subtitle"></div>
       </div>
       <div class="export-buttons">

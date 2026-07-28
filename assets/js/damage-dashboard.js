@@ -373,7 +373,7 @@ function updateChartAndStats() {
         },
         y: { 
           beginAtZero: true, 
-          title: { display: true, text: 'Recorded Structural Damages' },
+          title: { display: true, text: 'Number of damaged buildings' },
           grid: { 
             drawOnChartArea: false,
             drawTicks: true
@@ -421,10 +421,10 @@ function updateChartAndStats() {
   const cleanStartStr = periodLabels[idxStart].split(' (')[0];
   const cleanEndStr = periodLabels[idxEnd].split(' (')[0];
   const rangeDisplay = cleanStartStr === cleanEndStr ? cleanStartStr : `${cleanStartStr} – ${cleanEndStr}`;
-  document.getElementById('chart-subtitle').textContent = `Highlighted Interval Window: ${rangeDisplay}`;
+  document.getElementById('chart-subtitle').textContent = `Highlighted: ${rangeDisplay}`;
 
   renderStatsBoxes(selectedYears, totalsByYear, rangeDisplay);
-  lastChartSVG = buildChartSVG({ selectedYears, pointsByYear, periodLabels, stepDays, idxStart, idxEnd, titleText, subtitleText: `Highlighted Interval Window: ${rangeDisplay}` });
+  lastChartSVG = buildChartSVG({ selectedYears, pointsByYear, periodLabels, stepDays, idxStart, idxEnd, titleText, subtitleText: `Highlighted: ${rangeDisplay}` });
 }
 
 function renderStatsBoxes(selectedYears, totalsByYear, rangeDisplay) {
@@ -495,7 +495,7 @@ function renderStatsBoxes(selectedYears, totalsByYear, rangeDisplay) {
         <div>
           <div class="label">${yr}</div>
           <div class="value" style="color:${color};">${total.toLocaleString()}</div>
-          <div class="sub">Totaled over custom frame (${rangeDisplay})</div>
+          <div class="sub">damaged buildings between ${rangeDisplay}</div>
         </div>
         ${deltaHTML}
       </div>`;
