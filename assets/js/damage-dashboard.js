@@ -457,10 +457,10 @@ function updateChartAndStats() {
 
   document.getElementById('chart-card').style.display = 'block';
   document.getElementById('chart-title').textContent = titleText;
-  document.getElementById('chart-subtitle').textContent = `Highlighted Interval Window: ${rangeDisplay}`;
+  document.getElementById('chart-subtitle').textContent = `Highlighted period: ${rangeDisplay}`;
 
   renderStatsBoxes(selectedYears, totalsByYear, rangeDisplay);
-  lastChartSVG = buildChartSVG({ selectedYears, pointsByYear, periodLabels, highlightXStart, highlightXEnd, titleText, subtitleText: `Highlighted Interval Window: ${rangeDisplay}` });
+  lastChartSVG = buildChartSVG({ selectedYears, pointsByYear, periodLabels, highlightXStart, highlightXEnd, titleText, subtitleText: `Highlighted period: ${rangeDisplay}` });
 }
 
 function renderStatsBoxes(selectedYears, totalsByYear, rangeDisplay) {
