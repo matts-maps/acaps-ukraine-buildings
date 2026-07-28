@@ -396,7 +396,7 @@ function updateChartAndStats() {
             title: (items) => {
               if (!items.length) return '';
               const itemIdx = items[0].dataIndex;
-              return periodLabels[itemIdx].split(' (')[0];
+              return periodLabels[itemIdx];
             },
             label: item => ` Year ${item.dataset.label}: ${item.raw.y.toLocaleString()} incidents`
           }
