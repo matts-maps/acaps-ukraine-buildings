@@ -8,7 +8,7 @@
     <div class="control-row">
       <div class="control-group">
         <label for="period-type">Data aggregation:</label>
-        <select id="period-type" onchange="buildPeriodDropdowns()">
+        <select id="period-type" onchange="updateChartAndStats()">
           <option value="7" selected>Weekly (7-day periods)</option>
           <option value="14">Fortnightly (14-day periods)</option>
           <option value="30">Monthly</option>
@@ -31,11 +31,11 @@
     <div class="control-row">
       <div class="control-group">
         <label for="highlight-start">From:</label>
-        <select id="highlight-start" onchange="updateChartAndStats()"></select>
+        <input type="date" id="highlight-start" onchange="updateChartAndStats()">
       </div>
       <div class="control-group">
         <label for="highlight-end">To:</label>
-        <select id="highlight-end" onchange="updateChartAndStats()"></select>
+        <input type="date" id="highlight-end" onchange="updateChartAndStats()">
       </div>
     </div>
   </div>
