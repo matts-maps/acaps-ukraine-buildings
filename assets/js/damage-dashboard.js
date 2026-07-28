@@ -15,6 +15,30 @@ const calendarMonths = ['January', 'February', 'March', 'April', 'May', 'June', 
 
 const YEAR_COLORS = ['#1a3a5c', '#e07b39', '#2c8f7a', '#c0392b', '#8e44ad', '#2c5f8a', '#d4a017', '#555555'];
 
+// Kept in sync with the identical table in map-analysis-core.js so building
+// type labels read the same on the national, oblast, and raion pages.
+const INFRA_LABEL_MAP = {
+  "Industrial/Business/Enterprise facilities": "Industrial/Business/Enterprise",
+  "Education facility (school, etc.)": "Education",
+  "Government facilities": "Government",
+  "Cultural facilities (museum, theater etc.)": "Cultural",
+  "Health facility (hospital, health clinic)": "Health",
+  "Agricultural facilities": "Agricultural",
+  "Religious facilities": "Religious"
+};
+const BLANK_INFRA_LABEL = "(blank/missing)";
+
+function normalizeInfraLabel(raw) {
+  const trimmed = raw ? raw.trim() : "";
+  if (!trimmed) return BLANK_INFRA_LABEL;
+  return INFRA_LABEL_MAP[trimmed] || trimmed;
+}
+
+function getSelectedInfraType() {
+  const el = document.getElementById('infra-type-select');
+  return el ? el.value : '';
+}
+
 window.addEventListener('DOMContentLoaded', () => {
   const csvPath = window.DASHBOARD_CSV_PATH || '/data/ukraine-damages.csv'; 
   
@@ -124,10 +148,73 @@ function initializeDashboardOptions() {
     checkboxContainer.appendChild(wrapper);
   });
 
-  buildPeriodDropdowns();
-  
+  populateInfraTypeOptions();
+  initializeHighlightDateInputs();
+
   const controls = document.getElementById('controls');
   if (controls) controls.style.display = 'flex';
+
+  updateChartAndStats();
+}
+
+function formatDateInput(d) {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+// Defaults the From/To pickers to the trailing 7 calendar days ending today,
+// so the current week is highlighted on first load.
+function initializeHighlightDateInputs() {
+  const startEl = document.getElementById('highlight-start');
+  const endEl = document.getElementById('highlight-end');
+  if (!startEl || !endEl) return;
+
+  const end = new Date();
+  const start = new Date();
+  start.setDate(start.getDate() - 6);
+
+  startEl.value = formatDateInput(start);
+  endEl.value = formatDateInput(end);
+}
+
+// Reads the From/To date pickers and converts them to day-of-year bounds,
+// so the highlighted window compares the same calendar dates across every
+// selected year regardless of which one the pickers themselves show.
+function getHighlightRange() {
+  const startEl = document.getElementById('highlight-start');
+  const endEl = document.getElementById('highlight-end');
+  if (!startEl || !endEl || !startEl.value || !endEl.value) return null;
+
+  let startDate = new Date(startEl.value);
+  let endDate = new Date(endEl.value);
+  if (isNaN(startDate) || isNaN(endDate)) return null;
+
+  if (startDate > endDate) {
+    const temp = startDate;
+    startDate = endDate;
+    endDate = temp;
+  }
+
+  return {
+    startDate,
+    endDate,
+    startDoy: calculateDayOfYear(startDate),
+    endDoy: calculateDayOfYear(endDate)
+  };
+}
+
+function populateInfraTypeOptions() {
+  const sel = document.getElementById('infra-type-select');
+  if (!sel) return;
+
+  const types = new Set();
+  rawCSVData.forEach(row => types.add(normalizeInfraLabel(row.type_of_infrastructure)));
+
+  const sorted = Array.from(types).sort();
+  sel.innerHTML = '<option value="">All building types</option>' +
+    sorted.map(t => `<option value="${t}">${t}</option>`).join('');
 }
 
 // UPDATED: Generate period labels with real dates from data
@@ -169,47 +256,9 @@ function calculateDayOfYear(date) {
   return Math.floor(diff / 86400000);
 }
 
-function buildPeriodDropdowns() {
-  const periodTypeEl = document.getElementById('period-type');
-  const startSel = document.getElementById('highlight-start');
-  const endSel = document.getElementById('highlight-end');
-  
-  if (!periodTypeEl || !startSel || !endSel) return;
-
-  const stepDays = parseInt(periodTypeEl.value);
-  const labels = getPeriodLabels(stepDays);
-  
-  startSel.innerHTML = '';
-  endSel.innerHTML = '';
-
-  labels.forEach((label, index) => {
-    startSel.appendChild(new Option(label, index));
-    endSel.appendChild(new Option(label, index));
-  });
-
-  // Highlight most recent period
-  const now = new Date();
-  let mostRecentIndex = 0;
-  if (stepDays === 30) {
-    mostRecentIndex = now.getMonth();
-  } else {
-    const dayNum = calculateDayOfYear(now);
-    mostRecentIndex = Math.floor((dayNum - 1) / stepDays);
-  }
-  mostRecentIndex = Math.max(0, Math.min(mostRecentIndex, labels.length - 1));
-
-  startSel.value = mostRecentIndex;
-  endSel.value = mostRecentIndex; 
-
-  updateChartAndStats();
-}
-
 function updateChartAndStats() {
   const periodTypeEl = document.getElementById('period-type');
-  const startSel = document.getElementById('highlight-start');
-  const endSel = document.getElementById('highlight-end');
-  
-  if (!periodTypeEl || !startSel || !endSel) return;
+  if (!periodTypeEl) return;
 
   const selectedYears = getSelectedYears();
   const chartCard = document.getElementById('chart-card');
@@ -221,25 +270,28 @@ function updateChartAndStats() {
     showError('Select at least one year to display the timeline.');
     return;
   }
+
+  const range = getHighlightRange();
+  if (!range) {
+    if (chartCard) chartCard.style.display = 'none';
+    if (statsEl) { statsEl.style.display = 'none'; statsEl.innerHTML = ''; }
+    showError('Select a From and To date for the highlighted period.');
+    return;
+  }
   document.getElementById('error-msg').style.display = 'none';
 
   const stepDays = parseInt(periodTypeEl.value);
-  let idxStart = parseInt(startSel.value);
-  let idxEnd = parseInt(endSel.value);
-
-  if (idxStart > idxEnd) {
-    const temp = idxStart;
-    idxStart = idxEnd;
-    idxEnd = temp;
-  }
 
   const periodLabels = getPeriodLabels(stepDays);
   const totalPeriods = periodLabels.length;
+
+  const infraFilter = getSelectedInfraType();
 
   const countsByYear = new Map(selectedYears.map(yr => [yr, new Array(totalPeriods).fill(0)]));
   let maxDate = null;
 
   rawCSVData.forEach(row => {
+    if (infraFilter && normalizeInfraLabel(row.type_of_infrastructure) !== infraFilter) return;
     const dateStr = (row.date_of_event || '').trim();
     if (!dateStr) return;
     const d = new Date(dateStr);
@@ -293,23 +345,17 @@ function updateChartAndStats() {
     pointsByYear.set(yr, pts);
   });
 
+  const highlightXStart = (range.startDoy / 365) * 12;
+  const highlightXEnd = ((range.endDoy + 1) / 365) * 12;
+
   const highlightPlugin = {
     id: 'dynamicHighlightBand',
     beforeDraw(chart) {
       const { ctx, chartArea, scales } = chart;
       if (!chartArea) return;
       const xScale = scales.x;
-      let xStartVal = 0;
-      let xEndVal = 0;
-      if (stepDays === 30) {
-        xStartVal = idxStart;
-        xEndVal = idxEnd + 1;
-      } else {
-        xStartVal = ((idxStart * stepDays) / 365) * 12;
-        xEndVal = (((idxEnd + 1) * stepDays) / 365) * 12;
-      }
-      const x0 = xScale.getPixelForValue(xStartVal);
-      const x1 = xScale.getPixelForValue(xEndVal);
+      const x0 = xScale.getPixelForValue(highlightXStart);
+      const x1 = xScale.getPixelForValue(highlightXEnd);
       ctx.save();
       ctx.fillStyle = 'rgba(230, 126, 34, 0.18)'; 
       ctx.fillRect(x0, chartArea.top, x1 - x0, chartArea.bottom - chartArea.top);
@@ -321,9 +367,10 @@ function updateChartAndStats() {
   if (!canvas) return;
   if (chartInstance) chartInstance.destroy();
 
-  const titleText = selectedYears.length === 1
-    ? `Damaged Buildings Profile — ${selectedYears[0]}`
-    : `Damaged Buildings Profile Breakdown — ${selectedYears.join(' vs ')}`;
+  const infraSuffix = infraFilter ? ` (${infraFilter})` : '';
+  const titleText = (selectedYears.length === 1
+    ? `Damaged buildings timeline comparison - ${selectedYears[0]}`
+    : `Damaged buildings timeline comparison - ${selectedYears.join(' vs ')}`) + infraSuffix;
 
   chartInstance = new Chart(canvas, {
     type: 'line',
@@ -349,7 +396,7 @@ function updateChartAndStats() {
             title: (items) => {
               if (!items.length) return '';
               const itemIdx = items[0].dataIndex;
-              return periodLabels[itemIdx].split(' (')[0];
+              return periodLabels[itemIdx];
             },
             label: item => ` Year ${item.dataset.label}: ${item.raw.y.toLocaleString()} incidents`
           }
@@ -384,47 +431,36 @@ function updateChartAndStats() {
     plugins: [highlightPlugin]
   });
 
-  // Calculate totals for all loaded years so dropdowns have complete baseline datasets
+  // Totals are summed directly from the raw rows against the picked calendar
+  // dates (day-of-year, so the same window is compared across every year)
+  // rather than from the chart's aggregation buckets - this works for every
+  // year in the dataset regardless of whether it's currently plotted.
   const totalsByYear = new Map();
   uniqueYearsList.forEach(yr => {
-    const yearCounts = countsByYear.get(yr);
     let total = 0;
-    if (yearCounts) {
-      for (let i = idxStart; i <= idxEnd; i++) total += yearCounts[i] || 0;
-    } else {
-      // If a year in our full list is currently unchecked on the graph, 
-      // compute its total from scratch to allow reliable background reference
-      const fullYrCounts = new Array(totalPeriods).fill(0);
-      rawCSVData.forEach(row => {
-        const dateStr = (row.date_of_event || '').trim();
-        if (!dateStr) return;
-        const d = new Date(dateStr);
-        if (isNaN(d) || d.getFullYear() !== yr) return;
-        
-        let pIdx = 0;
-        if (stepDays === 30) {
-          pIdx = d.getMonth();
-        } else {
-          const dayNum = calculateDayOfYear(d);
-          pIdx = Math.floor((dayNum - 1) / stepDays);
-          if (pIdx >= totalPeriods) pIdx = totalPeriods - 1;
-        }
-        fullYrCounts[pIdx]++;
-      });
-      for (let i = idxStart; i <= idxEnd; i++) total += fullYrCounts[i] || 0;
-    }
+    rawCSVData.forEach(row => {
+      if (infraFilter && normalizeInfraLabel(row.type_of_infrastructure) !== infraFilter) return;
+      const dateStr = (row.date_of_event || '').trim();
+      if (!dateStr) return;
+      const d = new Date(dateStr);
+      if (isNaN(d) || d.getFullYear() !== yr) return;
+      const doy = calculateDayOfYear(d);
+      if (doy >= range.startDoy && doy <= range.endDoy) total++;
+    });
     totalsByYear.set(yr, total);
   });
 
+  const dateFmt = d => d.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' });
+  const rangeDisplay = dateFmt(range.startDate) === dateFmt(range.endDate)
+    ? dateFmt(range.startDate)
+    : `${dateFmt(range.startDate)} – ${dateFmt(range.endDate)}`;
+
   document.getElementById('chart-card').style.display = 'block';
   document.getElementById('chart-title').textContent = titleText;
-  const cleanStartStr = periodLabels[idxStart].split(' (')[0];
-  const cleanEndStr = periodLabels[idxEnd].split(' (')[0];
-  const rangeDisplay = cleanStartStr === cleanEndStr ? cleanStartStr : `${cleanStartStr} – ${cleanEndStr}`;
   document.getElementById('chart-subtitle').textContent = `Highlighted Interval Window: ${rangeDisplay}`;
 
   renderStatsBoxes(selectedYears, totalsByYear, rangeDisplay);
-  lastChartSVG = buildChartSVG({ selectedYears, pointsByYear, periodLabels, stepDays, idxStart, idxEnd, titleText, subtitleText: `Highlighted Interval Window: ${rangeDisplay}` });
+  lastChartSVG = buildChartSVG({ selectedYears, pointsByYear, periodLabels, highlightXStart, highlightXEnd, titleText, subtitleText: `Highlighted Interval Window: ${rangeDisplay}` });
 }
 
 function renderStatsBoxes(selectedYears, totalsByYear, rangeDisplay) {
@@ -570,7 +606,7 @@ function roundNiceUp(n) {
   return nice * magnitude;
 }
 
-function buildChartSVG({ selectedYears, pointsByYear, periodLabels, stepDays, idxStart, idxEnd, titleText, subtitleText }) {
+function buildChartSVG({ selectedYears, pointsByYear, periodLabels, highlightXStart, highlightXEnd, titleText, subtitleText }) {
   const width = 960, height = 560;
   const marginLeft = 65, marginRight = 30, marginTop = 60, marginBottom = 90;
   const plotWidth = width - marginLeft - marginRight;
@@ -587,15 +623,7 @@ function buildChartSVG({ selectedYears, pointsByYear, periodLabels, stepDays, id
   const xToPx = x => marginLeft + (x / 12) * plotWidth;
   const yToPx = y => marginTop + plotHeight - (y / yMax) * plotHeight;
 
-  let xStartVal, xEndVal;
-  if (stepDays === 30) {
-    xStartVal = idxStart;
-    xEndVal = idxEnd + 1;
-  } else {
-    xStartVal = ((idxStart * stepDays) / 365) * 12;
-    xEndVal = (((idxEnd + 1) * stepDays) / 365) * 12;
-  }
-  const bandSVG = `<rect x="${xToPx(xStartVal).toFixed(1)}" y="${marginTop}" width="${(xToPx(xEndVal) - xToPx(xStartVal)).toFixed(1)}" height="${plotHeight}" fill="rgba(230,126,34,0.18)" />`;
+  const bandSVG = `<rect x="${xToPx(highlightXStart).toFixed(1)}" y="${marginTop}" width="${(xToPx(highlightXEnd) - xToPx(highlightXStart)).toFixed(1)}" height="${plotHeight}" fill="rgba(230,126,34,0.18)" />`;
 
   const tickCount = 5;
   let gridSVG = '';

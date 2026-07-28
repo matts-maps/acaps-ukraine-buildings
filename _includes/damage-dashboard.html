@@ -8,9 +8,9 @@
     <div class="control-row">
       <div class="control-group">
         <label for="period-type">Data aggregation:</label>
-        <select id="period-type" onchange="buildPeriodDropdowns()">
-          <option value="7">Weekly (7-day periods)</option>
-          <option value="14" selected>Fortnightly (14-day periods)</option>
+        <select id="period-type" onchange="updateChartAndStats()">
+          <option value="7" selected>Weekly (7-day periods)</option>
+          <option value="14">Fortnightly (14-day periods)</option>
           <option value="30">Monthly</option>
         </select>
       </div>
@@ -19,17 +19,25 @@
         <label>Years to compare:</label>
         <div id="year-checkboxes" class="year-checkbox-row"></div>
       </div>
+
+      <div class="control-group">
+        <label for="infra-type-select">Building type:</label>
+        <select id="infra-type-select" onchange="updateChartAndStats()">
+          <option value="">All building types</option>
+        </select>
+      </div>
     </div>
 
     <div class="control-row">
       <div class="control-group">
         <label for="highlight-start">From:</label>
-        <select id="highlight-start" onchange="updateChartAndStats()"></select>
+        <input type="date" id="highlight-start" onchange="updateChartAndStats()">
       </div>
       <div class="control-group">
         <label for="highlight-end">To:</label>
-        <select id="highlight-end" onchange="updateChartAndStats()"></select>
-
+        <input type="date" id="highlight-end" onchange="updateChartAndStats()">
+      </div>
+    </div>
   </div>
 
   <div id="chart-card">
