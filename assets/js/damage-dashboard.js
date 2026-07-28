@@ -15,6 +15,30 @@ const calendarMonths = ['January', 'February', 'March', 'April', 'May', 'June', 
 
 const YEAR_COLORS = ['#1a3a5c', '#e07b39', '#2c8f7a', '#c0392b', '#8e44ad', '#2c5f8a', '#d4a017', '#555555'];
 
+// Kept in sync with the identical table in map-analysis-core.js so building
+// type labels read the same on the national, oblast, and raion pages.
+const INFRA_LABEL_MAP = {
+  "Industrial/Business/Enterprise facilities": "Industrial/Business/Enterprise",
+  "Education facility (school, etc.)": "Education",
+  "Government facilities": "Government",
+  "Cultural facilities (museum, theater etc.)": "Cultural",
+  "Health facility (hospital, health clinic)": "Health",
+  "Agricultural facilities": "Agricultural",
+  "Religious facilities": "Religious"
+};
+const BLANK_INFRA_LABEL = "(blank/missing)";
+
+function normalizeInfraLabel(raw) {
+  const trimmed = raw ? raw.trim() : "";
+  if (!trimmed) return BLANK_INFRA_LABEL;
+  return INFRA_LABEL_MAP[trimmed] || trimmed;
+}
+
+function getSelectedInfraType() {
+  const el = document.getElementById('infra-type-select');
+  return el ? el.value : '';
+}
+
 window.addEventListener('DOMContentLoaded', () => {
   const csvPath = window.DASHBOARD_CSV_PATH || '/data/ukraine-damages.csv'; 
   
@@ -124,10 +148,23 @@ function initializeDashboardOptions() {
     checkboxContainer.appendChild(wrapper);
   });
 
+  populateInfraTypeOptions();
   buildPeriodDropdowns();
-  
+
   const controls = document.getElementById('controls');
   if (controls) controls.style.display = 'flex';
+}
+
+function populateInfraTypeOptions() {
+  const sel = document.getElementById('infra-type-select');
+  if (!sel) return;
+
+  const types = new Set();
+  rawCSVData.forEach(row => types.add(normalizeInfraLabel(row.type_of_infrastructure)));
+
+  const sorted = Array.from(types).sort();
+  sel.innerHTML = '<option value="">All building types</option>' +
+    sorted.map(t => `<option value="${t}">${t}</option>`).join('');
 }
 
 // UPDATED: Generate period labels with real dates from data
@@ -236,10 +273,13 @@ function updateChartAndStats() {
   const periodLabels = getPeriodLabels(stepDays);
   const totalPeriods = periodLabels.length;
 
+  const infraFilter = getSelectedInfraType();
+
   const countsByYear = new Map(selectedYears.map(yr => [yr, new Array(totalPeriods).fill(0)]));
   let maxDate = null;
 
   rawCSVData.forEach(row => {
+    if (infraFilter && normalizeInfraLabel(row.type_of_infrastructure) !== infraFilter) return;
     const dateStr = (row.date_of_event || '').trim();
     if (!dateStr) return;
     const d = new Date(dateStr);
@@ -321,9 +361,10 @@ function updateChartAndStats() {
   if (!canvas) return;
   if (chartInstance) chartInstance.destroy();
 
-  const titleText = selectedYears.length === 1
+  const infraSuffix = infraFilter ? ` (${infraFilter})` : '';
+  const titleText = (selectedYears.length === 1
     ? `Damaged Buildings Profile — ${selectedYears[0]}`
-    : `Damaged Buildings Profile Breakdown — ${selectedYears.join(' vs ')}`;
+    : `Damaged Buildings Profile Breakdown — ${selectedYears.join(' vs ')}`) + infraSuffix;
 
   chartInstance = new Chart(canvas, {
     type: 'line',
@@ -396,6 +437,7 @@ function updateChartAndStats() {
       // compute its total from scratch to allow reliable background reference
       const fullYrCounts = new Array(totalPeriods).fill(0);
       rawCSVData.forEach(row => {
+        if (infraFilter && normalizeInfraLabel(row.type_of_infrastructure) !== infraFilter) return;
         const dateStr = (row.date_of_event || '').trim();
         if (!dateStr) return;
         const d = new Date(dateStr);
