@@ -369,8 +369,8 @@ function updateChartAndStats() {
 
   const infraSuffix = infraFilter ? ` (${infraFilter})` : '';
   const titleText = (selectedYears.length === 1
-    ? `Damaged Buildings Profile — ${selectedYears[0]}`
-    : `Damaged Buildings Profile Breakdown — ${selectedYears.join(' vs ')}`) + infraSuffix;
+    ? `Damaged buildings timeline comparison - ${selectedYears[0]}`
+    : `Damaged buildings timeline comparison - ${selectedYears.join(' vs ')}`) + infraSuffix;
 
   chartInstance = new Chart(canvas, {
     type: 'line',
