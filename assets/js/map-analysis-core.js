@@ -1064,22 +1064,24 @@
         const lineEndX = nearEdge + (isRight ? -4 : 4);
         const lineEndY = textY;
 
-        // Places the elbow at the foot of the perpendicular dropped from
-        // the FINAL line endpoint onto the slice's own departure ray - the
-        // one point on that ray where the line's second leg meets it at
-        // exactly 90 degrees, always, not just "at least". Since lineStart
-        // sits on the same ray, the bend at the elbow (between the leg
-        // back to lineStart and the leg out to the endpoint) is exactly a
-        // right angle by construction, for ANY endpoint position - no
-        // near-pole rebalancing, decluttering, or edge clamp upstream can
-        // violate it. Floored at DL_MIN_ELBOW_OFFSET past the ring only so
-        // the first leg keeps a visible length (an endpoint that projects
-        // to a point at or behind the ring - a genuinely degenerate
-        // placement - is the sole case where the angle can't stay exact).
+        // First leg leaves the ring along the slice's own departure angle -
+        // perpendicular to the ring, same as always. The elbow's radius
+        // along that angle is then solved so its Y lands exactly on the
+        // line's final Y, making the second leg perfectly horizontal. That
+        // combination geometrically guarantees a bend of 90 degrees or
+        // more: a straight line (180 degrees, no bend) only when the
+        // slice departs exactly horizontally toward its own label side,
+        // and a sharp right angle when it departs exactly vertically -
+        // nothing in between is possible. Floored so the elbow can't sit
+        // at/inside the ring. A departure angle that's itself (near)
+        // exactly horizontal has no meaningful solution (dividing by a
+        // near-zero sin), so that vanishing case keeps the old default
+        // radius instead of chasing an enormous, visually broken elbow.
         const cos = Math.cos(midAngle);
         const sin = Math.sin(midAngle);
-        const perpendicularRadius = cos * (lineEndX - x) + sin * (lineEndY - y);
-        const elbowRadius = Math.max(outerRadius + DL_MIN_ELBOW_OFFSET, perpendicularRadius);
+        const elbowRadius = Math.abs(sin) > 1e-6
+          ? Math.max(outerRadius + DL_MIN_ELBOW_OFFSET, (lineEndY - y) / sin)
+          : outerRadius + DL_ELBOW_OFFSET;
         const finalElbowX = x + cos * elbowRadius;
         const finalElbowY = y + sin * elbowRadius;
 
