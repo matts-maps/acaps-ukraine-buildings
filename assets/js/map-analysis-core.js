@@ -635,9 +635,11 @@
   // --------------------------------------------------------------------
   // Date-range controls / bucket engine
   // --------------------------------------------------------------------
-  // Populates the #map-date-from/#map-date-to inputs' min/max/default
-  // value from whatever date range actually exists in the CSV, defaulting
-  // to the full range (the "no filter" starting point).
+  // Populates the #map-date-from/#map-date-to inputs' min/max from whatever
+  // date range actually exists in the CSV, but defaults the *values* to
+  // 1 Jan 2026 through today (clamped into the data range, like an Excel
+  // TODAY() end date), so the page opens on the 2026 reporting period
+  // rather than all-time.
   MapCore.initDateRangeControls = function (rawDamageCSV) {
     MapCore.calculateDataDateRange(rawDamageCSV);
     const fromEl = document.getElementById("map-date-from");
@@ -645,10 +647,16 @@
     if (!fromEl || !toEl || !MapCore.minDataDate || !MapCore.maxDataDate) return;
 
     const iso = d => d.toISOString().slice(0, 10);
+    const clamp = d => new Date(Math.min(Math.max(d.getTime(), MapCore.minDataDate.getTime()), MapCore.maxDataDate.getTime()));
+
     fromEl.min = toEl.min = iso(MapCore.minDataDate);
     fromEl.max = toEl.max = iso(MapCore.maxDataDate);
-    fromEl.value = iso(MapCore.minDataDate);
-    toEl.value = iso(MapCore.maxDataDate);
+
+    const now = new Date();
+    const defaultFrom = new Date(Date.UTC(2026, 0, 1));
+    const defaultTo = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+    fromEl.value = iso(clamp(defaultFrom));
+    toEl.value = iso(clamp(defaultTo));
 
     MapCore.onRerender();
   };
