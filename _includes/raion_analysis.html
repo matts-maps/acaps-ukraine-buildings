@@ -33,6 +33,15 @@
     </div>
 
     <div class="map-control-group">
+      <label for="map-date-from">Date range:</label>
+      <div class="map-range-row">
+        <input type="date" id="map-date-from" onchange="processMapVisualisations()">
+        <span class="map-range-sep">to</span>
+        <input type="date" id="map-date-to" onchange="processMapVisualisations()">
+      </div>
+    </div>
+
+    <div class="map-control-group">
       <label for="map-aggregation-select">Summarised by:</label>
       <select id="map-aggregation-select" onchange="processMapVisualisations()">
         <option value="1">Days</option>
@@ -40,15 +49,6 @@
         <option value="14">Fortnights</option>
         <option value="monthly" selected>Months</option>
       </select>
-    </div>
-
-    <div class="map-control-group">
-      <label for="map-date-from">Date range:</label>
-      <div class="map-range-row">
-        <input type="date" id="map-date-from" onchange="processMapVisualisations()">
-        <span class="map-range-sep">to</span>
-        <input type="date" id="map-date-to" onchange="processMapVisualisations()">
-      </div>
     </div>
 
     <div class="map-summary-box">
