@@ -3,8 +3,8 @@
    ============================================================================
    Shared map/legend/filter/chart machinery lives in MapCore
    (map-analysis-core.js, loaded before this file). This file only holds
-   what's genuinely specific to the Oblast view: CSV loading, oblast name
-   normalization against the boundary geoJSON, and the row-filtering loop.
+   what's genuinely specific to the Oblast view: CSV loading, joining CSV
+   rows to the boundary geoJSON by P-code, and the row-filtering loop.
    ========================================================================== */
 
 let rawDamageCSV = [];
@@ -12,11 +12,18 @@ let geoJSONData = null;
 let leafletCircleLayer = null;
 let mapInstance = null;
 
-// A handful of oblast names differ between the geoJSON boundary properties
-// and the CSV's spelling by a trailing "ska" suffix (e.g. "Kyivska" vs
-// "Kyiv"); stripped off here so both sides match up consistently.
-function normalizeOblastName(raw) {
-  return raw ? raw.replace("ska", "") : raw;
+// Maps each oblast's P-code (geoJSON `adm1_src`, CSV `pcode`) to its full
+// display name (geoJSON `adm1_name`), so the CSV can be joined to the
+// boundary geoJSON via the stable P-code rather than by matching name
+// strings.
+let pcodeToName = {};
+
+// Resolves a CSV row's oblast name via the pcode join above, falling back
+// to the CSV's own `oblast` field if the pcode doesn't resolve.
+function canonicalOblastName(row) {
+  const pcode = row.pcode?.trim();
+  if (pcode && pcodeToName[pcode]) return pcodeToName[pcode];
+  return row.oblast?.trim() || "";
 }
 
 function formatDateLabel(iso) {
@@ -52,6 +59,12 @@ function formatDateLabel(iso) {
     geoJSONData = geoData;
     rawDamageCSV = csvData;
 
+    pcodeToName = {};
+    geoData.features.forEach(f => {
+      const pcode = f.properties.adm1_src;
+      if (pcode) pcodeToName[pcode] = f.properties.adm1_name || f.properties.ADM1_EN || "";
+    });
+
     // Fit the view to the full extent of the administrative boundaries so
     // the whole of Ukraine is visible, regardless of screen size.
     const bounds = L.geoJSON(geoData).getBounds();
@@ -83,7 +96,7 @@ function buildOblastFilterOptions() {
   if (!oblastSel) return;
 
   const oblasts = [...new Set(
-    rawDamageCSV.map(r => normalizeOblastName(r.oblast?.trim())).filter(Boolean)
+    rawDamageCSV.map(r => canonicalOblastName(r)).filter(Boolean)
   )].sort();
 
   oblastSel.innerHTML = '<option value="">All Oblasts</option>' +
@@ -101,8 +114,7 @@ function computeScopedBoundsForOblast(oblastValue) {
   if (!geoJSONData || !oblastValue) return null;
 
   const matched = geoJSONData.features.filter(f => {
-    const rawGeoName = f.properties.adm1_name || f.properties.ADM1_EN || "";
-    return normalizeOblastName(rawGeoName) === oblastValue;
+    return (f.properties.adm1_name || f.properties.ADM1_EN || "") === oblastValue;
   });
 
   if (!matched.length) return null;
@@ -145,9 +157,8 @@ function processMapVisualisations() {
   const tableColumns = new Set();
 
   rawDamageCSV.forEach(r => {
-    const rawOblast = r.oblast?.trim();
-    if (!rawOblast) return;
-    const name = normalizeOblastName(rawOblast);
+    const name = canonicalOblastName(r);
+    if (!name) return;
     if (oblastFilter && name !== oblastFilter) return;
 
     const rowMs = Date.parse(r.date_of_event + "T00:00:00Z");
@@ -252,8 +263,7 @@ function processMapVisualisations() {
   MapCore.damageCircleData = [];
 
   const circleMarkers = geoJSONData.features.map(f => {
-    const rawGeoName = (f.properties.adm1_name || f.properties.ADM1_EN || "");
-    const geoName = normalizeOblastName(rawGeoName);
+    const geoName = f.properties.adm1_name || f.properties.ADM1_EN || "";
     const value = counts[geoName] || 0;
     const radius = radiusInfo.scale(value);
     if (radius <= 0) return null;
@@ -272,7 +282,7 @@ function processMapVisualisations() {
     });
 
     marker.on("mouseover", () => {
-      window.mapInfoPanel._div.innerHTML = `<h4>${rawGeoName}</h4><b>Damages:</b> ${value.toLocaleString()}`;
+      window.mapInfoPanel._div.innerHTML = `<h4>${geoName}</h4><b>Damages:</b> ${value.toLocaleString()}`;
     });
     marker.on("click", () => {
       MapCore.selectOrToggle("map-oblast-select", geoName);
