@@ -6,13 +6,10 @@
 
   <div id="controls">
     <div class="control-row">
-      <div class="control-group">
-        <label for="period-type">Data aggregation:</label>
-        <select id="period-type" onchange="typeof buildPeriodDropdowns === 'function' && buildPeriodDropdowns(); typeof updateChartAndStats === 'function' && updateChartAndStats();">
-          <option value="7">Weekly</option>
-          <option value="14" selected>Fortnightly</option>
-          <option value="30">Monthly</option>
-        </select>
+
+      <div class="control-group year-checkbox-group">
+        <label>Years to compare:</label>
+        <div id="year-checkboxes" class="year-checkbox-row"></div>
       </div>
 
       <div class="control-group year-checkbox-group">
@@ -36,6 +33,15 @@
       <div class="control-group">
         <label for="highlight-end">to:</label>
         <input type="date" id="highlight-end" onchange="updateChartAndStats()">
+      </div>
+
+      <div class="control-group">
+        <label for="period-type">Data aggregation:</label>
+        <select id="period-type" onchange="typeof buildPeriodDropdowns === 'function' && buildPeriodDropdowns(); typeof updateChartAndStats === 'function' && updateChartAndStats();">
+          <option value="7">Weekly</option>
+          <option value="14" selected>Fortnightly</option>
+          <option value="30">Monthly</option>
+        </select>
       </div>
     </div>
   </div>
