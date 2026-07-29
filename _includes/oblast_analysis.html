@@ -24,6 +24,15 @@
         <option value="">All</option>
       </select>
     </div>
+    
+    <div class="map-control-group">
+      <label for="map-date-from">Date range:</label>
+      <div class="map-range-row">
+        <input type="date" id="map-date-from" onchange="processMapVisualisations()">
+        <span class="map-range-sep">to</span>
+        <input type="date" id="map-date-to" onchange="processMapVisualisations()">
+      </div>
+    </div>
 
     <div class="map-control-group">
       <label for="map-aggregation-select">Summarised by:</label>
@@ -35,14 +44,7 @@
       </select>
     </div>
 
-    <div class="map-control-group">
-      <label for="map-date-from">Date range:</label>
-      <div class="map-range-row">
-        <input type="date" id="map-date-from" onchange="processMapVisualisations()">
-        <span class="map-range-sep">to</span>
-        <input type="date" id="map-date-to" onchange="processMapVisualisations()">
-      </div>
-    </div>
+
 
     <div class="map-summary-box">
       <div class="label">Total number of damaged buildings</div>
