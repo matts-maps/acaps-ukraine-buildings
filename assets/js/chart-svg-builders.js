@@ -330,7 +330,7 @@
     // Fixed vertical inset reserved for the ring (unaffected by this fix -
     // only the horizontal/left-right label budget is sized dynamically
     // below).
-    const VERTICAL_INSET = 80;
+    const VERTICAL_INSET = 180;
 
     // Minimum vertical gap enforced between two label lines on the same
     // side of the ring, so neighbouring slices with similar angles never
@@ -343,7 +343,7 @@
     // independently split left/right by a hair's-width angle difference -
     // that's what previously sent their leader lines criss-crossing each
     // other and the ring itself.
-    const SAME_SIDE_ANGLE_THRESHOLD = 8 * (Math.PI / 180);
+    const SAME_SIDE_ANGLE_THRESHOLD = 10 * (Math.PI / 180);
     // How far outside the ring a label's line bends toward its text.
     const ELBOW_OFFSET = 30;
     // A slice whose mid-angle sits this close to due-up/due-down has
@@ -372,7 +372,7 @@
     // ELBOW_OFFSET, whenever needed to keep the bend at the elbow no
     // sharper than a right angle (see the final draw loop). Kept in sync
     // with DL_MIN_ELBOW_OFFSET in map-analysis-core.js.
-    const MIN_ELBOW_OFFSET = 8;
+    const MIN_ELBOW_OFFSET = 10;
 
     const leftEntries = [];
     const rightEntries = [];
