@@ -37,6 +37,29 @@
     return ctx.measureText(text).width;
   }
 
+  // Shrinks "<category>: <count>" to fit maxWidth by trimming the category
+  // from the end and appending an ellipsis, keeping ": <count>" intact
+  // since the count is the number the label exists to show. Falls back to
+  // "…: <count>" if even that overflows - callers clamp position
+  // afterwards, so a few px of residual overflow there is never visible as
+  // an overlap. Kept in sync with the equivalent helper in
+  // map-analysis-core.js (outsideDoughnutLabelsPlugin) - same algorithm,
+  // duplicated because this file has no dependency on that one.
+  function fitLabelToWidth(category, countText, maxWidth, measure) {
+    const full = `${category}: ${countText}`;
+    if (measure(full) <= maxWidth) return { text: full, width: measure(full) };
+    const suffix = `: ${countText}`;
+    let cat = category;
+    while (cat.length > 1) {
+      cat = cat.slice(0, -1);
+      const candidate = `${cat}…${suffix}`;
+      const w = measure(candidate);
+      if (w <= maxWidth) return { text: candidate, width: w };
+    }
+    const countOnly = `…${suffix}`;
+    return { text: countOnly, width: measure(countOnly) };
+  }
+
   // Splits a label into wrappable tokens: breaks on whitespace (discarding
   // it) and also right after a "/" (keeping the slash attached, no space
   // inserted afterwards) - so long slash-joined phrases like
@@ -304,8 +327,10 @@
 
     const cx = width / 2;
     const cy = height / 2;
-    const outerR = Math.max(30, Math.min(width, height) / 2 - 70);
-    const innerR = outerR * 0.55;
+    // Fixed vertical inset reserved for the ring (unaffected by this fix -
+    // only the horizontal/left-right label budget is sized dynamically
+    // below).
+    const VERTICAL_INSET = 70;
 
     // Minimum vertical gap enforced between two label lines on the same
     // side of the ring, so neighbouring slices with similar angles never
@@ -326,12 +351,40 @@
     // on whichever side is less crowded rather than being stuck with
     // whatever the cosine's sign happens to be.
     const NEAR_POLE_COS = 0.05;
+    // A 10px buffer keeps labels from ever touching the SVG edge itself.
+    const EDGE_BUFFER = 10;
+    // Gap between the elbow point and the text.
+    const TEXT_GAP = 16;
+    // Minimum gap a label's near edge must keep from the ring's own
+    // vertical centerline - the hard stop that keeps a long label from
+    // drifting across the ring into the opposite side's territory. Kept in
+    // sync with DL_CENTER_GAP in map-analysis-core.js.
+    const CENTER_GAP = 12;
+    // Floor and ceiling for the reserved label band on each side of the
+    // ring, sized below from the actual longest label.
+    const MIN_SIDE_PADDING = 70;
+    const MAX_SIDE_PADDING_FRACTION = 0.42;
+    // Even in the tightest possible squeeze, a truncated label keeps at
+    // least this much width so "…: <count>" always has room to draw.
+    const MIN_LABEL_WIDTH = 30;
+    // Floor for the elbow's distance beyond the ring (as an addition to
+    // outerR) - the elbow radius shrinks toward this, from the default
+    // ELBOW_OFFSET, whenever needed to keep the bend at the elbow no
+    // sharper than a right angle (see the final draw loop). Kept in sync
+    // with DL_MIN_ELBOW_OFFSET in map-analysis-core.js.
+    const MIN_ELBOW_OFFSET = 8;
 
     const leftEntries = [];
     const rightEntries = [];
+    const sliceEntries = [];
     let lastMid = null;
     let lastIsRight = null;
 
+    // Pass A: walk the slices to assign left/right sides and measure each
+    // label's natural (untruncated) width, WITHOUT drawing anything yet -
+    // outerR (and therefore the slice paths and label geometry) can't be
+    // finalized until the label-side widths are known, so the actual
+    // <path>/<polyline>/<text> elements are appended later, in Pass C/D.
     let angle = -Math.PI / 2;
     labels.forEach((label, i) => {
       const value = values[i];
@@ -341,10 +394,7 @@
       angle = endAngle;
       if (!value) return;
 
-      svg.appendChild(svgEl("path", {
-        d: donutSlicePath(cx, cy, innerR, outerR, startAngle, endAngle),
-        fill: palette[i % palette.length]
-      }));
+      sliceEntries.push({ startAngle, endAngle, paletteIndex: i });
 
       const mid = (startAngle + endAngle) / 2;
       let isRight = Math.cos(mid) >= 0;
@@ -354,14 +404,15 @@
       lastMid = mid;
       lastIsRight = isRight;
 
-      const text = `${label}: ${value.toLocaleString()}`;
-      const textWidth = measureTextWidth(text, 8);
+      const category = label;
+      const countText = value.toLocaleString();
+      const naturalWidth = measureTextWidth(`${category}: ${countText}`, 8);
       // The ring departure point always stays at the slice's own true
       // angle - nudging it toward a neighbour (as an earlier version did,
       // to fan out tightly clustered slivers) could flip which side of the
       // ring it geometrically sits on, sending its leader line back across
       // the chart to reach a label anchored on the opposite side.
-      (isRight ? rightEntries : leftEntries).push({ mid, text, textWidth, isRight });
+      (isRight ? rightEntries : leftEntries).push({ mid, category, countText, naturalWidth, isRight });
     });
 
     // A near-pole entry can just as validly anchor its label on the other
@@ -386,6 +437,28 @@
     }
     rebalanceNearPole(leftEntries, rightEntries);
     rebalanceNearPole(rightEntries, leftEntries);
+
+    // Pass B: reserved label band per side, sized from the actual longest
+    // label rather than a fixed guess - clamped so it never shrinks the
+    // ring away entirely or eats the whole image on a narrow export. The
+    // draw-time clamp in Pass D is still what guarantees no overlap if
+    // this estimate turns out to be a little off. Kept in sync with
+    // computeOutsideLabelPadding in map-analysis-core.js.
+    const maxLeftWidth = leftEntries.reduce((m, e) => Math.max(m, e.naturalWidth), 0);
+    const maxRightWidth = rightEntries.reduce((m, e) => Math.max(m, e.naturalWidth), 0);
+    const desiredPadding = Math.max(maxLeftWidth, maxRightWidth) + ELBOW_OFFSET + TEXT_GAP + EDGE_BUFFER;
+    const sidePadding = Math.min(Math.max(desiredPadding, MIN_SIDE_PADDING), width * MAX_SIDE_PADDING_FRACTION);
+    const outerR = Math.max(30, Math.min(width / 2 - sidePadding, height / 2 - VERTICAL_INSET));
+    const innerR = outerR * 0.55;
+
+    // Pass C: now that outerR is final, draw the slice paths in their
+    // original order.
+    sliceEntries.forEach(({ startAngle, endAngle, paletteIndex }) => {
+      svg.appendChild(svgEl("path", {
+        d: donutSlicePath(cx, cy, innerR, outerR, startAngle, endAngle),
+        fill: palette[paletteIndex % palette.length]
+      }));
+    });
 
     // Derives each label's line-start (on the ring) and elbow point (a
     // short way further out) from its true departure angle.
@@ -443,37 +516,67 @@
       }
     }
 
-    // A 10px buffer keeps labels from ever touching the SVG edge itself.
-    const EDGE_BUFFER = 10;
     const minY = EDGE_BUFFER;
     const maxY = height - EDGE_BUFFER;
     declutter(leftLabels, minY, maxY);
     declutter(rightLabels, minY, maxY);
 
-    // Gap between the elbow point and the text, and how close text may
-    // come to the SVG edge before its reach gets pulled back in - this is
-    // what stops a label (especially a near-vertical sliver whose elbow
-    // sits close to the ring's own left/right edge) from running its text
-    // off the side of the exported image.
-    const TEXT_GAP = 16;
+    // Pass D: the ring's own vertical centerline - a label's near edge is
+    // never allowed to cross past this (with CENTER_GAP of clearance), no
+    // matter how long its text is or how little padding was reserved for
+    // it in Pass B. This is what actually guarantees no overlap with the
+    // ring or the opposite side's labels.
+    const centerX = cx;
 
-    [...leftLabels, ...rightLabels].forEach(({ lineStart, elbowX, elbowY, textY, text, textWidth, isRight }) => {
+    [...leftLabels, ...rightLabels].forEach(({ lineStart, elbowX, elbowY, textY, category, countText, isRight, mid }) => {
+      // Available width runs from the elbow's side of the centerline out
+      // to the SVG edge - never past either bound, regardless of how wide
+      // the raw label text would be.
+      const availableWidth = isRight
+        ? (width - EDGE_BUFFER) - (centerX + CENTER_GAP)
+        : (centerX - CENTER_GAP) - EDGE_BUFFER;
+      const fitted = fitLabelToWidth(
+        category, countText, Math.max(availableWidth, MIN_LABEL_WIDTH),
+        t => measureTextWidth(t, 8)
+      );
+
       // Text normally reaches TEXT_GAP past the elbow and extends away
       // from the ring by its own width. If that would run past the SVG
-      // edge, pull the near edge back in just enough to fit.
+      // edge OR back across the ring's centerline, pull the near edge back
+      // in just enough to fit within both bounds.
       const nearEdge = isRight
-        ? Math.min(elbowX + TEXT_GAP, width - EDGE_BUFFER - textWidth)
-        : Math.max(elbowX - TEXT_GAP, EDGE_BUFFER + textWidth);
+        ? Math.min(Math.max(elbowX + TEXT_GAP, centerX + CENTER_GAP), width - EDGE_BUFFER - fitted.width)
+        : Math.max(Math.min(elbowX - TEXT_GAP, centerX - CENTER_GAP), EDGE_BUFFER + fitted.width);
       const textX = nearEdge;
+      // The point the leader line's second leg actually ends at - a few px
+      // short of the text itself, for a small visual gap.
+      const lineEndX = nearEdge + (isRight ? -4 : 4);
+      const lineEndY = textY;
+
+      // Re-anchors the elbow's radius (see the equivalent comment in
+      // map-analysis-core.js) so the bend it forms with the FINAL line
+      // endpoint is never sharper than a right angle: the elbow radius R
+      // keeps the bend >= 90 degrees exactly while
+      // R <= cos(angle)*(lineEndX-cx) + sin(angle)*(lineEndY-cy) - using
+      // the actual drawn endpoint (not the text anchor a few px further
+      // out) keeps the bound exact rather than off by that visual gap.
+      const cos = Math.cos(mid);
+      const sin = Math.sin(mid);
+      const maxElbowRadius = cos * (lineEndX - cx) + sin * (lineEndY - cy);
+      const elbowRadius = Math.max(
+        outerR + MIN_ELBOW_OFFSET,
+        Math.min(outerR + ELBOW_OFFSET, maxElbowRadius)
+      );
+      const finalElbowX = cx + cos * elbowRadius;
+      const finalElbowY = cy + sin * elbowRadius;
 
       svg.appendChild(svgEl("polyline", {
         // First leg leaves the ring at the slice's own (possibly spread)
-        // angle; second leg runs to the text. When declutter/the edge
-        // clamp didn't need to move this label, elbowY === textY and
-        // elbowX is within TEXT_GAP of nearEdge, so the second leg is a
-        // short, barely-there continuation - no visible kink. Only labels
-        // that actually needed repositioning show a real bend.
-        points: `${lineStart.x},${lineStart.y} ${elbowX},${elbowY} ${nearEdge + (isRight ? -4 : 4)},${textY}`,
+        // angle; second leg runs to the text. When nothing needed to move
+        // this label, the second leg is a short, barely-there continuation
+        // - no visible kink. Only labels that actually needed
+        // repositioning show a real bend, and that bend is never acute.
+        points: `${lineStart.x},${lineStart.y} ${finalElbowX},${finalElbowY} ${lineEndX},${lineEndY}`,
         fill: "none", stroke: "#999", "stroke-width": "1"
       }));
 
@@ -481,7 +584,7 @@
         x: textX, y: textY, "text-anchor": isRight ? "start" : "end", "dominant-baseline": "middle",
         "font-size": "8", "font-family": PDF_CHART_FONT, fill: "#333"
       });
-      textEl.textContent = text;
+      textEl.textContent = fitted.text;
       svg.appendChild(textEl);
     });
 

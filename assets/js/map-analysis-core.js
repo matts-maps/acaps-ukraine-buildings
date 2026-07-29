@@ -766,6 +766,123 @@
     return width;
   }
 
+  // Shared geometry constants for the outside-donut label + leader-line
+  // system, used both at draw time (outsideDoughnutLabelsPlugin) and when
+  // sizing the chart's reserved label padding before it's created
+  // (renderDoughnutChart) - hoisted to module scope so both can read them.
+  //
+  // Minimum vertical gap enforced between two label lines on the same side
+  // of the ring, so neighbouring slices with similar angles never draw text
+  // on top of each other. Generous on purpose - this is the main defence
+  // against a cluttered-looking label stack.
+  const DL_LINE_HEIGHT = 22;
+  // Slices whose mid-angles are this close together (e.g. several tiny
+  // slivers bunched at the seam where the ring wraps back to its start)
+  // keep whichever side the previous one landed on, rather than being
+  // independently split left/right by a hair's-width angle difference -
+  // that's what previously sent their leader lines criss-crossing each
+  // other and the ring itself.
+  const DL_SAME_SIDE_ANGLE_THRESHOLD = 8 * (Math.PI / 180);
+  // How far outside the ring a label's line bends toward its text.
+  const DL_ELBOW_OFFSET = 28;
+  // A slice whose mid-angle sits this close to due-up/due-down has barely
+  // any geometric lean toward either side, so it's free to settle on
+  // whichever side is less crowded rather than being stuck with whatever
+  // the cosine's sign happens to be.
+  const DL_NEAR_POLE_COS = 0.05;
+  // How close a label may come to the canvas edge before its reach gets
+  // pulled back in.
+  const DL_EDGE_BUFFER = 10;
+  // Gap between the elbow point and the text.
+  const DL_TEXT_GAP = 16;
+  // Minimum gap a label's near edge must keep from the ring's own vertical
+  // centerline - the hard stop that keeps a long label from drifting across
+  // the ring into the opposite side's territory.
+  const DL_CENTER_GAP = 12;
+  // Floor and ceiling for the reserved label band on each side of the ring,
+  // sized from the actual longest label (see computeOutsideLabelPadding).
+  const DL_MIN_SIDE_PADDING = 70;
+  const DL_MAX_SIDE_PADDING_FRACTION = 0.42;
+  // Even in the tightest possible squeeze, a truncated label keeps at
+  // least this much width so "…: <count>" always has room to draw.
+  const DL_MIN_LABEL_WIDTH = 30;
+  // Floor for the elbow's distance beyond the ring (as an addition to
+  // outerRadius) - the elbow radius shrinks toward this, from the default
+  // DL_ELBOW_OFFSET, whenever needed to keep the bend at the elbow no
+  // sharper than a right angle (see the final draw loop). Kept above the
+  // ring-departure offset (4) so the first leg never collapses to zero
+  // length.
+  const DL_MIN_ELBOW_OFFSET = 8;
+
+  // Shrinks "<category>: <count>" to fit maxWidth by trimming the category
+  // from the end and appending an ellipsis, keeping ": <count>" intact
+  // since the count is the number the label exists to show. Falls back to
+  // "…: <count>" if even that overflows - callers clamp position
+  // afterwards, so a few px of residual overflow there is never visible as
+  // an overlap.
+  function fitLabelToWidth(category, countText, maxWidth, measure) {
+    const full = `${category}: ${countText}`;
+    if (measure(full) <= maxWidth) return { text: full, width: measure(full) };
+    const suffix = `: ${countText}`;
+    let cat = category;
+    while (cat.length > 1) {
+      cat = cat.slice(0, -1);
+      const candidate = `${cat}…${suffix}`;
+      const w = measure(candidate);
+      if (w <= maxWidth) return { text: candidate, width: w };
+    }
+    const countOnly = `…${suffix}`;
+    return { text: countOnly, width: measure(countOnly) };
+  }
+
+  // Assigns each slice to a left/right label side using the same angle
+  // logic as outsideDoughnutLabelsPlugin (same-side clustering threshold),
+  // then returns the widest measured label on each side - used to size the
+  // chart's reserved label padding before it's created/updated.
+  function computeSideMaxWidths(ctx, labels, data) {
+    const total = data.reduce((a, b) => a + b, 0);
+    let leftMax = 0;
+    let rightMax = 0;
+    let lastMidAngle = null;
+    let lastIsRight = null;
+    let angle = -Math.PI / 2;
+    labels.forEach((label, i) => {
+      const value = data[i];
+      const frac = total ? value / total : 0;
+      const startAngle = angle;
+      const endAngle = angle + frac * Math.PI * 2;
+      angle = endAngle;
+      if (!value) return;
+
+      const midAngle = (startAngle + endAngle) / 2;
+      let isRight = Math.cos(midAngle) >= 0;
+      if (lastMidAngle !== null && Math.abs(midAngle - lastMidAngle) < DL_SAME_SIDE_ANGLE_THRESHOLD) {
+        isRight = lastIsRight;
+      }
+      lastMidAngle = midAngle;
+      lastIsRight = isRight;
+
+      const text = `${label}: ${value.toLocaleString()}`;
+      const width = measureLabelWidth(ctx, text, 11);
+      if (isRight) rightMax = Math.max(rightMax, width);
+      else leftMax = Math.max(leftMax, width);
+    });
+    return { left: leftMax, right: rightMax };
+  }
+
+  // Reserved padding band (each side) for the outside donut labels, sized
+  // from the actual longest label rather than a fixed guess - clamped so it
+  // never shrinks the ring away entirely or eats the whole container on a
+  // narrow screen. This is a companion to the hard draw-time clamp in
+  // outsideDoughnutLabelsPlugin, which stays correct even if this estimate
+  // (computed before layout, against the container's current width) turns
+  // out to be a little off.
+  function computeOutsideLabelPadding(ctx, labels, data, containerWidth) {
+    const { left, right } = computeSideMaxWidths(ctx, labels, data);
+    const desired = Math.max(left, right) + DL_ELBOW_OFFSET + DL_TEXT_GAP + DL_EDGE_BUFFER;
+    return Math.min(Math.max(desired, DL_MIN_SIDE_PADDING), containerWidth * DL_MAX_SIDE_PADDING_FRACTION);
+  }
+
   // Renders labels for the "Extent of Damage" doughnut outside the ring, each
   // with a short leader line back to its slice, so the ring doesn't need a
   // value axis or an on-chart legend to be readable.
@@ -783,26 +900,6 @@
       ctx.font = '11px -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif';
       ctx.textBaseline = "middle";
 
-      // Minimum vertical gap enforced between two label lines on the same
-      // side of the ring, so neighbouring slices with similar angles never
-      // draw text on top of each other. Generous on purpose - this is the
-      // main defence against a cluttered-looking label stack.
-      const LINE_HEIGHT = 22;
-      // Slices whose mid-angles are this close together (e.g. several tiny
-      // slivers bunched at the seam where the ring wraps back to its
-      // start) keep whichever side the previous one landed on, rather than
-      // being independently split left/right by a hair's-width angle
-      // difference - that's what previously sent their leader lines
-      // criss-crossing each other and the ring itself.
-      const SAME_SIDE_ANGLE_THRESHOLD = 8 * (Math.PI / 180);
-      // How far outside the ring a label's line bends toward its text.
-      const ELBOW_OFFSET = 28;
-      // A slice whose mid-angle sits this close to due-up/due-down has
-      // barely any geometric lean toward either side, so it's free to
-      // settle on whichever side is less crowded rather than being stuck
-      // with whatever the cosine's sign happens to be.
-      const NEAR_POLE_COS = 0.05;
-
       const leftEntries = [];
       const rightEntries = [];
       let lastMidAngle = null;
@@ -816,21 +913,22 @@
           arc.getProps(["x", "y", "startAngle", "endAngle", "outerRadius"], true);
         const midAngle = (startAngle + endAngle) / 2;
         let isRight = Math.cos(midAngle) >= 0;
-        if (lastMidAngle !== null && Math.abs(midAngle - lastMidAngle) < SAME_SIDE_ANGLE_THRESHOLD) {
+        if (lastMidAngle !== null && Math.abs(midAngle - lastMidAngle) < DL_SAME_SIDE_ANGLE_THRESHOLD) {
           isRight = lastIsRight;
         }
         lastMidAngle = midAngle;
         lastIsRight = isRight;
 
-        const text = `${chart.data.labels[i]}: ${value.toLocaleString()}`;
-        const textWidth = measureLabelWidth(ctx, text, 11);
+        const category = chart.data.labels[i];
+        const countText = value.toLocaleString();
         // The ring departure point always stays at the slice's own true
         // angle - nudging it toward a neighbour (as an earlier version
         // did, to fan out tightly clustered slivers) could flip which
         // side of the ring it geometrically sits on, sending its leader
         // line back across the chart to reach a label anchored on the
-        // opposite side.
-        const entry = { x, y, outerRadius, midAngle, text, textWidth, isRight };
+        // opposite side. The final text is decided at draw time (it may
+        // get truncated to fit), so only the raw parts are stored here.
+        const entry = { x, y, outerRadius, midAngle, category, countText, isRight };
         (isRight ? rightEntries : leftEntries).push(entry);
       });
 
@@ -844,7 +942,7 @@
       // it's the one that should give way.
       function rebalanceNearPole(from, to) {
         const candidates = from
-          .filter(e => Math.abs(Math.cos(e.midAngle)) < NEAR_POLE_COS)
+          .filter(e => Math.abs(Math.cos(e.midAngle)) < DL_NEAR_POLE_COS)
           .sort((a, b) => Math.abs(Math.cos(a.midAngle)) - Math.abs(Math.cos(b.midAngle)));
         for (const e of candidates) {
           if (to.length < from.length - 1) {
@@ -865,8 +963,8 @@
           const cos = Math.cos(e.midAngle);
           const sin = Math.sin(e.midAngle);
           e.lineStart = { x: e.x + cos * (e.outerRadius + 4), y: e.y + sin * (e.outerRadius + 4) };
-          e.elbowX = e.x + cos * (e.outerRadius + ELBOW_OFFSET);
-          e.elbowY = e.y + sin * (e.outerRadius + ELBOW_OFFSET);
+          e.elbowX = e.x + cos * (e.outerRadius + DL_ELBOW_OFFSET);
+          e.elbowY = e.y + sin * (e.outerRadius + DL_ELBOW_OFFSET);
           e.textY = e.elbowY;
         });
       }
@@ -891,16 +989,16 @@
         list.sort((a, b) => a.textY - b.textY);
 
         for (let i = 1; i < list.length; i++) {
-          if (list[i].textY - list[i - 1].textY < LINE_HEIGHT) {
-            list[i].textY = list[i - 1].textY + LINE_HEIGHT;
+          if (list[i].textY - list[i - 1].textY < DL_LINE_HEIGHT) {
+            list[i].textY = list[i - 1].textY + DL_LINE_HEIGHT;
           }
         }
 
         if (list.length && list[list.length - 1].textY > maxY) {
           list[list.length - 1].textY = maxY;
           for (let i = list.length - 2; i >= 0; i--) {
-            if (list[i + 1].textY - list[i].textY < LINE_HEIGHT) {
-              list[i].textY = list[i + 1].textY - LINE_HEIGHT;
+            if (list[i + 1].textY - list[i].textY < DL_LINE_HEIGHT) {
+              list[i].textY = list[i + 1].textY - DL_LINE_HEIGHT;
             }
           }
         }
@@ -908,8 +1006,8 @@
         if (list.length && list[0].textY < minY) {
           list[0].textY = minY;
           for (let i = 1; i < list.length; i++) {
-            if (list[i].textY - list[i - 1].textY < LINE_HEIGHT) {
-              list[i].textY = list[i - 1].textY + LINE_HEIGHT;
+            if (list[i].textY - list[i - 1].textY < DL_LINE_HEIGHT) {
+              list[i].textY = list[i - 1].textY + DL_LINE_HEIGHT;
             }
           }
         }
@@ -927,45 +1025,84 @@
       // the canvas edge - clamping to chartArea would push labels back onto
       // the ring instead of into that padding band. A 10px buffer keeps
       // labels from ever touching the canvas edge itself.
-      const EDGE_BUFFER = 10;
-      const minY = EDGE_BUFFER;
-      const maxY = chart.height - EDGE_BUFFER;
+      const minY = DL_EDGE_BUFFER;
+      const maxY = chart.height - DL_EDGE_BUFFER;
       declutter(leftLabels, minY, maxY);
       declutter(rightLabels, minY, maxY);
 
-      // Gap between the elbow point and the text, and how close text may
-      // come to the canvas edge before its reach gets pulled back in -
-      // this is what stops a label (especially a near-vertical sliver
-      // whose elbow sits close to the ring's own left/right edge) from
-      // running its text off the side of the canvas.
-      const TEXT_GAP = 16;
+      // The ring's own vertical centerline - a label's near edge is never
+      // allowed to cross past this (with DL_CENTER_GAP of clearance), no
+      // matter how long its text is or how little padding was reserved for
+      // it. This is what actually guarantees no overlap with the ring or
+      // the opposite side's labels; the padding reserved in
+      // renderDoughnutChart is only a best-effort estimate to keep
+      // truncation rare, not the thing that makes this correct.
+      const centerX = (chartArea.left + chartArea.right) / 2;
 
-      [...leftLabels, ...rightLabels].forEach(({ lineStart, elbowX, elbowY, textY, text, textWidth, isRight }) => {
+      [...leftLabels, ...rightLabels].forEach(({ lineStart, elbowX, elbowY, textY, category, countText, isRight, midAngle, x, y, outerRadius }) => {
+        // Available width runs from the elbow's side of the centerline out
+        // to the canvas edge - never past either bound, regardless of how
+        // wide the raw label text would be.
+        const availableWidth = isRight
+          ? (chart.width - DL_EDGE_BUFFER) - (centerX + DL_CENTER_GAP)
+          : (centerX - DL_CENTER_GAP) - DL_EDGE_BUFFER;
+        const fitted = fitLabelToWidth(
+          category, countText, Math.max(availableWidth, DL_MIN_LABEL_WIDTH),
+          t => measureLabelWidth(ctx, t, 11)
+        );
+
         // Text normally reaches TEXT_GAP past the elbow and extends away
         // from the ring by its own width. If that would run past the
-        // canvas edge, pull the near edge back in just enough to fit.
+        // canvas edge OR back across the ring's centerline, pull the near
+        // edge back in just enough to fit within both bounds.
         const nearEdge = isRight
-          ? Math.min(elbowX + TEXT_GAP, chart.width - EDGE_BUFFER - textWidth)
-          : Math.max(elbowX - TEXT_GAP, EDGE_BUFFER + textWidth);
+          ? Math.min(Math.max(elbowX + DL_TEXT_GAP, centerX + DL_CENTER_GAP), chart.width - DL_EDGE_BUFFER - fitted.width)
+          : Math.max(Math.min(elbowX - DL_TEXT_GAP, centerX - DL_CENTER_GAP), DL_EDGE_BUFFER + fitted.width);
         const textX = nearEdge;
+        // The point the leader line's second leg actually ends at - a few
+        // px short of the text itself, for a small visual gap.
+        const lineEndX = nearEdge + (isRight ? -4 : 4);
+        const lineEndY = textY;
+
+        // Re-anchors the elbow's radius (never past DL_ELBOW_OFFSET, never
+        // under DL_MIN_ELBOW_OFFSET) so the bend it forms with the FINAL
+        // line endpoint is never sharper than a right angle. A label whose
+        // text ended up on the geometric "wrong" side of its own departure
+        // direction - a near-pole slice rebalanced to relieve crowding, or
+        // one pushed far by decluttering - would otherwise hook back on
+        // itself. Derivation: the elbow radius R (from centre, along the
+        // slice's own angle) keeps the bend >= 90 degrees exactly while
+        // R <= cos(angle)*(lineEndX-x) + sin(angle)*(lineEndY-y), i.e. the
+        // line's end must sit at or beyond the elbow's own projection onto
+        // that angle - using the actual drawn endpoint here (not the text
+        // anchor a few px further out) keeps the bound exact rather than
+        // off by that visual gap.
+        const cos = Math.cos(midAngle);
+        const sin = Math.sin(midAngle);
+        const maxElbowRadius = cos * (lineEndX - x) + sin * (lineEndY - y);
+        const elbowRadius = Math.max(
+          outerRadius + DL_MIN_ELBOW_OFFSET,
+          Math.min(outerRadius + DL_ELBOW_OFFSET, maxElbowRadius)
+        );
+        const finalElbowX = x + cos * elbowRadius;
+        const finalElbowY = y + sin * elbowRadius;
 
         ctx.strokeStyle = "#999";
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(lineStart.x, lineStart.y);
         // First leg leaves the ring at the slice's own (possibly spread)
-        // angle; second leg runs to the text. When declutter/the edge
-        // clamp didn't need to move this label, elbowY === textY and
-        // elbowX is within TEXT_GAP of nearEdge, so the second leg is a
-        // short, barely-there continuation - no visible kink. Only labels
-        // that actually needed repositioning show a real bend.
-        ctx.lineTo(elbowX, elbowY);
-        ctx.lineTo(nearEdge + (isRight ? -4 : 4), textY);
+        // angle; second leg runs to the text. When nothing needed to move
+        // this label, the second leg is a short, barely-there continuation
+        // - no visible kink. Only labels that actually needed
+        // repositioning show a real bend, and that bend is never acute.
+        ctx.lineTo(finalElbowX, finalElbowY);
+        ctx.lineTo(lineEndX, lineEndY);
         ctx.stroke();
 
         ctx.fillStyle = "#333";
         ctx.textAlign = isRight ? "left" : "right";
-        ctx.fillText(text, textX, textY);
+        ctx.fillText(fitted.text, textX, textY);
       });
 
       ctx.restore();
@@ -1035,11 +1172,17 @@
     if (!canvas) return existingInstance;
 
     const borderWidth = labels.map(l => (selectedValue && l === selectedValue) ? 4 : 0);
+    const containerWidth = (canvas.parentElement && canvas.parentElement.clientWidth) || canvas.clientWidth || 600;
+    const sidePadding = computeOutsideLabelPadding(canvas.getContext("2d"), labels, data, containerWidth);
 
     if (existingInstance) {
       existingInstance.data.labels = labels;
       existingInstance.data.datasets[0].data = data;
       existingInstance.data.datasets[0].borderWidth = borderWidth;
+      // Re-sized on every update (not just at creation) since a filter
+      // change can swap in longer/shorter category names or counts.
+      existingInstance.options.layout.padding.left = sidePadding;
+      existingInstance.options.layout.padding.right = sidePadding;
       existingInstance.update();
       return existingInstance;
     }
@@ -1054,12 +1197,14 @@
       options: {
         responsive: true,
         maintainAspectRatio: false,
-        // Extra room on every side for the outside labels + leader lines
-        // drawn by outsideDoughnutLabelsPlugin. Widened further than the
-        // labels alone strictly need, since staggering same-side leader
-        // lines' elbow radius (to fan out clustered slivers) pushes the
-        // outermost ones further out than a single fixed radius would.
-        layout: { padding: { top: 48, bottom: 48, left: 100, right: 100 } },
+        // Extra room on left/right for the outside labels + leader lines
+        // drawn by outsideDoughnutLabelsPlugin, sized from the actual
+        // longest label on each side (computeOutsideLabelPadding) rather
+        // than a fixed guess - a short label set gets a narrower band and
+        // a bigger ring; a long one gets more room reserved up front. The
+        // plugin's own draw-time clamp is still what guarantees no overlap
+        // if this estimate turns out to be a little off.
+        layout: { padding: { top: 48, bottom: 48, left: sidePadding, right: sidePadding } },
         // The legend is dropped in favour of the outside labels, which
         // already carry the category name and value.
         plugins: { legend: { display: false }, datalabels: { display: false } },
