@@ -330,7 +330,7 @@
     // Fixed vertical inset reserved for the ring (unaffected by this fix -
     // only the horizontal/left-right label budget is sized dynamically
     // below).
-    const VERTICAL_INSET = 70;
+    const VERTICAL_INSET = 80;
 
     // Minimum vertical gap enforced between two label lines on the same
     // side of the ring, so neighbouring slices with similar angles never
@@ -345,7 +345,7 @@
     // other and the ring itself.
     const SAME_SIDE_ANGLE_THRESHOLD = 8 * (Math.PI / 180);
     // How far outside the ring a label's line bends toward its text.
-    const ELBOW_OFFSET = 28;
+    const ELBOW_OFFSET = 30;
     // A slice whose mid-angle sits this close to due-up/due-down has
     // barely any geometric lean toward either side, so it's free to settle
     // on whichever side is less crowded rather than being stuck with
