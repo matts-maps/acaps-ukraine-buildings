@@ -228,7 +228,7 @@ button:active {
 
 .chart-wrap {
   position: relative;
-  height: 300px;
+  height: 320px;
   width: 100%;
 }
 
@@ -674,7 +674,7 @@ main#map-wrapper-card {
   }
 
   .chart-wrap {
-    height: 250px;
+    height: 260px;
   }
 
   .stat-box {

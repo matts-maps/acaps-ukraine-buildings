@@ -568,12 +568,13 @@
     return INFRA_LABEL_MAP[trimmed] || trimmed;
   };
 
-  // Maps a raw extent_of_damage CSV value to its display label. Extracted
-  // out of the two pages' identical `r.extent_of_damage?.trim() || "Unspecified"`
-  // expression so it's defined once.
+  // Maps a raw extent_of_damage CSV value to its display label. Blank values
+  // and the literal "Unknown" value are both surfaced as "Unknown" (one
+  // merged category) — extracted out of the two pages' identical expression
+  // so it's defined once.
   MapCore.normalizeExtentLabel = function (raw) {
     const trimmed = raw ? raw.trim() : "";
-    return trimmed || "Unspecified";
+    return trimmed || "Unknown";
   };
 
   // Builds the "Building type"/"Damage level" <select> options from
@@ -794,13 +795,13 @@
       // difference - that's what previously sent their leader lines
       // criss-crossing each other and the ring itself.
       const SAME_SIDE_ANGLE_THRESHOLD = 8 * (Math.PI / 180);
-      // Each subsequent label stacked on the same side reaches out this
-      // much further before turning toward its text than the previous one
-      // - fanning the elbows out instead of bunching them at a single
-      // point right off the ring, which is what made tightly-clustered
-      // slivers' leader lines look tangled even when they didn't literally
-      // cross.
-      const BEND_RADIUS_STEP = 10;
+      // How far outside the ring a label's line bends toward its text.
+      const ELBOW_OFFSET = 28;
+      // A slice whose mid-angle sits this close to due-up/due-down has
+      // barely any geometric lean toward either side, so it's free to
+      // settle on whichever side is less crowded rather than being stuck
+      // with whatever the cosine's sign happens to be.
+      const NEAR_POLE_COS = 0.05;
 
       const leftEntries = [];
       const rightEntries = [];
@@ -814,9 +815,7 @@
         const { x, y, startAngle, endAngle, outerRadius } =
           arc.getProps(["x", "y", "startAngle", "endAngle", "outerRadius"], true);
         const midAngle = (startAngle + endAngle) / 2;
-        const cos = Math.cos(midAngle);
-        const sin = Math.sin(midAngle);
-        let isRight = cos >= 0;
+        let isRight = Math.cos(midAngle) >= 0;
         if (lastMidAngle !== null && Math.abs(midAngle - lastMidAngle) < SAME_SIDE_ANGLE_THRESHOLD) {
           isRight = lastIsRight;
         }
@@ -824,32 +823,71 @@
         lastIsRight = isRight;
 
         const text = `${chart.data.labels[i]}: ${value.toLocaleString()}`;
-        const entry = { x, y, cos, sin, outerRadius, text };
+        const textWidth = measureLabelWidth(ctx, text, 11);
+        // The ring departure point always stays at the slice's own true
+        // angle - nudging it toward a neighbour (as an earlier version
+        // did, to fan out tightly clustered slivers) could flip which
+        // side of the ring it geometrically sits on, sending its leader
+        // line back across the chart to reach a label anchored on the
+        // opposite side.
+        const entry = { x, y, outerRadius, midAngle, text, textWidth, isRight };
         (isRight ? rightEntries : leftEntries).push(entry);
       });
 
-      // Builds each side's label geometry after grouping, so the elbow
-      // (bend) radius can be staggered by position within the stack -
-      // fanning same-side leader lines out from the ring instead of
-      // routing them all to the same distance before turning.
-      function buildSideLabels(entries, isRight) {
-        return entries.map((e, idx) => {
-          const bendRadius = e.outerRadius + 22 + idx * BEND_RADIUS_STEP;
-          const lineStart = { x: e.x + e.cos * (e.outerRadius + 4), y: e.y + e.sin * (e.outerRadius + 4) };
-          const bend = { x: e.x + e.cos * bendRadius, y: e.y + e.sin * bendRadius };
-          const textX = bend.x + (isRight ? 16 : -16);
-          return { lineStart, bend, textX, textY: bend.y, text: e.text, isRight };
+      // A near-pole entry can just as validly anchor its label on the
+      // other side; move it there when that side has meaningfully fewer
+      // labels stacked already, since that's what actually relieves
+      // crowding rather than an angle nudge that only shifts where the
+      // line leaves the ring by a pixel or two. Where several entries
+      // qualify, the one closest to true up/down (smallest |cos|) moves
+      // first - it has the least geometric preference for either side, so
+      // it's the one that should give way.
+      function rebalanceNearPole(from, to) {
+        const candidates = from
+          .filter(e => Math.abs(Math.cos(e.midAngle)) < NEAR_POLE_COS)
+          .sort((a, b) => Math.abs(Math.cos(a.midAngle)) - Math.abs(Math.cos(b.midAngle)));
+        for (const e of candidates) {
+          if (to.length < from.length - 1) {
+            from.splice(from.indexOf(e), 1);
+            e.isRight = !e.isRight;
+            to.push(e);
+          }
+        }
+      }
+      rebalanceNearPole(leftEntries, rightEntries);
+      rebalanceNearPole(rightEntries, leftEntries);
+
+      // Derives each label's line-start (on the ring) and elbow point (a
+      // short way further out) from its true departure angle. The elbow's
+      // height doubles as the label's natural, pre-declutter textY.
+      function computeGeometry(entries) {
+        entries.forEach(e => {
+          const cos = Math.cos(e.midAngle);
+          const sin = Math.sin(e.midAngle);
+          e.lineStart = { x: e.x + cos * (e.outerRadius + 4), y: e.y + sin * (e.outerRadius + 4) };
+          e.elbowX = e.x + cos * (e.outerRadius + ELBOW_OFFSET);
+          e.elbowY = e.y + sin * (e.outerRadius + ELBOW_OFFSET);
+          e.textY = e.elbowY;
         });
       }
+      computeGeometry(leftEntries);
+      computeGeometry(rightEntries);
 
-      const leftLabels = buildSideLabels(leftEntries, false);
-      const rightLabels = buildSideLabels(rightEntries, true);
+      const leftLabels = leftEntries;
+      const rightLabels = rightEntries;
 
       // Within each side, walk top-to-bottom and push any label that's too
       // close to the one above it further down. If that runs the stack past
       // the bottom of the chart, walk back up compressing gaps instead, so
-      // the whole stack stays on screen.
-      function declutter(list) {
+      // the whole stack stays on screen. Mirrored at the top edge too - a
+      // cluster of small slivers near 12 o'clock (e.g. Destroyed/Unknown/
+      // Unspecified against a dominant Partially damaged slice) otherwise
+      // has nothing pulling its topmost label back into frame, which is
+      // what let it get cut off above the chart. If the column still can't
+      // fit even after both clamps, give up on strict LINE_HEIGHT spacing
+      // and distribute it evenly across the available range instead of
+      // letting anything clip or overlap.
+      function declutter(list, minY, maxY) {
         list.sort((a, b) => a.textY - b.textY);
 
         for (let i = 1; i < list.length; i++) {
@@ -858,7 +896,6 @@
           }
         }
 
-        const maxY = chartArea.bottom - 4;
         if (list.length && list[list.length - 1].textY > maxY) {
           list[list.length - 1].textY = maxY;
           for (let i = list.length - 2; i >= 0; i--) {
@@ -867,21 +904,63 @@
             }
           }
         }
+
+        if (list.length && list[0].textY < minY) {
+          list[0].textY = minY;
+          for (let i = 1; i < list.length; i++) {
+            if (list[i].textY - list[i - 1].textY < LINE_HEIGHT) {
+              list[i].textY = list[i - 1].textY + LINE_HEIGHT;
+            }
+          }
+        }
+
+        if (list.length > 1 && list[list.length - 1].textY > maxY) {
+          const step = (maxY - minY) / (list.length - 1);
+          list.forEach((entry, i) => { entry.textY = minY + i * step; });
+        }
       }
 
-      declutter(leftLabels);
-      declutter(rightLabels);
+      // Bounds are canvas-relative, not chartArea-relative: outerRadius
+      // fills chartArea edge-to-edge in its limiting dimension, so the ring
+      // itself already touches chartArea.top/bottom. The actual free space
+      // for stacked labels is the layout.padding band between chartArea and
+      // the canvas edge - clamping to chartArea would push labels back onto
+      // the ring instead of into that padding band. A 10px buffer keeps
+      // labels from ever touching the canvas edge itself.
+      const EDGE_BUFFER = 10;
+      const minY = EDGE_BUFFER;
+      const maxY = chart.height - EDGE_BUFFER;
+      declutter(leftLabels, minY, maxY);
+      declutter(rightLabels, minY, maxY);
 
-      [...leftLabels, ...rightLabels].forEach(({ lineStart, bend, textX, textY, text, isRight }) => {
+      // Gap between the elbow point and the text, and how close text may
+      // come to the canvas edge before its reach gets pulled back in -
+      // this is what stops a label (especially a near-vertical sliver
+      // whose elbow sits close to the ring's own left/right edge) from
+      // running its text off the side of the canvas.
+      const TEXT_GAP = 16;
+
+      [...leftLabels, ...rightLabels].forEach(({ lineStart, elbowX, elbowY, textY, text, textWidth, isRight }) => {
+        // Text normally reaches TEXT_GAP past the elbow and extends away
+        // from the ring by its own width. If that would run past the
+        // canvas edge, pull the near edge back in just enough to fit.
+        const nearEdge = isRight
+          ? Math.min(elbowX + TEXT_GAP, chart.width - EDGE_BUFFER - textWidth)
+          : Math.max(elbowX - TEXT_GAP, EDGE_BUFFER + textWidth);
+        const textX = nearEdge;
+
         ctx.strokeStyle = "#999";
         ctx.lineWidth = 1;
         ctx.beginPath();
         ctx.moveTo(lineStart.x, lineStart.y);
-        // Elbow at the slice's natural angle first, then a vertical run to
-        // the label's (possibly decluttered) final height.
-        ctx.lineTo(bend.x, bend.y);
-        ctx.lineTo(bend.x, textY);
-        ctx.lineTo(textX + (isRight ? -4 : 4), textY);
+        // First leg leaves the ring at the slice's own (possibly spread)
+        // angle; second leg runs to the text. When declutter/the edge
+        // clamp didn't need to move this label, elbowY === textY and
+        // elbowX is within TEXT_GAP of nearEdge, so the second leg is a
+        // short, barely-there continuation - no visible kink. Only labels
+        // that actually needed repositioning show a real bend.
+        ctx.lineTo(elbowX, elbowY);
+        ctx.lineTo(nearEdge + (isRight ? -4 : 4), textY);
         ctx.stroke();
 
         ctx.fillStyle = "#333";
@@ -980,7 +1059,7 @@
         // labels alone strictly need, since staggering same-side leader
         // lines' elbow radius (to fan out clustered slivers) pushes the
         // outermost ones further out than a single fixed radius would.
-        layout: { padding: { top: 40, bottom: 40, left: 100, right: 100 } },
+        layout: { padding: { top: 48, bottom: 48, left: 100, right: 100 } },
         // The legend is dropped in favour of the outside labels, which
         // already carry the category name and value.
         plugins: { legend: { display: false }, datalabels: { display: false } },

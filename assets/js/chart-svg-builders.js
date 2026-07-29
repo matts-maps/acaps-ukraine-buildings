@@ -304,7 +304,7 @@
 
     const cx = width / 2;
     const cy = height / 2;
-    const outerR = Math.max(30, Math.min(width, height) / 2 - 62);
+    const outerR = Math.max(30, Math.min(width, height) / 2 - 70);
     const innerR = outerR * 0.55;
 
     // Minimum vertical gap enforced between two label lines on the same
@@ -319,12 +319,13 @@
     // that's what previously sent their leader lines criss-crossing each
     // other and the ring itself.
     const SAME_SIDE_ANGLE_THRESHOLD = 8 * (Math.PI / 180);
-    // Each subsequent label stacked on the same side reaches out this much
-    // further before turning toward its text than the previous one -
-    // fanning the elbows out instead of bunching them at a single point
-    // right off the ring, which is what made tightly-clustered slivers'
-    // leader lines look tangled even when they didn't literally cross.
-    const BEND_RADIUS_STEP = 10;
+    // How far outside the ring a label's line bends toward its text.
+    const ELBOW_OFFSET = 28;
+    // A slice whose mid-angle sits this close to due-up/due-down has
+    // barely any geometric lean toward either side, so it's free to settle
+    // on whichever side is less crowded rather than being stuck with
+    // whatever the cosine's sign happens to be.
+    const NEAR_POLE_COS = 0.05;
 
     const leftEntries = [];
     const rightEntries = [];
@@ -354,38 +355,72 @@
       lastIsRight = isRight;
 
       const text = `${label}: ${value.toLocaleString()}`;
-      (isRight ? rightEntries : leftEntries).push({ mid, text });
+      const textWidth = measureTextWidth(text, 8);
+      // The ring departure point always stays at the slice's own true
+      // angle - nudging it toward a neighbour (as an earlier version did,
+      // to fan out tightly clustered slivers) could flip which side of the
+      // ring it geometrically sits on, sending its leader line back across
+      // the chart to reach a label anchored on the opposite side.
+      (isRight ? rightEntries : leftEntries).push({ mid, text, textWidth, isRight });
     });
 
-    // Builds each side's label geometry after grouping, so the elbow
-    // (bend) radius can be staggered by position within the stack -
-    // fanning same-side leader lines out from the ring instead of routing
-    // them all to the same distance before turning.
-    function buildSideLabels(entries, isRight) {
-      return entries.map((e, idx) => {
-        const bendRadius = outerR + 22 + idx * BEND_RADIUS_STEP;
-        const lineStart = polarPoint(cx, cy, outerR + 4, e.mid);
-        const bend = polarPoint(cx, cy, bendRadius, e.mid);
-        const textX = bend.x + (isRight ? 16 : -16);
-        return { lineStart, bend, textX, textY: bend.y, text: e.text, isRight };
+    // A near-pole entry can just as validly anchor its label on the other
+    // side; move it there when that side has meaningfully fewer labels
+    // stacked already, since that's what actually relieves crowding rather
+    // than an angle nudge that only shifts where the line leaves the ring
+    // by a pixel or two. Where several entries qualify, the one closest to
+    // true up/down (smallest |cos|) moves first - it has the least
+    // geometric preference for either side, so it's the one that should
+    // give way.
+    function rebalanceNearPole(from, to) {
+      const candidates = from
+        .filter(e => Math.abs(Math.cos(e.mid)) < NEAR_POLE_COS)
+        .sort((a, b) => Math.abs(Math.cos(a.mid)) - Math.abs(Math.cos(b.mid)));
+      for (const e of candidates) {
+        if (to.length < from.length - 1) {
+          from.splice(from.indexOf(e), 1);
+          e.isRight = !e.isRight;
+          to.push(e);
+        }
+      }
+    }
+    rebalanceNearPole(leftEntries, rightEntries);
+    rebalanceNearPole(rightEntries, leftEntries);
+
+    // Derives each label's line-start (on the ring) and elbow point (a
+    // short way further out) from its true departure angle.
+    // The elbow's height doubles as the label's natural, pre-declutter
+    // textY.
+    function computeGeometry(entries) {
+      entries.forEach(e => {
+        e.lineStart = polarPoint(cx, cy, outerR + 4, e.mid);
+        const elbow = polarPoint(cx, cy, outerR + ELBOW_OFFSET, e.mid);
+        e.elbowX = elbow.x;
+        e.elbowY = elbow.y;
+        e.textY = elbow.y;
       });
     }
+    computeGeometry(leftEntries);
+    computeGeometry(rightEntries);
 
-    const leftLabels = buildSideLabels(leftEntries, false);
-    const rightLabels = buildSideLabels(rightEntries, true);
+    const leftLabels = leftEntries;
+    const rightLabels = rightEntries;
 
     // Within each side, walk top-to-bottom pushing any label too close to
     // the one above it further down; if that runs the stack past the
     // bottom of the chart, compress gaps upward from the bottom instead so
-    // the whole stack stays on screen.
-    function declutter(list) {
+    // the whole stack stays on screen. Mirrored at the top edge too - a
+    // cluster of small slivers near 12 o'clock otherwise has nothing
+    // pulling its topmost label back into frame. If the column still can't
+    // fit after both clamps, distribute it evenly across the available
+    // range instead of letting anything clip or overlap.
+    function declutter(list, minY, maxY) {
       list.sort((a, b) => a.textY - b.textY);
       for (let i = 1; i < list.length; i++) {
         if (list[i].textY - list[i - 1].textY < LINE_HEIGHT) {
           list[i].textY = list[i - 1].textY + LINE_HEIGHT;
         }
       }
-      const maxY = height - 4;
       if (list.length && list[list.length - 1].textY > maxY) {
         list[list.length - 1].textY = maxY;
         for (let i = list.length - 2; i >= 0; i--) {
@@ -394,16 +429,51 @@
           }
         }
       }
+      if (list.length && list[0].textY < minY) {
+        list[0].textY = minY;
+        for (let i = 1; i < list.length; i++) {
+          if (list[i].textY - list[i - 1].textY < LINE_HEIGHT) {
+            list[i].textY = list[i - 1].textY + LINE_HEIGHT;
+          }
+        }
+      }
+      if (list.length > 1 && list[list.length - 1].textY > maxY) {
+        const step = (maxY - minY) / (list.length - 1);
+        list.forEach((entry, i) => { entry.textY = minY + i * step; });
+      }
     }
 
-    declutter(leftLabels);
-    declutter(rightLabels);
+    // A 10px buffer keeps labels from ever touching the SVG edge itself.
+    const EDGE_BUFFER = 10;
+    const minY = EDGE_BUFFER;
+    const maxY = height - EDGE_BUFFER;
+    declutter(leftLabels, minY, maxY);
+    declutter(rightLabels, minY, maxY);
 
-    [...leftLabels, ...rightLabels].forEach(({ lineStart, bend, textX, textY, text, isRight }) => {
+    // Gap between the elbow point and the text, and how close text may
+    // come to the SVG edge before its reach gets pulled back in - this is
+    // what stops a label (especially a near-vertical sliver whose elbow
+    // sits close to the ring's own left/right edge) from running its text
+    // off the side of the exported image.
+    const TEXT_GAP = 16;
+
+    [...leftLabels, ...rightLabels].forEach(({ lineStart, elbowX, elbowY, textY, text, textWidth, isRight }) => {
+      // Text normally reaches TEXT_GAP past the elbow and extends away
+      // from the ring by its own width. If that would run past the SVG
+      // edge, pull the near edge back in just enough to fit.
+      const nearEdge = isRight
+        ? Math.min(elbowX + TEXT_GAP, width - EDGE_BUFFER - textWidth)
+        : Math.max(elbowX - TEXT_GAP, EDGE_BUFFER + textWidth);
+      const textX = nearEdge;
+
       svg.appendChild(svgEl("polyline", {
-        // Elbow at the slice's natural angle first, then a vertical run to
-        // the label's (possibly decluttered) final height.
-        points: `${lineStart.x},${lineStart.y} ${bend.x},${bend.y} ${bend.x},${textY} ${textX + (isRight ? -4 : 4)},${textY}`,
+        // First leg leaves the ring at the slice's own (possibly spread)
+        // angle; second leg runs to the text. When declutter/the edge
+        // clamp didn't need to move this label, elbowY === textY and
+        // elbowX is within TEXT_GAP of nearEdge, so the second leg is a
+        // short, barely-there continuation - no visible kink. Only labels
+        // that actually needed repositioning show a real bend.
+        points: `${lineStart.x},${lineStart.y} ${elbowX},${elbowY} ${nearEdge + (isRight ? -4 : 4)},${textY}`,
         fill: "none", stroke: "#999", "stroke-width": "1"
       }));
 

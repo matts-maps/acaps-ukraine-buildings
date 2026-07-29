@@ -25,7 +25,7 @@
     <div class="container">
 
   <section class="hero-panel">
-    <h1>National Building Damage Analytics</h1>
+    <h1>Ukraine Damaged Buildings Dashboard</h1>
     <p>
       Welcome to the Ukraine damaged buildings monitoring dashboard. This platform provides historical time-series analytics regarding recorded structural damage incidents across Ukraine. The tool enables structural comparisons across standardized temporal cycles. Adjust the aggregation parameters below to query, filter, and refresh the localized data visualisations.
     </p>
@@ -39,36 +39,45 @@
 
   <div id="controls">
     <div class="control-row">
-      <div class="control-group">
-        <label for="period-type">Data aggregation:</label>
-        <select id="period-type" onchange="buildPeriodDropdowns()">
-          <option value="7">Weekly (7-day periods)</option>
-          <option value="14" selected>Fortnightly (14-day periods)</option>
-          <option value="30">Monthly</option>
-        </select>
-      </div>
 
       <div class="control-group year-checkbox-group">
         <label>Years to compare:</label>
         <div id="year-checkboxes" class="year-checkbox-row"></div>
       </div>
+
+      <div class="control-group">
+        <label for="infra-type-select">Building type:</label>
+        <select id="infra-type-select" onchange="updateChartAndStats()">
+          <option value="">All building types</option>
+        </select>
+      </div>
     </div>
 
     <div class="control-row">
       <div class="control-group">
-        <label for="highlight-start">From:</label>
-        <select id="highlight-start" onchange="updateChartAndStats()"></select>
+        <label for="highlight-start">Highlighted period from:</label>
+        <input type="date" id="highlight-start" onchange="updateChartAndStats()">
       </div>
       <div class="control-group">
-        <label for="highlight-end">To:</label>
-        <select id="highlight-end" onchange="updateChartAndStats()"></select>
+        <label for="highlight-end">to:</label>
+        <input type="date" id="highlight-end" onchange="updateChartAndStats()">
+      </div>
 
+      <div class="control-group">
+        <label for="period-type">Summarised by:</label>
+        <select id="period-type" onchange="typeof buildPeriodDropdowns === 'function' && buildPeriodDropdowns(); typeof updateChartAndStats === 'function' && updateChartAndStats();">
+          <option value="7">Weekly</option>
+          <option value="14" selected>Fortnightly</option>
+          <option value="30">Monthly</option>
+        </select>
+      </div>
+    </div>
   </div>
 
   <div id="chart-card">
     <div class="chart-header">
       <div>
-        <h2 id="chart-title">Timeline - Total Number of Damaged Buildings</h2>
+        <h2 id="chart-title">Timeline - Total number of damaged buildings</h2>
         <div class="subtitle" id="chart-subtitle"></div>
       </div>
       <div class="export-buttons">
