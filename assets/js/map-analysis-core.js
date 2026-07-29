@@ -807,11 +807,11 @@
   // least this much width so "…: <count>" always has room to draw.
   const DL_MIN_LABEL_WIDTH = 30;
   // Floor for the elbow's distance beyond the ring (as an addition to
-  // outerRadius) - the elbow radius shrinks toward this, from the default
-  // DL_ELBOW_OFFSET, whenever needed to keep the bend at the elbow no
-  // sharper than a right angle (see the final draw loop). Kept above the
-  // ring-departure offset (4) so the first leg never collapses to zero
-  // length.
+  // outerRadius) - the final draw loop computes the elbow's actual radius
+  // per label (so its bend is always exactly 90 degrees), and only falls
+  // back to this floor in the degenerate case where that computed radius
+  // would sit at or behind the ring. Kept above the ring-departure offset
+  // (4) so the first leg never collapses to zero length.
   const DL_MIN_ELBOW_OFFSET = 8;
 
   // Shrinks "<category>: <count>" to fit maxWidth by trimming the category
@@ -1064,26 +1064,22 @@
         const lineEndX = nearEdge + (isRight ? -4 : 4);
         const lineEndY = textY;
 
-        // Re-anchors the elbow's radius (never past DL_ELBOW_OFFSET, never
-        // under DL_MIN_ELBOW_OFFSET) so the bend it forms with the FINAL
-        // line endpoint is never sharper than a right angle. A label whose
-        // text ended up on the geometric "wrong" side of its own departure
-        // direction - a near-pole slice rebalanced to relieve crowding, or
-        // one pushed far by decluttering - would otherwise hook back on
-        // itself. Derivation: the elbow radius R (from centre, along the
-        // slice's own angle) keeps the bend >= 90 degrees exactly while
-        // R <= cos(angle)*(lineEndX-x) + sin(angle)*(lineEndY-y), i.e. the
-        // line's end must sit at or beyond the elbow's own projection onto
-        // that angle - using the actual drawn endpoint here (not the text
-        // anchor a few px further out) keeps the bound exact rather than
-        // off by that visual gap.
+        // Places the elbow at the foot of the perpendicular dropped from
+        // the FINAL line endpoint onto the slice's own departure ray - the
+        // one point on that ray where the line's second leg meets it at
+        // exactly 90 degrees, always, not just "at least". Since lineStart
+        // sits on the same ray, the bend at the elbow (between the leg
+        // back to lineStart and the leg out to the endpoint) is exactly a
+        // right angle by construction, for ANY endpoint position - no
+        // near-pole rebalancing, decluttering, or edge clamp upstream can
+        // violate it. Floored at DL_MIN_ELBOW_OFFSET past the ring only so
+        // the first leg keeps a visible length (an endpoint that projects
+        // to a point at or behind the ring - a genuinely degenerate
+        // placement - is the sole case where the angle can't stay exact).
         const cos = Math.cos(midAngle);
         const sin = Math.sin(midAngle);
-        const maxElbowRadius = cos * (lineEndX - x) + sin * (lineEndY - y);
-        const elbowRadius = Math.max(
-          outerRadius + DL_MIN_ELBOW_OFFSET,
-          Math.min(outerRadius + DL_ELBOW_OFFSET, maxElbowRadius)
-        );
+        const perpendicularRadius = cos * (lineEndX - x) + sin * (lineEndY - y);
+        const elbowRadius = Math.max(outerRadius + DL_MIN_ELBOW_OFFSET, perpendicularRadius);
         const finalElbowX = x + cos * elbowRadius;
         const finalElbowY = y + sin * elbowRadius;
 

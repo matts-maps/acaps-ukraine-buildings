@@ -553,20 +553,16 @@
       const lineEndX = nearEdge + (isRight ? -4 : 4);
       const lineEndY = textY;
 
-      // Re-anchors the elbow's radius (see the equivalent comment in
-      // map-analysis-core.js) so the bend it forms with the FINAL line
-      // endpoint is never sharper than a right angle: the elbow radius R
-      // keeps the bend >= 90 degrees exactly while
-      // R <= cos(angle)*(lineEndX-cx) + sin(angle)*(lineEndY-cy) - using
-      // the actual drawn endpoint (not the text anchor a few px further
-      // out) keeps the bound exact rather than off by that visual gap.
+      // Places the elbow at the foot of the perpendicular dropped from the
+      // FINAL line endpoint onto the slice's own departure ray (see the
+      // equivalent comment in map-analysis-core.js) - the bend is exactly
+      // 90 degrees, always, not just "at least", for any endpoint
+      // position. Floored at MIN_ELBOW_OFFSET past the ring only so the
+      // first leg keeps a visible length.
       const cos = Math.cos(mid);
       const sin = Math.sin(mid);
-      const maxElbowRadius = cos * (lineEndX - cx) + sin * (lineEndY - cy);
-      const elbowRadius = Math.max(
-        outerR + MIN_ELBOW_OFFSET,
-        Math.min(outerR + ELBOW_OFFSET, maxElbowRadius)
-      );
+      const perpendicularRadius = cos * (lineEndX - cx) + sin * (lineEndY - cy);
+      const elbowRadius = Math.max(outerR + MIN_ELBOW_OFFSET, perpendicularRadius);
       const finalElbowX = cx + cos * elbowRadius;
       const finalElbowY = cy + sin * elbowRadius;
 
