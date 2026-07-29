@@ -15,9 +15,9 @@ let mapInstance = null;
 // A handful of oblast names differ between the geoJSON boundary properties
 // and the CSV's spelling by a trailing "ska" suffix (e.g. "Kyivska" vs
 // "Kyiv"); stripped off here so both sides match up consistently.
-//function normalizeOblastName(raw) {
-//  return raw ? raw.replace("ska", "") : raw;
-//}
+function normalizeOblastName(raw) {
+  return raw ? raw.replace("ska", "") : raw;
+}
 
 function formatDateLabel(iso) {
   return new Date(iso + "T00:00:00Z").toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric", timeZone: "UTC" });
