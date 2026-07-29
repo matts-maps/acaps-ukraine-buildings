@@ -470,7 +470,7 @@
 
     const { scale, maxValue } = radiusInfo;
     if (!maxValue || maxValue <= 0) {
-      window.mapLegend._div.innerHTML = "<strong>Damaged Buildings</strong><br>No data in range";
+      window.mapLegend._div.innerHTML = "<strong>Damaged buildings</strong><br>No data in range";
       return;
     }
 
@@ -521,7 +521,7 @@
 
     const svg = `<svg width="${svgWidth}" height="${svgHeight}" viewBox="0 0 ${svgWidth} ${svgHeight}">${circlesSvg}${labelsSvg}</svg>`;
 
-    window.mapLegend._div.innerHTML = `<strong>Damaged Buildings</strong><div class="map-proportional-legend-nested">${svg}</div>`;
+    window.mapLegend._div.innerHTML = `<strong>Damaged buildings</strong><div class="map-proportional-legend-nested">${svg}</div>`;
   };
 
   // --------------------------------------------------------------------
