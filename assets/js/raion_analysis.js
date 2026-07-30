@@ -3,9 +3,9 @@
    ============================================================================
    Shared map/legend/filter/chart machinery lives in MapCore
    (map-analysis-core.js, loaded before this file). This file holds what's
-   genuinely specific to the Raion view: raion name normalization against
-   the boundary geoJSON, the row-filtering loop, and the Oblast/Raion
-   cascading dropdown filters + scoped map zoom that only this page has.
+   genuinely specific to the Raion view: joining CSV rows to the boundary
+   geoJSON by P-code, the row-filtering loop, and the Oblast/Raion cascading
+   dropdown filters + scoped map zoom that only this page has.
    ========================================================================== */
 
 let rawDamageCSV = [];
@@ -23,9 +23,15 @@ const OBLAST_FIELD = "oblast";
 // the oblast zoom doesn't work.
 const GEOJSON_OBLAST_PROPERTY = "adm1_name";
 
+// Maps each raion's P-code (geoJSON `adm2_src`, CSV `pcode_rayon`) to its
+// full display name (geoJSON `adm2_name`), so the CSV can be joined to the
+// boundary geoJSON via the stable P-code rather than by matching name
+// strings. Built once the geoJSON loads (see below).
+let pcodeToRaionName = {};
+
 // Corrects for a handful of raion boundary names that differ between the
-// geoJSON source and the CSV's spelling. Used both for map styling/click
-// handling and for computing zoom bounds.
+// geoJSON source and the CSV's spelling. Only used as a fallback for CSV
+// rows that don't have a (matching) `pcode_rayon` value yet.
 const RAION_NAME_MAP = {
   "Kerchynskyi": "Kerchenskyi",
   "Krasnoperekopskyi": "Perekopskyi",
@@ -33,8 +39,21 @@ const RAION_NAME_MAP = {
   "Sievierodonetskyi": "Siverskodonetskyi"
 };
 
-function normalizeRaionName(raw) {
-  return RAION_NAME_MAP[raw] || raw;
+// Reverse of RAION_NAME_MAP: CSV `rayon` spelling -> geoJSON `adm2_name`
+// spelling. Used so the fallback path below always lands on the same
+// geoJSON-spelled canonical name the pcode path would produce.
+const RAION_NAME_MAP_REVERSE = Object.fromEntries(
+  Object.entries(RAION_NAME_MAP).map(([geoName, csvName]) => [csvName, geoName])
+);
+
+// Resolves a CSV row's raion name via the pcode join above, falling back to
+// the CSV's own `rayon` field (corrected for known spelling mismatches) if
+// the pcode doesn't resolve.
+function canonicalRaionName(row) {
+  const pcode = row.pcode_rayon?.trim();
+  if (pcode && pcodeToRaionName[pcode]) return pcodeToRaionName[pcode];
+  const raw = row.rayon?.trim() || "";
+  return RAION_NAME_MAP_REVERSE[raw] || raw;
 }
 
 function formatDateLabel(iso) {
@@ -69,6 +88,12 @@ function formatDateLabel(iso) {
   .then(([geoData, csvData]) => {
     geoJSONData = geoData;
     rawDamageCSV = csvData;
+
+    pcodeToRaionName = {};
+    geoData.features.forEach(f => {
+      const pcode = f.properties.adm2_src;
+      if (pcode) pcodeToRaionName[pcode] = f.properties.adm2_name || "";
+    });
 
     // Fit the view to the full extent of the administrative boundaries so
     // the whole of Ukraine is visible, regardless of screen size.
@@ -123,7 +148,7 @@ function populateRaionOptions(oblastValue) {
     : rawDamageCSV;
 
   const raions = [...new Set(
-    rows.map(r => r.rayon?.trim()).filter(Boolean)
+    rows.map(r => canonicalRaionName(r)).filter(Boolean)
   )].sort();
 
   raionSel.innerHTML = '<option value="">All Raions</option>' +
@@ -153,10 +178,9 @@ function computeScopedBounds(oblastValue, raionValue) {
 
   let matched;
   if (raionValue) {
-    matched = geoJSONData.features.filter(f => {
-      const raw = f.properties.adm2_name || "";
-      return normalizeRaionName(raw) === raionValue;
-    });
+    matched = geoJSONData.features.filter(f =>
+      (f.properties.adm2_name || "") === raionValue
+    );
   } else if (oblastValue) {
     matched = geoJSONData.features.filter(f =>
       (f.properties[GEOJSON_OBLAST_PROPERTY] || "").trim() === oblastValue
@@ -205,18 +229,17 @@ function processMapVisualisations() {
   const tableColumns = new Set();
 
   rawDamageCSV.forEach(r => {
-    const rawRaion = r.rayon?.trim();
-    if (!rawRaion) return;
+    const name = canonicalRaionName(r);
+    if (!name) return;
 
     // Oblast / Raion filter panel selections
     if (oblastFilter && r[OBLAST_FIELD]?.trim() !== oblastFilter) return;
-    if (raionFilter && rawRaion !== raionFilter) return;
+    if (raionFilter && name !== raionFilter) return;
 
     const rowMs = Date.parse(r.date_of_event + "T00:00:00Z");
     const bucketKey = buckets.keyForTimestamp(rowMs);
     if (bucketKey === null) return;
 
-    const name = rawRaion;
     const infraType = MapCore.normalizeInfraLabel(r.type_of_infrastructure);
     if (infraFilter && infraType !== infraFilter) return;
 
@@ -319,8 +342,7 @@ function processMapVisualisations() {
   MapCore.damageCircleData = [];
 
   const circleMarkers = geoJSONData.features.map(f => {
-    const rawGeoName = f.properties.adm2_name || "";
-    const geoName = normalizeRaionName(rawGeoName);
+    const geoName = f.properties.adm2_name || "";
     const value = counts[geoName] || 0;
     const radius = radiusInfo.scale(value);
     if (radius <= 0) return null;
@@ -339,7 +361,7 @@ function processMapVisualisations() {
     });
 
     marker.on("mouseover", () => {
-      window.mapInfoPanel._div.innerHTML = `<h4>${rawGeoName}</h4><b>Damages:</b> ${value.toLocaleString()}`;
+      window.mapInfoPanel._div.innerHTML = `<h4>${geoName}</h4><b>Damages:</b> ${value.toLocaleString()}`;
     });
     marker.on("click", () => {
       MapCore.selectOrToggle("map-raion-select", geoName);

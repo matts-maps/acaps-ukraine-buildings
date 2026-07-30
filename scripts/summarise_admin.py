@@ -39,20 +39,30 @@ RAION_GEOJSON = "data/ukr_admn_ad2_py_s0_fieldmaps_pp_raions.json"
 # need updating in one place if the ACAPS schema changes.
 OBLAST_FIELD = "oblast"
 RAION_FIELD = "rayon"
+RAION_PCODE_FIELD = "pcode_rayon"
 BUILDING_TYPE_FIELD = "type_of_infrastructure"
 DATE_FIELD = "date_of_event"
 
 GEOJSON_OBLAST_PROPERTY = "adm1_name"
 GEOJSON_RAION_PROPERTY = "adm2_name"
+GEOJSON_RAION_PCODE_PROPERTY = "adm2_src"
 
 # Raion boundary/CSV spelling mismatches, kept in sync with the
-# RAION_NAME_MAP in assets/js/raion_analysis.js.
+# RAION_NAME_MAP in assets/js/raion_analysis.js. The real join is now
+# pcode_rayon (CSV) -> adm2_src (geoJSON, see canonicalize_raion_names()
+# below); this table (via its reverse, RAION_NAME_MAP_REVERSE) only
+# backstops rows that don't have a (matching) pcode_rayon value yet.
 RAION_NAME_MAP = {
     "Kerchynskyi": "Kerchenskyi",
     "Krasnoperekopskyi": "Perekopskyi",
     "Chervonohradskyi": "Sheptytskyi",
     "Sievierodonetskyi": "Siverskodonetskyi",
 }
+
+# Reverse of RAION_NAME_MAP: CSV `rayon` spelling -> geoJSON `adm2_name`
+# spelling. Used so the fallback path always lands on the same
+# geoJSON-spelled canonical name the pcode path would produce.
+RAION_NAME_MAP_REVERSE = {csv_name: geo_name for geo_name, csv_name in RAION_NAME_MAP.items()}
 
 OUT_DIR = "data"
 OBLAST_CSV = f"{OUT_DIR}/damage-summary-oblast.csv"
@@ -69,6 +79,51 @@ def normalise_name(name):
         return ""
     n = unicodedata.normalize("NFKD", name).encode("ascii", "ignore").decode()
     return re.sub(r"[^a-z]", "", n.lower())
+
+
+def build_pcode_to_name(geojson_path, pcode_property, name_property):
+    """Maps each feature's P-code to its display name, e.g. raion `adm2_src`
+    -> `adm2_name`, mirroring the pcode join assets/js/oblast_analysis.js
+    already does for oblasts."""
+    if not os.path.exists(geojson_path):
+        return {}
+
+    with open(geojson_path, encoding="utf-8") as f:
+        geo = json.load(f)
+
+    mapping = {}
+    for feature in geo["features"]:
+        props = feature.get("properties", {})
+        pcode = props.get(pcode_property)
+        if pcode:
+            mapping[pcode] = props.get(name_property, "")
+    return mapping
+
+
+def canonicalize_raion_names(df):
+    """Overwrites the RAION_FIELD column in place with the canonical
+    (geoJSON-spelled) raion name, joined via pcode_rayon -> adm2_src where
+    possible, falling back to the CSV's own rayon spelling (corrected via
+    RAION_NAME_MAP_REVERSE) for rows without a usable pcode_rayon.
+
+    Keeping the column name and values in "geoJSON-spelling, one name per
+    raion" form means every downstream consumer (build_weekly_summary,
+    latest_week_pivot, write_shapefile, and the damage-summary-raion.csv
+    schema) needs no further changes."""
+    pcode_to_raion_name = build_pcode_to_name(
+        RAION_GEOJSON, GEOJSON_RAION_PCODE_PROPERTY, GEOJSON_RAION_PROPERTY
+    )
+
+    def canonical(row):
+        pcode = row.get(RAION_PCODE_FIELD)
+        pcode = str(pcode).strip() if pd.notna(pcode) else ""
+        if pcode and pcode in pcode_to_raion_name:
+            return pcode_to_raion_name[pcode]
+        raw = str(row.get(RAION_FIELD, "") or "").strip()
+        return RAION_NAME_MAP_REVERSE.get(raw, raw)
+
+    df[RAION_FIELD] = df.apply(canonical, axis=1)
+    return df
 
 
 def load_damage_data():
@@ -92,6 +147,7 @@ def load_damage_data():
                 f"Available columns: {list(df.columns)}"
             )
     df = df.dropna(subset=[OBLAST_FIELD, RAION_FIELD])
+    df = canonicalize_raion_names(df)
 
     if BUILDING_TYPE_FIELD not in df.columns:
         print(f"Warning: '{BUILDING_TYPE_FIELD}' column not found; all rows will be 'Unspecified'.")
@@ -246,17 +302,16 @@ def write_shapefile(pivot_df, geojson_path, geojson_property, group_field, out_z
     for feature in geo["features"]:
         props = feature.get("properties", {})
         raw_name = props.get(geojson_property, "")
-        mapped_name = RAION_NAME_MAP.get(raw_name, raw_name) if geojson_property == GEOJSON_RAION_PROPERTY else raw_name
-        key = normalise_name(mapped_name)
+        key = normalise_name(raw_name)
         row = lookup.get(key)
 
         write_geometry(writer, feature["geometry"])
 
         if row is None:
             unmatched.append(raw_name)
-            attrs = [mapped_name] + [0] * len(building_type_cols)
+            attrs = [raw_name] + [0] * len(building_type_cols)
         else:
-            attrs = [mapped_name] + [int(row[c]) for c in building_type_cols]
+            attrs = [raw_name] + [int(row[c]) for c in building_type_cols]
         writer.record(*attrs)
 
     writer.close()
@@ -280,7 +335,8 @@ def write_shapefile(pivot_df, geojson_path, geojson_property, group_field, out_z
         print(
             f"Warning: {len(unmatched)} boundary feature(s) in {geojson_path} had no matching "
             f"damage data (0 written) - e.g. {unmatched[:5]}. If these are real admin units with "
-            f"damage, add a spelling correction to RAION_NAME_MAP / the oblast equivalent."
+            f"damage, check the pcode/name join (canonicalize_raion_names() for raions, or "
+            f"RAION_NAME_MAP_REVERSE if it's a fallback-path mismatch)."
         )
 
     print(f"Saved shapefile bundle to {out_zip_path}")

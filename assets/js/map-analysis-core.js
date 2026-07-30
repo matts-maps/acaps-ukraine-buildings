@@ -16,8 +16,9 @@
 
    What deliberately stays OUT of this file, because it's genuinely
    different per page rather than duplicated:
-     - CSV parsing / geoJSON name matching (oblast uses a "ska"-suffix
-       strip + name map, raion uses RAION_NAME_MAP)
+     - CSV parsing / geoJSON P-code joins (oblast: pcodeToName, raion:
+       pcodeToRaionName, with RAION_NAME_MAP as a fallback for rows without
+       a pcode_rayon value yet)
      - The Oblast/Raion cascading dropdown filters (raion-only feature)
      - The row-filtering loop in processMapVisualisations() itself, since
        the two pages filter/match on different CSV columns
