@@ -1,4 +1,25 @@
 oblast,week_start,week_end,building_type,damaged_buildings
+Dnipropetrovska,2026-07-27,2026-08-02,Agricultural facilities,1
+Dnipropetrovska,2026-07-27,2026-08-02,"Education facility (school, etc.)",1
+Dnipropetrovska,2026-07-27,2026-08-02,Government facilities,3
+Dnipropetrovska,2026-07-27,2026-08-02,"Health facility (hospital, health clinic)",1
+Dnipropetrovska,2026-07-27,2026-08-02,Industrial/Business/Enterprise facilities,7
+Dnipropetrovska,2026-07-27,2026-08-02,Total,13
+Dnipropetrovska,2026-07-20,2026-07-26,"Education facility (school, etc.)",1
+Dnipropetrovska,2026-07-20,2026-07-26,Industrial/Business/Enterprise facilities,3
+Dnipropetrovska,2026-07-20,2026-07-26,Total,4
+Kharkivska,2026-07-20,2026-07-26,Agricultural facilities,1
+Kharkivska,2026-07-20,2026-07-26,"Cultural facilities (museum, theater etc.)",2
+Kharkivska,2026-07-20,2026-07-26,"Education facility (school, etc.)",1
+Kharkivska,2026-07-20,2026-07-26,Electricity supply system,4
+Kharkivska,2026-07-20,2026-07-26,Fuel depot,5
+Kharkivska,2026-07-20,2026-07-26,Government facilities,4
+Kharkivska,2026-07-20,2026-07-26,"Health facility (hospital, health clinic)",1
+Kharkivska,2026-07-20,2026-07-26,Industrial/Business/Enterprise facilities,5
+Kharkivska,2026-07-20,2026-07-26,Other,1
+Kharkivska,2026-07-20,2026-07-26,Railway,2
+Kharkivska,2026-07-20,2026-07-26,Total,30
+Kharkivska,2026-07-20,2026-07-26,Warehouse,4
 Cherkaska,2026-07-13,2026-07-19,Agricultural facilities,1
 Cherkaska,2026-07-13,2026-07-19,Total,1
 Chernihivska,2026-07-13,2026-07-19,Energy Infrastructure (unknown type),1
@@ -6,24 +27,30 @@ Chernihivska,2026-07-13,2026-07-19,Fuel depot,1
 Chernihivska,2026-07-13,2026-07-19,Government facilities,1
 Chernihivska,2026-07-13,2026-07-19,Total,3
 Dnipropetrovska,2026-07-13,2026-07-19,Agricultural facilities,4
-Dnipropetrovska,2026-07-13,2026-07-19,"Education facility (school, etc.)",2
+Dnipropetrovska,2026-07-13,2026-07-19,"Education facility (school, etc.)",3
 Dnipropetrovska,2026-07-13,2026-07-19,Electricity supply system,1
 Dnipropetrovska,2026-07-13,2026-07-19,Fuel depot,1
-Dnipropetrovska,2026-07-13,2026-07-19,Industrial/Business/Enterprise facilities,8
-Dnipropetrovska,2026-07-13,2026-07-19,Total,17
-Dnipropetrovska,2026-07-13,2026-07-19,Warehouse,1
+Dnipropetrovska,2026-07-13,2026-07-19,Government facilities,1
+Dnipropetrovska,2026-07-13,2026-07-19,Industrial/Business/Enterprise facilities,9
+Dnipropetrovska,2026-07-13,2026-07-19,Other,1
+Dnipropetrovska,2026-07-13,2026-07-19,Total,22
+Dnipropetrovska,2026-07-13,2026-07-19,Warehouse,2
 Donetska,2026-07-13,2026-07-19,Gas supply system,1
 Donetska,2026-07-13,2026-07-19,Industrial/Business/Enterprise facilities,5
 Donetska,2026-07-13,2026-07-19,Total,6
 Kharkivska,2026-07-13,2026-07-19,Agricultural facilities,2
-Kharkivska,2026-07-13,2026-07-19,"Cultural facilities (museum, theater etc.)",2
-Kharkivska,2026-07-13,2026-07-19,Electricity supply system,2
-Kharkivska,2026-07-13,2026-07-19,Fuel depot,1
-Kharkivska,2026-07-13,2026-07-19,Government facilities,4
-Kharkivska,2026-07-13,2026-07-19,Industrial/Business/Enterprise facilities,2
-Kharkivska,2026-07-13,2026-07-19,Other,1
-Kharkivska,2026-07-13,2026-07-19,Total,16
-Kharkivska,2026-07-13,2026-07-19,Warehouse,2
+Kharkivska,2026-07-13,2026-07-19,"Cultural facilities (museum, theater etc.)",3
+Kharkivska,2026-07-13,2026-07-19,"Education facility (school, etc.)",1
+Kharkivska,2026-07-13,2026-07-19,Electricity supply system,6
+Kharkivska,2026-07-13,2026-07-19,Fuel depot,2
+Kharkivska,2026-07-13,2026-07-19,Gas supply system,1
+Kharkivska,2026-07-13,2026-07-19,Government facilities,7
+Kharkivska,2026-07-13,2026-07-19,Industrial/Business/Enterprise facilities,6
+Kharkivska,2026-07-13,2026-07-19,Other,2
+Kharkivska,2026-07-13,2026-07-19,Road / Highway,1
+Kharkivska,2026-07-13,2026-07-19,Total,38
+Kharkivska,2026-07-13,2026-07-19,Warehouse,5
+Kharkivska,2026-07-13,2026-07-19,Water supply system,2
 Khersonska,2026-07-13,2026-07-19,"Education facility (school, etc.)",1
 Khersonska,2026-07-13,2026-07-19,Industrial/Business/Enterprise facilities,2
 Khersonska,2026-07-13,2026-07-19,Telecommunications,1
