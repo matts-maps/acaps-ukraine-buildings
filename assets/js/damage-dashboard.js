@@ -53,14 +53,14 @@ window.addEventListener('DOMContentLoaded', () => {
     skipEmptyLines: true,
     complete: function(results) {
       if (!results.data || results.data.length === 0) {
-        showError('Empty target database context parsed.');
+        showError('No data found in the CSV file.');
         return;
       }
       rawCSVData = results.data;
       calculateDataDateRange();
       initializeDashboardOptions();
     },
-    error: () => showError('Unable to route repository CSV payload array map.')
+    error: () => showError('Unable to load the data file.')
   });
 });
 
@@ -119,7 +119,7 @@ function initializeDashboardOptions() {
   uniqueYearsList = Array.from(detectedYears).sort((a, b) => a - b);
   
   if (uniqueYearsList.length < 1) {
-    showError("Could not extract any historical timeline metadata rows.");
+    showError("No dated records found in the data.");
     return;
   }
 

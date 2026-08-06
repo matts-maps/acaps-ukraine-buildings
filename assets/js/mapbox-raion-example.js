@@ -1,15 +1,21 @@
 /* ============================================================================
-   Mapbox oblast damage example
+   Mapbox raion damage example
    ============================================================================
    Standalone example: a Mapbox GL JS proportional-circle map of damaged
-   buildings per oblast. Deliberately independent of MapCore (map-analysis-core.js) - that
-   module is Leaflet-specific and built for the full filterable dashboard;
-   this page is just a map.
+   buildings per raion. Deliberately independent of MapCore (map-analysis-core.js)
+   and of raion_analysis.js - that module is Leaflet-specific and built for
+   the full filterable dashboard; this page is just a map. Mirrors
+   mapbox-oblast-example.js one admin level down - see that file for the
+   oblast-level counterpart; keep both in sync by hand when changing shared
+   logic (radius scale, legend, circle styling).
 
-   Data/values are intentionally kept in parity with oblast_analysis.html's
-   default (all-filters-cleared) view: same source CSV, same pcode join, and
-   the same default date range (1 Jan of the current year through today) -
-   see MapCore.initDateRangeControls in map-analysis-core.js.
+   Data/values are intentionally kept in parity with raion_analysis.html's
+   default (all-filters-cleared) view: same source CSV, same pcode_rayon
+   join (falling back to the CSV's own `rayon` field via RAION_NAME_MAP for
+   the handful of raions whose CSV/geoJSON names differ - see
+   RAION_NAME_MAP in raion_analysis.js), and the same default date range
+   (1 Jan of the current year through today) - see
+   MapCore.initDateRangeControls in map-analysis-core.js.
    ========================================================================== */
 
 (function () {
@@ -23,8 +29,22 @@
   // Swap this for your own Mapbox Studio style URL (mapbox://styles/<user>/<style-id>).
   const styleUrl = window.MAP_STYLE_URL || "mapbox://styles/mapbox/light-v11";
 
-  const geojsonPath = window.MAP_GEOJSON_PATH || "/data/ukr_admn_ad1_py_s0_fieldmaps_pp_oblast.json";
+  const geojsonPath = window.MAP_GEOJSON_PATH || "/data/ukr_admn_ad2_py_s0_fieldmaps_pp_raions.json";
   const csvPath = window.MAP_CSV_PATH || "/data/ukraine-damages.csv";
+
+  // Corrects for a handful of raion boundary names that differ between the
+  // geoJSON source and the CSV's spelling - copied from RAION_NAME_MAP in
+  // raion_analysis.js. Only used as a fallback for CSV rows that don't have
+  // a (matching) `pcode_rayon` value yet.
+  const RAION_NAME_MAP = {
+    "Kerchynskyi": "Kerchenskyi",
+    "Krasnoperekopskyi": "Perekopskyi",
+    "Chervonohradskyi": "Sheptytskyi",
+    "Sievierodonetskyi": "Siverskodonetskyi"
+  };
+  const RAION_NAME_MAP_REVERSE = Object.fromEntries(
+    Object.entries(RAION_NAME_MAP).map(([geoName, csvName]) => [csvName, geoName])
+  );
 
   // Single colour for every proportional damage circle (size, not hue,
   // carries the value) - matches MapCore.PROPORTIONAL_CIRCLE_COLOR /
@@ -144,7 +164,7 @@
   }
 
   // Same default window MapCore.initDateRangeControls uses on the Leaflet
-  // Oblast page: 1 Jan of the current year through today, clamped into the
+  // Raion page: 1 Jan of the current year through today, clamped into the
   // range the CSV actually contains.
   function computeDefaultDateRange(rows) {
     let minDate = null;
@@ -166,10 +186,11 @@
 
   // Counts one damaged building per CSV row (the raw ukraine-damages.csv is
   // incident-level, one row per damaged building) within [from, to], joined
-  // to its oblast the same way canonicalOblastName() does in
-  // oblast_analysis.js: pcode first, falling back to the CSV's own oblast
-  // name field.
-  function aggregateCountsByOblast(rows, pcodeToName, from, to) {
+  // to its raion the same way canonicalRaionName() does in
+  // raion_analysis.js: pcode_rayon first, falling back to the CSV's own
+  // `rayon` field (corrected for known spelling mismatches via
+  // RAION_NAME_MAP_REVERSE).
+  function aggregateCountsByRaion(rows, pcodeToRaionName, from, to) {
     const totals = {};
     const fromMs = from.getTime();
     const toMsExclusive = to.getTime() + 86400000; // "to" day inclusive
@@ -177,8 +198,9 @@
       const rowMs = Date.parse((row.date_of_event || "").trim() + "T00:00:00Z");
       if (isNaN(rowMs) || rowMs < fromMs || rowMs >= toMsExclusive) return;
 
-      const pcode = (row.pcode || "").trim();
-      const name = (pcode && pcodeToName[pcode]) || (row.oblast || "").trim();
+      const pcode = (row.pcode_rayon || "").trim();
+      const rawName = (row.rayon || "").trim();
+      const name = (pcode && pcodeToRaionName[pcode]) || RAION_NAME_MAP_REVERSE[rawName] || rawName;
       if (!name) return;
 
       totals[name] = (totals[name] || 0) + 1;
@@ -202,65 +224,65 @@
         Papa.parse(text, { header: true, skipEmptyLines: true }).data
       )
     ]).then(([geoData, csvRows]) => {
-      // pcode (geojson adm1_src) -> display name (geojson adm1_name), the
-      // same lookup oblast_analysis.js builds - a stable join key beats
-      // matching on the free-text oblast name string.
-      const pcodeToName = {};
+      // pcode (geojson adm2_src) -> display name (geojson adm2_name), the
+      // same lookup raion_analysis.js builds - a stable join key beats
+      // matching on the free-text raion name string.
+      const pcodeToRaionName = {};
       geoData.features.forEach(f => {
-        const pcode = f.properties.adm1_src;
-        if (pcode) pcodeToName[pcode] = f.properties.adm1_name || "";
+        const pcode = f.properties.adm2_src;
+        if (pcode) pcodeToRaionName[pcode] = f.properties.adm2_name || "";
       });
 
       const range = computeDefaultDateRange(csvRows);
       if (!range) {
-        console.error("mapbox-oblast-example: no valid date_of_event values found in", csvPath);
+        console.error("mapbox-raion-example: no valid date_of_event values found in", csvPath);
         return;
       }
-      const totalsByOblast = aggregateCountsByOblast(csvRows, pcodeToName, range.from, range.to);
+      const totalsByRaion = aggregateCountsByRaion(csvRows, pcodeToRaionName, range.from, range.to);
 
-      // A geojson feature with no matching key in totalsByOblast is a
+      // A geojson feature with no matching key in totalsByRaion is a
       // legitimate zero (no incidents fell in the selected date range for
-      // that oblast) - not a join failure, so it's not worth warning about.
+      // that raion) - not a join failure, so it's not worth warning about.
       // The real join-completeness check runs the other way: every name key
-      // aggregateCountsByOblast produced (via the pcode lookup, falling
-      // back to the CSV's own oblast string) should match a real geojson
-      // feature, or its counts are silently missing from the map entirely.
-      const featureNames = new Set(geoData.features.map(f => f.properties.adm1_name));
-      const droppedNames = Object.keys(totalsByOblast).filter(n => !featureNames.has(n));
+      // aggregateCountsByRaion produced (via the pcode lookup, falling back
+      // to the CSV's own rayon string) should match a real geojson feature,
+      // or its counts are silently missing from the map entirely.
+      const featureNames = new Set(geoData.features.map(f => f.properties.adm2_name));
+      const droppedNames = Object.keys(totalsByRaion).filter(n => !featureNames.has(n));
       if (droppedNames.length) {
-        console.warn("mapbox-oblast-example: CSV oblast name(s) with no matching boundary feature (counts dropped from map):", droppedNames);
+        console.warn("mapbox-raion-example: CSV raion name(s) with no matching boundary feature (counts dropped from map):", droppedNames);
       }
 
       geoData.features.forEach(f => {
-        f.properties.damaged_total = totalsByOblast[f.properties.adm1_name] || 0;
+        f.properties.damaged_total = totalsByRaion[f.properties.adm2_name] || 0;
       });
 
-      // Proportional circles at each oblast's centroid, sized by damage
+      // Proportional circles at each raion's centroid, sized by damage
       // count - matches the Leaflet Oblast/Raion pages' convention, which
       // draw no boundary polygon layer of their own (the custom Mapbox
       // style's own "Admin Areas" group provides that context here).
-      const radiusInfo = computeRadiusScale(totalsByOblast);
+      const radiusInfo = computeRadiusScale(totalsByRaion);
       const circlePoints = geoData.features
         .filter(f => (f.properties.damaged_total || 0) > 0)
         .map(f => ({
           type: "Feature",
           geometry: { type: "Point", coordinates: bboxCenterOfFeature(f) },
           properties: {
-            adm1_name: f.properties.adm1_name,
+            adm2_name: f.properties.adm2_name,
             damaged_total: f.properties.damaged_total,
             radius: radiusInfo.scale(f.properties.damaged_total)
           }
         }));
 
-      map.addSource("oblast-circles", {
+      map.addSource("raion-circles", {
         type: "geojson",
         data: { type: "FeatureCollection", features: circlePoints }
       });
 
       map.addLayer({
-        id: "oblast-circles",
+        id: "raion-circles",
         type: "circle",
-        source: "oblast-circles",
+        source: "raion-circles",
         paint: {
           "circle-radius": ["get", "radius"],
           "circle-color": CIRCLE_FILL_COLOR,
@@ -279,17 +301,17 @@
 
       const popup = new mapboxgl.Popup({ closeButton: false, closeOnClick: false });
 
-      map.on("mousemove", "oblast-circles", e => {
+      map.on("mousemove", "raion-circles", e => {
         if (!e.features.length) return;
         map.getCanvas().style.cursor = "pointer";
-        const { adm1_name, damaged_total } = e.features[0].properties;
+        const { adm2_name, damaged_total } = e.features[0].properties;
         popup
           .setLngLat(e.lngLat)
-          .setHTML(`<strong>${adm1_name}</strong><br>${damaged_total.toLocaleString()} damaged buildings`)
+          .setHTML(`<strong>${adm2_name}</strong><br>${damaged_total.toLocaleString()} damaged buildings`)
           .addTo(map);
       });
 
-      map.on("mouseleave", "oblast-circles", () => {
+      map.on("mouseleave", "raion-circles", () => {
         map.getCanvas().style.cursor = "";
         popup.remove();
       });
@@ -297,6 +319,6 @@
       const iso = d => d.toISOString().slice(0, 10);
       renderLegend(radiusInfo, iso(range.from), iso(range.to));
     })
-    .catch(err => console.error("mapbox-oblast-example: failed to load map data", err));
+    .catch(err => console.error("mapbox-raion-example: failed to load map data", err));
   });
 })();

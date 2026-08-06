@@ -1,6 +1,6 @@
 ---
 layout: default
-title: Mapbox Oblast Damage Example
+title: Mapbox Raion Damage Example
 ---
 
 <link href="https://api.mapbox.com/mapbox-gl-js/v3.7.0/mapbox-gl.css" rel="stylesheet">
@@ -23,9 +23,9 @@ title: Mapbox Oblast Damage Example
 
 <div class="container">
   <section class="hero-panel">
-    <h1>Mapbox Oblast Damage Example</h1>
+    <h1>Mapbox Raion Damage Example</h1>
     <p>
-      Example Mapbox GL JS map showing the number of damaged buildings recorded per oblast, using the same underlying data and default date range as the <a href="{{ '/oblast_analysis.html' | relative_url }}">Oblast Analysis</a> page. Hover over an oblast for its total.
+      Example Mapbox GL JS map showing the number of damaged buildings recorded per raion, using the same underlying data and default date range as the <a href="{{ '/raion_analysis.html' | relative_url }}">Raion Analysis</a> page. Hover over a raion for its total.
     </p>
   </section>
 
@@ -34,7 +34,7 @@ title: Mapbox Oblast Damage Example
 </div>
 
 <script>
-  window.MAP_GEOJSON_PATH = "{{ '/data/ukr_admn_ad1_py_s0_fieldmaps_pp_oblast.json' | relative_url }}";
+  window.MAP_GEOJSON_PATH = "{{ '/data/ukr_admn_ad2_py_s0_fieldmaps_pp_raions.json' | relative_url }}";
   window.MAP_CSV_PATH = "{{ '/data/ukraine-damages.csv' | relative_url }}";
   // Swap in your own Mapbox Studio style URL here, e.g. "mapbox://styles/your-username/your-style-id".
   window.MAP_STYLE_URL = "mapbox://styles/mapaction/cms7aiele004701sfe139e7b5";
@@ -42,4 +42,4 @@ title: Mapbox Oblast Damage Example
 
 <script src="https://api.mapbox.com/mapbox-gl-js/v3.7.0/mapbox-gl.js" defer></script>
 <script src="{{ '/assets/js/papaparse.min.js' | relative_url }}" defer></script>
-<script src="{{ '/assets/js/mapbox-oblast-example.js' | relative_url }}" defer></script>
+<script src="{{ '/assets/js/mapbox-raion-example.js' | relative_url }}" defer></script>
