@@ -12,3 +12,10 @@ theme: minima
 # Ensure Jekyll processes your automated data folder
 include:
   - data
+
+# Mapbox settings for the two Mapbox example pages
+# (mapbox_oblast_damage_example.html / mapbox_raion_damage_example.html).
+# Change them here only - both pages read these values.
+# Use a public (pk.*) token, ideally URL-restricted to matts-maps.github.io.
+mapbox_access_token: "pk.eyJ1IjoibWFwYWN0aW9uIiwiYSI6ImNqOG9sbmQ5dTA0bG0zMnF1anB2M2wwZmYifQ.CKWhThHWbjRXUBnBcRoOqQ"
+mapbox_style_url: "mapbox://styles/mapaction/cms7aiele004701sfe139e7b5"

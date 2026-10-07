@@ -21,10 +21,13 @@
 (function () {
   "use strict";
 
-  // Public (pk.*) Mapbox access token - safe to expose client-side, this is
-  // the standard way Mapbox GL JS is configured in a static site with no
-  // build/server step to inject it from an env var.
-  mapboxgl.accessToken = "pk.eyJ1IjoibWFwYWN0aW9uIiwiYSI6ImNqOG9sbmQ5dTA0bG0zMnF1anB2M2wwZmYifQ.CKWhThHWbjRXUBnBcRoOqQ";
+  // Public (pk.*) Mapbox access token, set by the page from _config.yml
+  // (mapbox_access_token) so both example pages share one value. Safe to
+  // expose client-side - restrict it to this site's URL in your Mapbox account.
+  mapboxgl.accessToken = window.MAPBOX_ACCESS_TOKEN || "";
+  if (!mapboxgl.accessToken) {
+    console.error("mapbox-raion-example: no Mapbox access token set (mapbox_access_token in _config.yml)");
+  }
 
   // Swap this for your own Mapbox Studio style URL (mapbox://styles/<user>/<style-id>).
   const styleUrl = window.MAP_STYLE_URL || "mapbox://styles/mapbox/light-v11";

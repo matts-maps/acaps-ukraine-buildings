@@ -36,8 +36,9 @@ title: Mapbox Oblast Damage Example
 <script>
   window.MAP_GEOJSON_PATH = "{{ '/data/ukr_admn_ad1_py_s0_fieldmaps_pp_oblast.json' | relative_url }}";
   window.MAP_CSV_PATH = "{{ '/data/ukraine-damages.csv' | relative_url }}";
-  // Swap in your own Mapbox Studio style URL here, e.g. "mapbox://styles/your-username/your-style-id".
-  window.MAP_STYLE_URL = "mapbox://styles/mapaction/cms7aiele004701sfe139e7b5";
+  // Mapbox token and style come from _config.yml (mapbox_access_token / mapbox_style_url).
+  window.MAPBOX_ACCESS_TOKEN = "{{ site.mapbox_access_token }}";
+  window.MAP_STYLE_URL = "{{ site.mapbox_style_url }}";
 </script>
 
 <script src="https://api.mapbox.com/mapbox-gl-js/v3.7.0/mapbox-gl.js" defer></script>
