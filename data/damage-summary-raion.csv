@@ -1,25 +1,143 @@
 rayon,week_start,week_end,building_type,damaged_buildings
+Cherkaskyi,2026-10-12,2026-10-18,Electricity supply system,1
+Cherkaskyi,2026-10-12,2026-10-18,Total,1
+Dniprovskyi,2026-10-12,2026-10-18,"Education facility (school, etc.)",1
+Dniprovskyi,2026-10-12,2026-10-18,Government facilities,1
+Dniprovskyi,2026-10-12,2026-10-18,Industrial/Business/Enterprise facilities,1
+Dniprovskyi,2026-10-12,2026-10-18,Total,3
+Kharkivskyi,2026-10-12,2026-10-18,"Cultural facilities (museum, theater etc.)",1
+Kharkivskyi,2026-10-12,2026-10-18,Total,1
+Kryvorizkyi,2026-10-12,2026-10-18,Industrial/Business/Enterprise facilities,1
+Kryvorizkyi,2026-10-12,2026-10-18,Total,1
+Kupianskyi,2026-10-12,2026-10-18,Total,1
+Kupianskyi,2026-10-12,2026-10-18,Warehouse,1
+Nikopolskyi,2026-10-12,2026-10-18,Government facilities,1
+Nikopolskyi,2026-10-12,2026-10-18,Industrial/Business/Enterprise facilities,2
+Nikopolskyi,2026-10-12,2026-10-18,Total,3
+Pavlohradskyi,2026-10-12,2026-10-18,Industrial/Business/Enterprise facilities,1
+Pavlohradskyi,2026-10-12,2026-10-18,Total,1
+Vinnytskyi,2026-10-12,2026-10-18,Industrial/Business/Enterprise facilities,1
+Vinnytskyi,2026-10-12,2026-10-18,Total,1
+Berdychivskyi,2026-10-05,2026-10-11,Gas supply system,1
+Berdychivskyi,2026-10-05,2026-10-11,Total,1
+Buchanskyi,2026-10-05,2026-10-11,"Education facility (school, etc.)",1
+Buchanskyi,2026-10-05,2026-10-11,Total,6
+Buchanskyi,2026-10-05,2026-10-11,Warehouse,5
+Chernihivskyi,2026-10-05,2026-10-11,Industrial/Business/Enterprise facilities,1
+Chernihivskyi,2026-10-05,2026-10-11,Total,1
+Dniprovskyi,2026-10-05,2026-10-11,"Cultural facilities (museum, theater etc.)",1
+Dniprovskyi,2026-10-05,2026-10-11,"Education facility (school, etc.)",1
+Dniprovskyi,2026-10-05,2026-10-11,Industrial/Business/Enterprise facilities,2
+Dniprovskyi,2026-10-05,2026-10-11,Total,7
+Dniprovskyi,2026-10-05,2026-10-11,Warehouse,3
+Fastivskyi,2026-10-05,2026-10-11,Total,2
+Fastivskyi,2026-10-05,2026-10-11,Warehouse,2
+Ivano-Frankivskyi,2026-10-05,2026-10-11,Industrial/Business/Enterprise facilities,2
+Ivano-Frankivskyi,2026-10-05,2026-10-11,Total,2
+Kharkivskyi,2026-10-05,2026-10-11,"Health facility (hospital, health clinic)",1
+Kharkivskyi,2026-10-05,2026-10-11,Heating and water facility,1
+Kharkivskyi,2026-10-05,2026-10-11,Industrial/Business/Enterprise facilities,2
+Kharkivskyi,2026-10-05,2026-10-11,Total,5
+Kharkivskyi,2026-10-05,2026-10-11,Warehouse,1
+Khersonskyi,2026-10-05,2026-10-11,Government facilities,1
+Khersonskyi,2026-10-05,2026-10-11,Total,1
+Korostenskyi,2026-10-05,2026-10-11,Railway,1
+Korostenskyi,2026-10-05,2026-10-11,Total,1
+Kramatorskyi,2026-10-05,2026-10-11,Industrial/Business/Enterprise facilities,1
+Kramatorskyi,2026-10-05,2026-10-11,Total,1
+Kremenchutskyi,2026-10-05,2026-10-11,"Cultural facilities (museum, theater etc.)",1
+Kremenchutskyi,2026-10-05,2026-10-11,"Education facility (school, etc.)",2
+Kremenchutskyi,2026-10-05,2026-10-11,Government facilities,1
+Kremenchutskyi,2026-10-05,2026-10-11,Industrial/Business/Enterprise facilities,1
+Kremenchutskyi,2026-10-05,2026-10-11,Total,5
+Kryvorizkyi,2026-10-05,2026-10-11,Fuel depot,1
+Kryvorizkyi,2026-10-05,2026-10-11,Government facilities,1
+Kryvorizkyi,2026-10-05,2026-10-11,"Health facility (hospital, health clinic)",1
+Kryvorizkyi,2026-10-05,2026-10-11,Industrial/Business/Enterprise facilities,1
+Kryvorizkyi,2026-10-05,2026-10-11,Total,4
+Kyiv,2026-10-05,2026-10-11,"Education facility (school, etc.)",1
+Kyiv,2026-10-05,2026-10-11,Energy Infrastructure (unknown type),1
+Kyiv,2026-10-05,2026-10-11,Industrial/Business/Enterprise facilities,2
+Kyiv,2026-10-05,2026-10-11,Total,8
+Kyiv,2026-10-05,2026-10-11,Warehouse,4
+Lozivskyi,2026-10-05,2026-10-11,"Education facility (school, etc.)",1
+Lozivskyi,2026-10-05,2026-10-11,"Health facility (hospital, health clinic)",1
+Lozivskyi,2026-10-05,2026-10-11,Total,2
+Mykolaivskyi,2026-10-05,2026-10-11,Government facilities,1
+Mykolaivskyi,2026-10-05,2026-10-11,"Health facility (hospital, health clinic)",1
+Mykolaivskyi,2026-10-05,2026-10-11,Industrial/Business/Enterprise facilities,5
+Mykolaivskyi,2026-10-05,2026-10-11,Total,8
+Mykolaivskyi,2026-10-05,2026-10-11,Warehouse,1
+Nikopolskyi,2026-10-05,2026-10-11,Agricultural facilities,1
+Nikopolskyi,2026-10-05,2026-10-11,"Education facility (school, etc.)",3
+Nikopolskyi,2026-10-05,2026-10-11,Fuel depot,1
+Nikopolskyi,2026-10-05,2026-10-11,Government facilities,2
+Nikopolskyi,2026-10-05,2026-10-11,Industrial/Business/Enterprise facilities,5
+Nikopolskyi,2026-10-05,2026-10-11,Total,13
+Nikopolskyi,2026-10-05,2026-10-11,Warehouse,1
+Novhorod-Siverskyi,2026-10-05,2026-10-11,Government facilities,1
+Novhorod-Siverskyi,2026-10-05,2026-10-11,"Health facility (hospital, health clinic)",1
+Novhorod-Siverskyi,2026-10-05,2026-10-11,Total,2
+Novomoskovskyi,2026-10-05,2026-10-11,Government facilities,1
+Novomoskovskyi,2026-10-05,2026-10-11,Telecommunications,1
+Novomoskovskyi,2026-10-05,2026-10-11,Total,3
+Novomoskovskyi,2026-10-05,2026-10-11,Warehouse,1
+Obukhivskyi,2026-10-05,2026-10-11,Industrial/Business/Enterprise facilities,1
+Obukhivskyi,2026-10-05,2026-10-11,Total,3
+Obukhivskyi,2026-10-05,2026-10-11,Warehouse,2
+Odeskyi,2026-10-05,2026-10-11,Government facilities,1
+Odeskyi,2026-10-05,2026-10-11,Industrial/Business/Enterprise facilities,1
+Odeskyi,2026-10-05,2026-10-11,Other,1
+Odeskyi,2026-10-05,2026-10-11,Telecommunications,1
+Odeskyi,2026-10-05,2026-10-11,Total,5
+Odeskyi,2026-10-05,2026-10-11,Warehouse,1
+Oleksandriiskyi,2026-10-05,2026-10-11,"Education facility (school, etc.)",3
+Oleksandriiskyi,2026-10-05,2026-10-11,Total,3
+Prylutskyi,2026-10-05,2026-10-11,"Education facility (school, etc.)",1
+Prylutskyi,2026-10-05,2026-10-11,Gas supply system,1
+Prylutskyi,2026-10-05,2026-10-11,Industrial/Business/Enterprise facilities,1
+Prylutskyi,2026-10-05,2026-10-11,Total,3
+Shostkynskyi,2026-10-05,2026-10-11,Fuel depot,1
+Shostkynskyi,2026-10-05,2026-10-11,Government facilities,1
+Shostkynskyi,2026-10-05,2026-10-11,Total,2
+Sumskyi,2026-10-05,2026-10-11,"Education facility (school, etc.)",1
+Sumskyi,2026-10-05,2026-10-11,Total,1
+Synelnykivskyi,2026-10-05,2026-10-11,Agricultural facilities,1
+Synelnykivskyi,2026-10-05,2026-10-11,Government facilities,1
+Synelnykivskyi,2026-10-05,2026-10-11,Industrial/Business/Enterprise facilities,1
+Synelnykivskyi,2026-10-05,2026-10-11,Total,3
+Zaporizkyi,2026-10-05,2026-10-11,Bridge,1
+Zaporizkyi,2026-10-05,2026-10-11,"Cultural facilities (museum, theater etc.)",1
+Zaporizkyi,2026-10-05,2026-10-11,"Education facility (school, etc.)",1
+Zaporizkyi,2026-10-05,2026-10-11,Government facilities,1
+Zaporizkyi,2026-10-05,2026-10-11,Total,5
+Zaporizkyi,2026-10-05,2026-10-11,Warehouse,1
 Bilotserkivskyi,2026-09-28,2026-10-04,"Education facility (school, etc.)",2
 Bilotserkivskyi,2026-09-28,2026-10-04,Total,2
 Brovarskyi,2026-09-28,2026-10-04,Total,3
 Brovarskyi,2026-09-28,2026-10-04,Warehouse,3
-Buchanskyi,2026-09-28,2026-10-04,Total,1
-Buchanskyi,2026-09-28,2026-10-04,Warehouse,1
+Buchanskyi,2026-09-28,2026-10-04,Industrial/Business/Enterprise facilities,1
+Buchanskyi,2026-09-28,2026-10-04,Total,3
+Buchanskyi,2026-09-28,2026-10-04,Warehouse,2
 Dniprovskyi,2026-09-28,2026-10-04,Government facilities,1
 Dniprovskyi,2026-09-28,2026-10-04,Industrial/Business/Enterprise facilities,2
 Dniprovskyi,2026-09-28,2026-10-04,Other,1
-Dniprovskyi,2026-09-28,2026-10-04,Total,4
+Dniprovskyi,2026-09-28,2026-10-04,Telecommunications,1
+Dniprovskyi,2026-09-28,2026-10-04,Total,5
 Fastivskyi,2026-09-28,2026-10-04,Industrial/Business/Enterprise facilities,3
 Fastivskyi,2026-09-28,2026-10-04,Total,3
-Iziumskyi,2026-09-28,2026-10-04,Industrial/Business/Enterprise facilities,1
-Iziumskyi,2026-09-28,2026-10-04,Total,1
+Iziumskyi,2026-09-28,2026-10-04,Industrial/Business/Enterprise facilities,2
+Iziumskyi,2026-09-28,2026-10-04,Total,2
 Kamianskyi,2026-09-28,2026-10-04,Total,1
 Kamianskyi,2026-09-28,2026-10-04,Warehouse,1
-Kharkivskyi,2026-09-28,2026-10-04,Electricity supply system,1
-Kharkivskyi,2026-09-28,2026-10-04,Government facilities,1
-Kharkivskyi,2026-09-28,2026-10-04,Industrial/Business/Enterprise facilities,2
+Kharkivskyi,2026-09-28,2026-10-04,Electricity supply system,2
+Kharkivskyi,2026-09-28,2026-10-04,Gas supply system,1
+Kharkivskyi,2026-09-28,2026-10-04,Government facilities,2
+Kharkivskyi,2026-09-28,2026-10-04,Industrial/Business/Enterprise facilities,3
 Kharkivskyi,2026-09-28,2026-10-04,Road / Highway,1
-Kharkivskyi,2026-09-28,2026-10-04,Total,5
+Kharkivskyi,2026-09-28,2026-10-04,Total,9
+Khersonskyi,2026-09-28,2026-10-04,"Education facility (school, etc.)",1
+Khersonskyi,2026-09-28,2026-10-04,Total,1
 Kramatorskyi,2026-09-28,2026-10-04,"Education facility (school, etc.)",4
 Kramatorskyi,2026-09-28,2026-10-04,Government facilities,1
 Kramatorskyi,2026-09-28,2026-10-04,Total,5
@@ -27,35 +145,53 @@ Kremenchutskyi,2026-09-28,2026-10-04,"Cultural facilities (museum, theater etc.)
 Kremenchutskyi,2026-09-28,2026-10-04,"Health facility (hospital, health clinic)",1
 Kremenchutskyi,2026-09-28,2026-10-04,Total,2
 Kryvorizkyi,2026-09-28,2026-10-04,"Education facility (school, etc.)",1
-Kryvorizkyi,2026-09-28,2026-10-04,Total,1
-Kyiv,2026-09-28,2026-10-04,Bridge,1
+Kryvorizkyi,2026-09-28,2026-10-04,Industrial/Business/Enterprise facilities,1
+Kryvorizkyi,2026-09-28,2026-10-04,Total,2
+Kupianskyi,2026-09-28,2026-10-04,Electricity supply system,1
+Kupianskyi,2026-09-28,2026-10-04,Total,1
+Kyiv,2026-09-28,2026-10-04,Bridge,2
 Kyiv,2026-09-28,2026-10-04,"Cultural facilities (museum, theater etc.)",1
 Kyiv,2026-09-28,2026-10-04,"Education facility (school, etc.)",2
 Kyiv,2026-09-28,2026-10-04,Fuel depot,1
 Kyiv,2026-09-28,2026-10-04,Government facilities,1
-Kyiv,2026-09-28,2026-10-04,"Health facility (hospital, health clinic)",1
+Kyiv,2026-09-28,2026-10-04,"Health facility (hospital, health clinic)",2
+Kyiv,2026-09-28,2026-10-04,Heating and water facility,1
 Kyiv,2026-09-28,2026-10-04,Industrial/Business/Enterprise facilities,8
 Kyiv,2026-09-28,2026-10-04,Railway,1
 Kyiv,2026-09-28,2026-10-04,Religious facilities,1
 Kyiv,2026-09-28,2026-10-04,Telecommunications,1
-Kyiv,2026-09-28,2026-10-04,Total,21
+Kyiv,2026-09-28,2026-10-04,Total,24
 Kyiv,2026-09-28,2026-10-04,Warehouse,3
+Mykolaivskyi,2026-09-28,2026-10-04,Government facilities,1
+Mykolaivskyi,2026-09-28,2026-10-04,Total,1
 Nikopolskyi,2026-09-28,2026-10-04,"Cultural facilities (museum, theater etc.)",2
 Nikopolskyi,2026-09-28,2026-10-04,"Education facility (school, etc.)",2
-Nikopolskyi,2026-09-28,2026-10-04,Industrial/Business/Enterprise facilities,7
-Nikopolskyi,2026-09-28,2026-10-04,Total,11
+Nikopolskyi,2026-09-28,2026-10-04,Electricity supply system,1
+Nikopolskyi,2026-09-28,2026-10-04,Fuel depot,1
+Nikopolskyi,2026-09-28,2026-10-04,Government facilities,1
+Nikopolskyi,2026-09-28,2026-10-04,Industrial/Business/Enterprise facilities,13
+Nikopolskyi,2026-09-28,2026-10-04,Total,20
 Obukhivskyi,2026-09-28,2026-10-04,Electricity supply system,1
 Obukhivskyi,2026-09-28,2026-10-04,Industrial/Business/Enterprise facilities,3
 Obukhivskyi,2026-09-28,2026-10-04,Total,4
+Pavlohradskyi,2026-09-28,2026-10-04,Industrial/Business/Enterprise facilities,1
+Pavlohradskyi,2026-09-28,2026-10-04,Total,2
+Pavlohradskyi,2026-09-28,2026-10-04,Warehouse,1
+Rivnenskyi,2026-09-28,2026-10-04,Industrial/Business/Enterprise facilities,1
+Rivnenskyi,2026-09-28,2026-10-04,Total,1
 Sumskyi,2026-09-28,2026-10-04,"Education facility (school, etc.)",1
-Sumskyi,2026-09-28,2026-10-04,Electricity supply system,1
-Sumskyi,2026-09-28,2026-10-04,Total,2
+Sumskyi,2026-09-28,2026-10-04,Electricity supply system,2
+Sumskyi,2026-09-28,2026-10-04,Gas supply system,1
+Sumskyi,2026-09-28,2026-10-04,Industrial/Business/Enterprise facilities,1
+Sumskyi,2026-09-28,2026-10-04,Road / Highway,1
+Sumskyi,2026-09-28,2026-10-04,Total,6
 Synelnykivskyi,2026-09-28,2026-10-04,Industrial/Business/Enterprise facilities,1
 Synelnykivskyi,2026-09-28,2026-10-04,Total,1
 Zaporizkyi,2026-09-28,2026-10-04,"Education facility (school, etc.)",2
+Zaporizkyi,2026-09-28,2026-10-04,Government facilities,1
 Zaporizkyi,2026-09-28,2026-10-04,Industrial/Business/Enterprise facilities,1
 Zaporizkyi,2026-09-28,2026-10-04,Railway,1
-Zaporizkyi,2026-09-28,2026-10-04,Total,4
+Zaporizkyi,2026-09-28,2026-10-04,Total,5
 Zhytomyrskyi,2026-09-28,2026-10-04,Industrial/Business/Enterprise facilities,1
 Zhytomyrskyi,2026-09-28,2026-10-04,Total,1
 Boryspilskyi,2026-09-21,2026-09-27,Industrial/Business/Enterprise facilities,2
