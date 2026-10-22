@@ -136,6 +136,11 @@
   window.MAP_GEOJSON_PATH = "{{ '/data/ukr_admn_ad1_py_s0_fieldmaps_pp_oblast.json' | relative_url }}";
 </script>
 
+<script>
+  // Mapbox basemap token and style come from _config.yml (mapbox_access_token / mapbox_style_url).
+  window.MAPBOX_ACCESS_TOKEN = "{{ site.mapbox_access_token }}";
+  window.MAP_STYLE_URL = "{{ site.mapbox_style_url }}";
+</script>
 <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js" defer></script>
 <script src="https://unpkg.com/esri-leaflet@3.0.12/dist/esri-leaflet.js" defer></script>
 <script src="{{ '/assets/js/papaparse.min.js' | relative_url }}" defer></script>

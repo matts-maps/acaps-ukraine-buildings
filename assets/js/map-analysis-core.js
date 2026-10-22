@@ -205,13 +205,26 @@
     // once the boundary geoJSON has loaded.
     const instance = L.map("map-container", { zoomSnap: 0.5 }).setView([48.3794, 31.1656], 6);
     window.__leafletMap = instance;
-    L.tileLayer("https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png", {
-      attribution: "&copy; OpenStreetMap", maxZoom: 20,
-      // Needed so the PDF export renderer (map-pdf-renderer.js) can draw
-      // these tile images onto its own canvas without tainting it -
-      // CartoDB's tile CDN sends Access-Control-Allow-Origin: *.
-      crossOrigin: true
-    }).addTo(instance);
+    // Basemap: the same Mapbox Studio style the Mapbox example pages use,
+    // served as raster tiles. Token and style come from _config.yml
+    // (mapbox_access_token / mapbox_style_url) via window.MAPBOX_ACCESS_TOKEN /
+    // window.MAP_STYLE_URL, set inline by the page include.
+    const styleMatch = /^mapbox:\/\/styles\/([^/]+)\/([^/?#]+)/.exec(window.MAP_STYLE_URL || "");
+    if (!window.MAPBOX_ACCESS_TOKEN || !styleMatch) {
+      console.error("map-analysis-core: Mapbox token/style not set (mapbox_access_token / mapbox_style_url in _config.yml) - basemap not drawn");
+    } else {
+      L.tileLayer(
+        `https://api.mapbox.com/styles/v1/${styleMatch[1]}/${styleMatch[2]}/tiles/256/{z}/{x}/{y}{r}?access_token=${window.MAPBOX_ACCESS_TOKEN}`,
+        {
+          attribution: '&copy; <a href="https://www.mapbox.com/about/maps/">Mapbox</a> &copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a>',
+          maxZoom: 20,
+          // Needed so the PDF export renderer (map-pdf-renderer.js) can draw
+          // these tile images onto its own canvas without tainting it -
+          // Mapbox's tile API sends Access-Control-Allow-Origin: *.
+          crossOrigin: true
+        }
+      ).addTo(instance);
+    }
     createSyncedPane(instance, MapCore.DAMAGE_CIRCLES_PANE, DAMAGE_CIRCLES_Z_INDEX);
 
     // UI: Info Panel
