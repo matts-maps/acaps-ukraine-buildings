@@ -1,15 +1,128 @@
 oblast,week_start,week_end,building_type,damaged_buildings
+Chernihivska,2026-10-19,2026-10-25,Total,1
+Chernihivska,2026-10-19,2026-10-25,Warehouse,1
+Dnipropetrovska,2026-10-19,2026-10-25,Agricultural facilities,1
+Dnipropetrovska,2026-10-19,2026-10-25,"Cultural facilities (museum, theater etc.)",2
+Dnipropetrovska,2026-10-19,2026-10-25,"Education facility (school, etc.)",1
+Dnipropetrovska,2026-10-19,2026-10-25,Government facilities,1
+Dnipropetrovska,2026-10-19,2026-10-25,Industrial/Business/Enterprise facilities,8
+Dnipropetrovska,2026-10-19,2026-10-25,Total,13
+Donetska,2026-10-19,2026-10-25,"Education facility (school, etc.)",2
+Donetska,2026-10-19,2026-10-25,Industrial/Business/Enterprise facilities,2
+Donetska,2026-10-19,2026-10-25,Total,4
+Kharkivska,2026-10-19,2026-10-25,Electricity supply system,1
+Kharkivska,2026-10-19,2026-10-25,Government facilities,1
+Kharkivska,2026-10-19,2026-10-25,Industrial/Business/Enterprise facilities,2
+Kharkivska,2026-10-19,2026-10-25,Total,4
+Khmelnytska,2026-10-19,2026-10-25,Industrial/Business/Enterprise facilities,1
+Khmelnytska,2026-10-19,2026-10-25,Total,1
+Kyiv,2026-10-19,2026-10-25,Bridge,1
+Kyiv,2026-10-19,2026-10-25,"Cultural facilities (museum, theater etc.)",3
+Kyiv,2026-10-19,2026-10-25,"Education facility (school, etc.)",3
+Kyiv,2026-10-19,2026-10-25,Energy Infrastructure (unknown type),1
+Kyiv,2026-10-19,2026-10-25,Fuel depot,1
+Kyiv,2026-10-19,2026-10-25,Government facilities,1
+Kyiv,2026-10-19,2026-10-25,"Health facility (hospital, health clinic)",5
+Kyiv,2026-10-19,2026-10-25,Industrial/Business/Enterprise facilities,4
+Kyiv,2026-10-19,2026-10-25,Other,1
+Kyiv,2026-10-19,2026-10-25,Religious facilities,1
+Kyiv,2026-10-19,2026-10-25,Total,22
+Kyiv,2026-10-19,2026-10-25,Warehouse,1
+Kyivska,2026-10-19,2026-10-25,"Education facility (school, etc.)",1
+Kyivska,2026-10-19,2026-10-25,Industrial/Business/Enterprise facilities,2
+Kyivska,2026-10-19,2026-10-25,Total,4
+Kyivska,2026-10-19,2026-10-25,Warehouse,1
+Lvivska,2026-10-19,2026-10-25,Industrial/Business/Enterprise facilities,1
+Lvivska,2026-10-19,2026-10-25,Total,1
+Odeska,2026-10-19,2026-10-25,Government facilities,1
+Odeska,2026-10-19,2026-10-25,Industrial/Business/Enterprise facilities,1
+Odeska,2026-10-19,2026-10-25,Total,2
+Poltavska,2026-10-19,2026-10-25,"Education facility (school, etc.)",1
+Poltavska,2026-10-19,2026-10-25,Energy Infrastructure (unknown type),1
+Poltavska,2026-10-19,2026-10-25,Railway,1
+Poltavska,2026-10-19,2026-10-25,Telecommunications,1
+Poltavska,2026-10-19,2026-10-25,Total,4
+Rivnenska,2026-10-19,2026-10-25,Industrial/Business/Enterprise facilities,2
+Rivnenska,2026-10-19,2026-10-25,Total,2
+Sumska,2026-10-19,2026-10-25,Electricity supply system,1
+Sumska,2026-10-19,2026-10-25,Total,1
+Ternopilska,2026-10-19,2026-10-25,Energy Infrastructure (unknown type),3
+Ternopilska,2026-10-19,2026-10-25,Industrial/Business/Enterprise facilities,1
+Ternopilska,2026-10-19,2026-10-25,Total,4
+Volynska,2026-10-19,2026-10-25,Energy Infrastructure (unknown type),1
+Volynska,2026-10-19,2026-10-25,Total,1
+Zhytomyrska,2026-10-19,2026-10-25,Energy Infrastructure (unknown type),1
+Zhytomyrska,2026-10-19,2026-10-25,Industrial/Business/Enterprise facilities,2
+Zhytomyrska,2026-10-19,2026-10-25,Total,3
 Cherkaska,2026-10-12,2026-10-18,Electricity supply system,1
-Cherkaska,2026-10-12,2026-10-18,Total,1
-Dnipropetrovska,2026-10-12,2026-10-18,"Education facility (school, etc.)",1
-Dnipropetrovska,2026-10-12,2026-10-18,Government facilities,2
-Dnipropetrovska,2026-10-12,2026-10-18,Industrial/Business/Enterprise facilities,5
-Dnipropetrovska,2026-10-12,2026-10-18,Total,8
+Cherkaska,2026-10-12,2026-10-18,Industrial/Business/Enterprise facilities,1
+Cherkaska,2026-10-12,2026-10-18,Total,2
+Chernihivska,2026-10-12,2026-10-18,"Cultural facilities (museum, theater etc.)",2
+Chernihivska,2026-10-12,2026-10-18,"Education facility (school, etc.)",2
+Chernihivska,2026-10-12,2026-10-18,Industrial/Business/Enterprise facilities,1
+Chernihivska,2026-10-12,2026-10-18,Total,5
+Dnipropetrovska,2026-10-12,2026-10-18,Agricultural facilities,1
+Dnipropetrovska,2026-10-12,2026-10-18,"Cultural facilities (museum, theater etc.)",3
+Dnipropetrovska,2026-10-12,2026-10-18,"Education facility (school, etc.)",4
+Dnipropetrovska,2026-10-12,2026-10-18,Electricity supply system,1
+Dnipropetrovska,2026-10-12,2026-10-18,Gas supply system,1
+Dnipropetrovska,2026-10-12,2026-10-18,Government facilities,3
+Dnipropetrovska,2026-10-12,2026-10-18,"Health facility (hospital, health clinic)",2
+Dnipropetrovska,2026-10-12,2026-10-18,Industrial/Business/Enterprise facilities,14
+Dnipropetrovska,2026-10-12,2026-10-18,Total,31
+Dnipropetrovska,2026-10-12,2026-10-18,Warehouse,2
+Donetska,2026-10-12,2026-10-18,"Cultural facilities (museum, theater etc.)",1
+Donetska,2026-10-12,2026-10-18,Total,2
+Donetska,2026-10-12,2026-10-18,Water supply system,1
+Ivano-Frankivska,2026-10-12,2026-10-18,Industrial/Business/Enterprise facilities,1
+Ivano-Frankivska,2026-10-12,2026-10-18,Total,1
 Kharkivska,2026-10-12,2026-10-18,"Cultural facilities (museum, theater etc.)",1
-Kharkivska,2026-10-12,2026-10-18,Total,2
-Kharkivska,2026-10-12,2026-10-18,Warehouse,1
+Kharkivska,2026-10-12,2026-10-18,"Education facility (school, etc.)",1
+Kharkivska,2026-10-12,2026-10-18,Electricity supply system,2
+Kharkivska,2026-10-12,2026-10-18,Energy Infrastructure (unknown type),1
+Kharkivska,2026-10-12,2026-10-18,Government facilities,2
+Kharkivska,2026-10-12,2026-10-18,"Health facility (hospital, health clinic)",1
+Kharkivska,2026-10-12,2026-10-18,Industrial/Business/Enterprise facilities,3
+Kharkivska,2026-10-12,2026-10-18,Total,13
+Kharkivska,2026-10-12,2026-10-18,Warehouse,2
+Khersonska,2026-10-12,2026-10-18,Other,1
+Khersonska,2026-10-12,2026-10-18,Total,1
+Kyiv,2026-10-12,2026-10-18,"Cultural facilities (museum, theater etc.)",1
+Kyiv,2026-10-12,2026-10-18,Industrial/Business/Enterprise facilities,2
+Kyiv,2026-10-12,2026-10-18,Total,3
+Kyivska,2026-10-12,2026-10-18,Total,1
+Kyivska,2026-10-12,2026-10-18,Warehouse,1
+Lvivska,2026-10-12,2026-10-18,Government facilities,1
+Lvivska,2026-10-12,2026-10-18,Industrial/Business/Enterprise facilities,1
+Lvivska,2026-10-12,2026-10-18,Total,2
+Poltavska,2026-10-12,2026-10-18,"Education facility (school, etc.)",1
+Poltavska,2026-10-12,2026-10-18,Government facilities,1
+Poltavska,2026-10-12,2026-10-18,Industrial/Business/Enterprise facilities,2
+Poltavska,2026-10-12,2026-10-18,Total,4
+Rivnenska,2026-10-12,2026-10-18,"Education facility (school, etc.)",2
+Rivnenska,2026-10-12,2026-10-18,Electricity supply system,1
+Rivnenska,2026-10-12,2026-10-18,Industrial/Business/Enterprise facilities,1
+Rivnenska,2026-10-12,2026-10-18,Total,4
+Sumska,2026-10-12,2026-10-18,Industrial/Business/Enterprise facilities,1
+Sumska,2026-10-12,2026-10-18,Total,1
+Ternopilska,2026-10-12,2026-10-18,Energy Infrastructure (unknown type),1
+Ternopilska,2026-10-12,2026-10-18,Industrial/Business/Enterprise facilities,1
+Ternopilska,2026-10-12,2026-10-18,Total,2
 Vinnytska,2026-10-12,2026-10-18,Industrial/Business/Enterprise facilities,1
 Vinnytska,2026-10-12,2026-10-18,Total,1
+Volynska,2026-10-12,2026-10-18,Electricity supply system,2
+Volynska,2026-10-12,2026-10-18,Industrial/Business/Enterprise facilities,4
+Volynska,2026-10-12,2026-10-18,Oil depot,1
+Volynska,2026-10-12,2026-10-18,Total,8
+Volynska,2026-10-12,2026-10-18,Warehouse,1
+Zaporizka,2026-10-12,2026-10-18,"Education facility (school, etc.)",1
+Zaporizka,2026-10-12,2026-10-18,Industrial/Business/Enterprise facilities,1
+Zaporizka,2026-10-12,2026-10-18,Total,3
+Zaporizka,2026-10-12,2026-10-18,Warehouse,1
+Zhytomyrska,2026-10-12,2026-10-18,Electricity supply system,1
+Zhytomyrska,2026-10-12,2026-10-18,Energy Infrastructure (unknown type),2
+Zhytomyrska,2026-10-12,2026-10-18,Industrial/Business/Enterprise facilities,1
+Zhytomyrska,2026-10-12,2026-10-18,Total,4
 Chernihivska,2026-10-05,2026-10-11,"Education facility (school, etc.)",1
 Chernihivska,2026-10-05,2026-10-11,Gas supply system,1
 Chernihivska,2026-10-05,2026-10-11,Government facilities,1
